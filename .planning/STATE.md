@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-foundation-PLAN.md
-last_updated: "2026-04-18T17:03:10.417Z"
+stopped_at: Completed 01-04-seams-PLAN.md — FOUND-06/07/08 shipped (HMAC webhook intake, Suggestions inbox, shadow-mode WooClient)
+last_updated: "2026-04-18T17:28:52.829Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 80
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 1 of 7 (Foundation)
-Plan: 3 of 5 in current phase (01-02-rbac complete)
+Plan: 4 of 5 in current phase (01-02-rbac complete)
 Status: Ready to execute
 Last activity: 2026-04-18
 
@@ -55,6 +55,7 @@ Progress: [████░░░░░░] 40%
 | Phase 01 P01-scaffold | 50m | 3 tasks | 25 files |
 | Phase 01 P02-rbac | 35m | 2 tasks | 9 files |
 | Phase 01 P03 | 40m | 2 tasks | 13 files |
+| Phase 01 P04 | ~19 min | 3 tasks | 25 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,10 @@ Recent decisions affecting current work:
 - [Phase 01]: Phase 01 P03: BaseCommand abstract method named perform() — execute() and run() both collide with Laravel/Symfony Command base class concrete methods
 - [Phase 01]: Phase 01 P03: testing DB isolation via phpunit.xml DB_DATABASE=meetingstore_ops_testing — MySQL (not sqlite :memory) preserves JSON column + nullableUlidMorphs semantics parity with prod; resolves Plan 02 RefreshDatabase-truncation handoff
 - [Phase 01]: Phase 01 P03: Context::hydrated callback calls BOTH startBatch() AND setBatch() — setBatch alone is a spatie no-op when no batch is open; discovered during Pitfall J queue-boundary test authoring
+- [Phase 01]: Suggestion ULID primary key retained end-to-end — nullableUlidMorphs subject on integration_events resolves back via $event->subject (Warning 8)
+- [Phase 01]: SuggestionPolicy hardcoded to hasRole('admin') — overrides shield:generate's permission-based stub (Pitfall K belt-and-braces)
+- [Phase 01]: ->authorize() on Filament approve/reject Actions is mandatory defence-in-depth; ->visible() alone is insufficient (Warning 9)
+- [Phase 01]: ApplySuggestionJob queue routing via $this->onQueue('default') in constructor — PHP 8.4 rejects $queue trait property redeclare
 
 ### Pending Todos
 
@@ -93,6 +98,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T17:03:10.407Z
-Stopped at: Completed 01-03-foundation-PLAN.md
+Last session: 2026-04-18T17:28:52.818Z
+Stopped at: Completed 01-04-seams-PLAN.md — FOUND-06/07/08 shipped (HMAC webhook intake, Suggestions inbox, shadow-mode WooClient)
 Resume file: None

@@ -14,9 +14,9 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **FOUND-03**: Domain event bus publishes events with a `correlation_id` that threads through audit, integration, and suggestion rows
 - [x] **FOUND-04**: `audit_log` records every tracked-model change (actor, before, after, correlation_id) via `spatie/laravel-activitylog`
 - [x] **FOUND-05**: `integration_events` records every outbound API attempt (endpoint, request, response, latency, status, correlation_id)
-- [ ] **FOUND-06**: `suggestions` table + Filament inbox let a human review, approve, or reject any proposed mutation before it's applied
-- [ ] **FOUND-07**: Inbound Woo webhooks are HMAC-verified, persisted raw, deduped by `X-WC-Webhook-Delivery-ID`, and queued within 200ms
-- [ ] **FOUND-08**: `WOO_WRITE_ENABLED` env flag (default `false`) routes every Woo write to a `sync_diffs` table instead of calling Woo
+- [x] **FOUND-06**: `suggestions` table + Filament inbox let a human review, approve, or reject any proposed mutation before it's applied
+- [x] **FOUND-07**: Inbound Woo webhooks are HMAC-verified, persisted raw, deduped by `X-WC-Webhook-Delivery-ID`, and queued within 200ms
+- [x] **FOUND-08**: `WOO_WRITE_ENABLED` env flag (default `false`) routes every Woo write to a `sync_diffs` table instead of calling Woo
 - [ ] **FOUND-09**: Horizon supervisors segregate workload classes (`critical`, `sync-woo-push`, `sync-bulk`, `crm-bitrix`, `competitor-csv`, `webhook-inbound`, `default`) so long jobs never block webhooks
 - [ ] **FOUND-10**: Redis persistence is configured (`appendonly yes`, `appendfsync everysec`) so a VPS reboot does not lose in-flight sync chunks
 - [ ] **FOUND-11**: Failed Horizon jobs trigger an admin email/Slack alert via `spatie/laravel-failed-job-monitor`
@@ -187,9 +187,9 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | FOUND-03 | Phase 1 | Complete |
 | FOUND-04 | Phase 1 | Complete |
 | FOUND-05 | Phase 1 | Complete |
-| FOUND-06 | Phase 1 | Pending |
-| FOUND-07 | Phase 1 | Pending |
-| FOUND-08 | Phase 1 | Pending |
+| FOUND-06 | Phase 1 | Complete |
+| FOUND-07 | Phase 1 | Complete |
+| FOUND-08 | Phase 1 | Complete |
 | FOUND-09 | Phase 1 | Pending |
 | FOUND-10 | Phase 1 | Pending |
 | FOUND-11 | Phase 1 | Pending |

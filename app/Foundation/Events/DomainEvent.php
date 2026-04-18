@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Foundation\Events;
 
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Context;
@@ -20,8 +21,14 @@ use Illuminate\Support\Str;
  *
  * Subclass convention (T-03-05 mitigation): events MUST carry primitive fields (SKUs, IDs, strings),
  * NEVER full Eloquent models — SerializesModels leaks hidden columns on dispatch otherwise.
+ *
+ * Pitfall P2-I (Phase 2 Plan 03 retrofit): implements ShouldDispatchAfterCommit so
+ * events dispatched inside a DB::transaction() that rolls back do NOT fire listeners.
+ * Critical for SyncChunkJob which wraps per-SKU writes in transactions — a rolled-back
+ * Woo write MUST NOT trigger Phase 3's price-recompute listener. OUTSIDE transactions
+ * the semantics are unchanged (immediate dispatch).
  */
-abstract class DomainEvent
+abstract class DomainEvent implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 

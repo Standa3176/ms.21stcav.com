@@ -6,10 +6,18 @@ namespace App\Providers;
 
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Alerting\Policies\AlertRecipientPolicy;
+use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductVariant;
+use App\Domain\Products\Policies\ProductPolicy;
+use App\Domain\Products\Policies\ProductVariantPolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
+use App\Domain\Sync\Models\ImportIssue;
+use App\Domain\Sync\Models\SyncRun;
+use App\Domain\Sync\Policies\ImportIssuePolicy;
+use App\Domain\Sync\Policies\SyncRunPolicy;
 use Illuminate\Log\Context\Repository;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Gate;
@@ -67,5 +75,15 @@ class AppServiceProvider extends ServiceProvider
         // Plan 05: admin-only gate on AlertRecipient (T-05-07; Pitfall K).
         // Leaking ops email addresses would expose staff to targeted phishing.
         Gate::policy(AlertRecipient::class, AlertRecipientPolicy::class);
+
+        // ── Phase 2 Plan 01: Products + Sync domain policies ─────────────
+        // Per Phase 1 D-02 role split (admin + pricing_manager edit; sales +
+        // read_only view-only). Policies hardcode hasRole to survive drift
+        // in RolePermissionSeeder LIKE-pattern queries (Pitfall K + P2-H).
+        // DO NOT regenerate via shield:generate — see per-policy docblocks.
+        Gate::policy(Product::class, ProductPolicy::class);
+        Gate::policy(ProductVariant::class, ProductVariantPolicy::class);
+        Gate::policy(SyncRun::class, SyncRunPolicy::class);
+        Gate::policy(ImportIssue::class, ImportIssuePolicy::class);
     }
 }

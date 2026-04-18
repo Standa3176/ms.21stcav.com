@@ -48,11 +48,18 @@ parameters:
       collectors:
         - type: directory
           regex: app/Http/.*
+    # SYNC-04 — Plan 02-05 — ban direct DB facade use from Sync domain (WP direct-DB-write prohibition).
+    # Sync must write to Woo via REST only (WooClient); the local mirror goes via Eloquent models.
+    # Any `DB::` facade use in app/Domain/Sync/* trips the `-WpDirectDb` deny rule below.
+    - name: WpDirectDb
+      collectors:
+        - type: classLike
+          regex: '^Illuminate\\Support\\Facades\\DB$'
   ruleset:
     Products:     [Foundation]
     Pricing:      [Foundation]
     Competitor:   [Foundation]
-    Sync:         [Foundation, Products, Alerting]  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08 sync-report distribution.
+    Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]
     CRM:          [Foundation]
     Suggestions:  [Foundation]

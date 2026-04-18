@@ -21,7 +21,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Context;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Per-page work unit. Dispatched by SyncSupplierCommand per WooProductIterator yield.
@@ -36,6 +35,16 @@ use Illuminate\Support\Facades\DB;
  *   These touch DISJOINT columns — no conflict.
  * - SyncAbortException from AbortGuard::throwIfTriggered bubbles out so the
  *   orchestrator can flip run.status='aborted' and persist the cursor.
+ *
+ * Plan 02-05 SYNC-04 refactor: the per-SKU DB::transaction wrapper was removed in
+ * favour of sequential writes. Atomicity reasoning:
+ *   1. Woo PUT is atomic on Woo's end.
+ *   2. Eloquent save/update is atomic per row.
+ *   3. cursor_page/cursor_sku is written LAST so partial failure is recoverable
+ *      via --resume (the cursor advances only after full success for that SKU).
+ *   4. Pitfall P2-F idempotency check skips already-synced SKUs on retry.
+ * This keeps the Sync domain free of direct DB facade use — Deptrac's
+ * `-WpDirectDb` deny rule enforces the prohibition permanently.
  */
 final class SyncChunkJob implements ShouldQueue
 {
@@ -103,11 +112,11 @@ final class SyncChunkJob implements ShouldQueue
                 }
 
                 // action === 'updated' → write to Woo, mirror local, event-dispatch.
-                DB::transaction(function () use ($run, $woo, $skuRow, $diff, $supplierRow) {
-                    $woo->put($diff['endpoint'], $diff['payload']);
-                    $this->writeRunItem($run, $skuRow, 'updated', $diff);
-                    $this->upsertLocalMirror($skuRow, $supplierRow, $run);
-                });
+                // Plan 02-05 SYNC-04: no DB::transaction wrapper (see class docblock).
+                // Atomicity is provided by Woo's remote write + per-row Eloquent save + cursor-last ordering.
+                $woo->put($diff['endpoint'], $diff['payload']);
+                $this->writeRunItem($run, $skuRow, 'updated', $diff);
+                $this->upsertLocalMirror($skuRow, $supplierRow, $run);
 
                 $this->dispatchDomainEvents($skuRow, $diff);
                 $run->incrementCounter('updated');

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-scaffold-PLAN.md
-last_updated: "2026-04-18T16:31:14.048Z"
-last_activity: 2026-04-18 -- Phase 01 planning complete
+stopped_at: Completed 01-02-rbac-PLAN.md
+last_updated: "2026-04-18T17:11:00.000Z"
+last_activity: 2026-04-18 -- Phase 01 Plan 02 RBAC complete
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
-  percent: 20
+  completed_plans: 2
+  percent: 40
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 1 of 7 (Foundation)
-Plan: — of — in current phase (none planned yet)
-Status: Ready to execute
-Last activity: 2026-04-18 -- Phase 01 planning complete
+Plan: 2 of 5 in current phase (01-02-rbac complete)
+Status: Ready to execute (Plan 03 next — Wave 2 second)
+Last activity: 2026-04-18 -- Phase 01 Plan 02 RBAC complete
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [████░░░░░░] 40%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01 P01-scaffold | 50m | 3 tasks | 25 files |
+| Phase 01 P02-rbac | 35m | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,10 @@ Recent decisions affecting current work:
 - Roadmap: 7-phase structure locked as dependency-forced (cannot compress to coarse 3-5 without losing coherent delivery boundaries)
 - Stack: Laravel 12 + Filament 3.3 + Horizon + phpredis + `automattic/woocommerce` + `bitrix24/b24phpsdk` (official) with `mesilov/bitrix24-php-sdk` as documented fallback
 - [Phase 01]: Phase 1 scaffold: spatie/laravel-permission ^6.0 (not ^7.2 as STACK.md says; Shield 3.x requires ^6.0); rmsramos/activitylog ^2.0 (not ^1.0; first Laravel-12 compatible); Tailwind downgraded v4→v3.4.17 per Pitfall D (Filament 3 incompat with Tailwind 4); Horizon pcntl/posix bypassed on Windows dev
+- [Phase 01 P02]: Shield permission format is `{action}_{resource_snake_singular}` underscore (NOT `::`) — verified via `permission:show`; RolePermissionSeeder uses LIKE patterns (`%_product`, `%_pricing_rule`, etc.) so later-phase Resources auto-attach after `shield:generate` re-run
+- [Phase 01 P02]: Shield's auto-created `super_admin` + `panel_user` roles disabled in `config/filament-shield.php` — D-02 locks role set to exactly 4 (admin/pricing_manager/sales/read_only)
+- [Phase 01 P02]: Shield 3.9.10's RolePolicy stub leaks 4 unrendered `{{ Placeholder }}` literal strings — MUST audit all Shield-generated Policies going forward (deferred-items pitfall)
+- [Phase 01 P02]: Admin user seeded via DatabaseSeeder (admin@meetingstore.co.uk / password) — operator must rotate password before production
 
 ### Pending Todos
 
@@ -83,6 +88,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T16:31:14.037Z
-Stopped at: Completed 01-01-scaffold-PLAN.md
+Last session: 2026-04-18T17:11:00.000Z
+Stopped at: Completed 01-02-rbac-PLAN.md
 Resume file: None

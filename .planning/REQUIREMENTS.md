@@ -9,7 +9,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Foundation (FOUND)
 
-- [ ] **FOUND-01**: Laravel 12 + Filament 3.3 admin app boots with authenticated users and role-based access (admin / pricing_manager / sales / read_only)
+- [x] **FOUND-01**: Laravel 12 + Filament 3.3 admin app boots with authenticated users and role-based access (admin / pricing_manager / sales / read_only)
 - [x] **FOUND-02**: `app/Domain/<Module>/` layout enforced by Deptrac CI — cross-domain imports fail the build
 - [ ] **FOUND-03**: Domain event bus publishes events with a `correlation_id` that threads through audit, integration, and suggestion rows
 - [ ] **FOUND-04**: `audit_log` records every tracked-model change (actor, before, after, correlation_id) via `spatie/laravel-activitylog`
@@ -182,7 +182,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 | Phase 1 | Pending |
+| FOUND-01 | Phase 1 | Complete |
 | FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Pending |
 | FOUND-04 | Phase 1 | Pending |

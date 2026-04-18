@@ -63,6 +63,10 @@ class AlertRecipientResource extends Resource
                 ->maxLength(255),
             Toggle::make('is_active')
                 ->default(true),
+            Toggle::make('receives_sync_reports')
+                ->label('Receives Sync Reports')
+                ->helperText('D-08: Opt-in to the daily supplier sync CSV report. Default true.')
+                ->default(true),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -77,6 +81,9 @@ class AlertRecipientResource extends Resource
                 TextColumn::make('email')->searchable(),
                 TextColumn::make('name')->searchable(),
                 IconColumn::make('is_active')->boolean(),
+                IconColumn::make('receives_sync_reports')
+                    ->boolean()
+                    ->label('Reports?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

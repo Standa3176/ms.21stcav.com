@@ -5,19 +5,23 @@ declare(strict_types=1);
 namespace App\Domain\Sync\Commands;
 
 use App\Console\Commands\BaseCommand;
+use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Exceptions\JwtRefreshFailedException;
 use App\Domain\Sync\Exceptions\SyncAbortException;
 use App\Domain\Sync\Jobs\MarkMissingSkusJob;
 use App\Domain\Sync\Jobs\SyncChunkJob;
+use App\Domain\Sync\Mail\SupplierSyncReportMail;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Models\SyncRun;
+use App\Domain\Sync\Reports\SyncReportCsvGenerator;
 use App\Domain\Sync\Services\AbortGuard;
 use App\Domain\Sync\Services\SkuMatcher;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooProductIterator;
 use App\Foundation\Audit\Services\Auditor;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -153,21 +157,67 @@ final class SyncSupplierCommand extends BaseCommand
                 $run->unknown_sku_count,
             ));
 
+            // D-08/D-10 — report the outcome via CSV + email (Plan 02-04).
+            $this->emailReport($run->refresh(), aborted: false);
+
             return SymfonyCommand::SUCCESS;
         } catch (JwtRefreshFailedException $e) {
             // D-06(c) — SupplierClient reports token can't be refreshed. Flag + abort.
             if ($run !== null) {
                 app(AbortGuard::class)->triggerJwtFailure($run->id);
                 $run->abort(SyncRun::ABORT_JWT_REFRESH, $e->getMessage());
+                $this->emailReport($run->refresh(), aborted: true);
             }
             $this->error('Sync ABORTED: reason=jwt_refresh, message=' . $e->getMessage());
 
             return SymfonyCommand::FAILURE;
         } catch (SyncAbortException $e) {
-            $run?->abort($e->reason, $e->getMessage());
+            if ($run !== null) {
+                $run->abort($e->reason, $e->getMessage());
+                $this->emailReport($run->refresh(), aborted: true);
+            }
             $this->error('Sync ABORTED: reason=' . $e->reason . ', message=' . $e->getMessage());
 
             return SymfonyCommand::FAILURE;
+        }
+    }
+
+    /**
+     * D-08/D-10 — generate the per-SKU CSV and email it to all active recipients
+     * who have opted in to sync reports. No recipients → warn + skip (Pitfall M
+     * equivalent for sync reports).
+     */
+    private function emailReport(SyncRun $run, bool $aborted): void
+    {
+        try {
+            $csvPath = app(SyncReportCsvGenerator::class)->generate($run);
+        } catch (\Throwable $e) {
+            // Don't let a CSV-write failure mask the original sync outcome.
+            $this->warn("Failed to generate sync report CSV: {$e->getMessage()}");
+
+            return;
+        }
+
+        $recipients = AlertRecipient::query()
+            ->active()
+            ->receivesSyncReports()
+            ->get();
+
+        if ($recipients->isEmpty()) {
+            $this->warn("No active alert_recipients with receives_sync_reports=true — report CSV written to {$csvPath} but no email sent.");
+
+            return;
+        }
+
+        try {
+            Mail::to($recipients->pluck('email')->all())
+                ->send(new SupplierSyncReportMail($run, $csvPath, aborted: $aborted));
+
+            $this->info("Report CSV: {$csvPath}");
+            $this->info('Emailed to: ' . $recipients->pluck('email')->implode(', '));
+        } catch (\Throwable $e) {
+            // Mailer outage should not mask the sync result — log and continue.
+            $this->warn("Failed to send sync report email: {$e->getMessage()}");
         }
     }
 

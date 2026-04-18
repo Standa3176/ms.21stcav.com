@@ -52,7 +52,7 @@ parameters:
     Products:     [Foundation]
     Pricing:      [Foundation]
     Competitor:   [Foundation]
-    Sync:         [Foundation, Products]  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant (expected cross-domain call per Plan 02-01 key-decisions)
+    Sync:         [Foundation, Products, Alerting]  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08 sync-report distribution.
     Webhooks:     [Foundation]
     CRM:          [Foundation]
     Suggestions:  [Foundation]

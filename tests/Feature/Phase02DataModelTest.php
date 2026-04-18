@@ -219,7 +219,10 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
     // RefreshDatabase has already brought us to a fully-migrated state.
-    $this->artisan('migrate:rollback', ['--step' => 6])->assertExitCode(0);
+    // Step=7 — rolls back the 6 Phase-2 tables PLUS Plan 02-04's additive
+    // `add_receives_sync_reports_to_alert_recipients` column migration that
+    // sits at 2026_04_18_200600 (immediately after the 6 table creates).
+    $this->artisan('migrate:rollback', ['--step' => 7])->assertExitCode(0);
 
     expect(Schema::hasTable('sync_run_items'))->toBeFalse();
     expect(Schema::hasTable('import_issues'))->toBeFalse();

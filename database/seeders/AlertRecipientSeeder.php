@@ -24,6 +24,7 @@ class AlertRecipientSeeder extends Seeder
             [
                 'name' => 'Ops Fallback',
                 'is_active' => true,
+                'receives_sync_reports' => true,   // D-08 opt-in (Plan 02-04)
                 'notes' => 'Seeded fallback — Pitfall M mitigation. Replace with real ops addresses via /admin/alert-recipients.',
             ]
         );

@@ -17,10 +17,10 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **FOUND-06**: `suggestions` table + Filament inbox let a human review, approve, or reject any proposed mutation before it's applied
 - [x] **FOUND-07**: Inbound Woo webhooks are HMAC-verified, persisted raw, deduped by `X-WC-Webhook-Delivery-ID`, and queued within 200ms
 - [x] **FOUND-08**: `WOO_WRITE_ENABLED` env flag (default `false`) routes every Woo write to a `sync_diffs` table instead of calling Woo
-- [ ] **FOUND-09**: Horizon supervisors segregate workload classes (`critical`, `sync-woo-push`, `sync-bulk`, `crm-bitrix`, `competitor-csv`, `webhook-inbound`, `default`) so long jobs never block webhooks
-- [ ] **FOUND-10**: Redis persistence is configured (`appendonly yes`, `appendfsync everysec`) so a VPS reboot does not lose in-flight sync chunks
-- [ ] **FOUND-11**: Failed Horizon jobs trigger an admin email/Slack alert via `spatie/laravel-failed-job-monitor`
-- [ ] **FOUND-12**: Retention policies are configured and enforced for `audit_log`, `integration_events`, competitor CSVs, `sync_errors` via scheduled prune commands
+- [x] **FOUND-09**: Horizon supervisors segregate workload classes (`critical`, `sync-woo-push`, `sync-bulk`, `crm-bitrix`, `competitor-csv`, `webhook-inbound`, `default`) so long jobs never block webhooks
+- [x] **FOUND-10**: Redis persistence is configured (`appendonly yes`, `appendfsync everysec`) so a VPS reboot does not lose in-flight sync chunks
+- [x] **FOUND-11**: Failed Horizon jobs trigger an admin email/Slack alert via `spatie/laravel-failed-job-monitor`
+- [x] **FOUND-12**: Retention policies are configured and enforced for `audit_log`, `integration_events`, competitor CSVs, `sync_errors` via scheduled prune commands
 - [x] **FOUND-13**: `FeedGenerator` interface stub exists (empty contract) so Phase 8 channel feeds slot in without refactor
 
 ### Supplier sync (SYNC) — Module A
@@ -190,10 +190,10 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | FOUND-06 | Phase 1 | Complete |
 | FOUND-07 | Phase 1 | Complete |
 | FOUND-08 | Phase 1 | Complete |
-| FOUND-09 | Phase 1 | Pending |
-| FOUND-10 | Phase 1 | Pending |
-| FOUND-11 | Phase 1 | Pending |
-| FOUND-12 | Phase 1 | Pending |
+| FOUND-09 | Phase 1 | Complete |
+| FOUND-10 | Phase 1 | Complete |
+| FOUND-11 | Phase 1 | Complete |
+| FOUND-12 | Phase 1 | Complete |
 | FOUND-13 | Phase 1 | Complete |
 | SYNC-01 | Phase 2 | Pending |
 | SYNC-02 | Phase 2 | Pending |

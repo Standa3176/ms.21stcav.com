@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-04-seams-PLAN.md — FOUND-06/07/08 shipped (HMAC webhook intake, Suggestions inbox, shadow-mode WooClient)
-last_updated: "2026-04-18T17:28:52.829Z"
+stopped_at: Completed 01-05-horizon-alerting-PLAN.md — Phase 1 DONE
+last_updated: "2026-04-18T17:55:40.396Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 80
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 1 of 7 (Foundation)
-Plan: 4 of 5 in current phase (01-02-rbac complete)
+Plan: 5 of 5 in current phase (01-02-rbac complete)
 Status: Ready to execute
 Last activity: 2026-04-18
 
@@ -56,6 +56,7 @@ Progress: [████░░░░░░] 40%
 | Phase 01 P02-rbac | 35m | 2 tasks | 9 files |
 | Phase 01 P03 | 40m | 2 tasks | 13 files |
 | Phase 01 P04 | ~19 min | 3 tasks | 25 files |
+| Phase 01 P05 | 85 min | 4 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,10 @@ Recent decisions affecting current work:
 - [Phase 01]: SuggestionPolicy hardcoded to hasRole('admin') — overrides shield:generate's permission-based stub (Pitfall K belt-and-braces)
 - [Phase 01]: ->authorize() on Filament approve/reject Actions is mandatory defence-in-depth; ->visible() alone is insufficient (Warning 9)
 - [Phase 01]: ApplySuggestionJob queue routing via $this->onQueue('default') in constructor — PHP 8.4 rejects $queue trait property redeclare
+- [Phase 01]: Migration timestamp 190000 (not plan's 104000) — orchestrator permission-to-deviate for logical ordering
+- [Phase 01]: Horizon Pitfall E boot assertion guarded by app()->environment('testing') — phpunit.xml forces QUEUE_CONNECTION=sync
+- [Phase 01]: ThrottledFailedJobNotifier uses Cache::add atomic lock (race-safe) over has+put pattern
+- [Phase 01]: shield:generate deliberately NOT re-run in Plan 05 — would regress SuggestionPolicy + RolePolicy (Plan 04 pattern); AlertRecipientPolicy uses hasRole('admin') directly
 
 ### Pending Todos
 
@@ -98,6 +103,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T17:28:52.818Z
-Stopped at: Completed 01-04-seams-PLAN.md — FOUND-06/07/08 shipped (HMAC webhook intake, Suggestions inbox, shadow-mode WooClient)
+Last session: 2026-04-18T17:55:40.383Z
+Stopped at: Completed 01-05-horizon-alerting-PLAN.md — Phase 1 DONE
 Resume file: None

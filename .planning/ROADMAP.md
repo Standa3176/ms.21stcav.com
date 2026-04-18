@@ -39,7 +39,7 @@ Plans:
 - [x] 01-02-rbac-PLAN.md — Install Filament Shield, add HasRoles to User, run shield:generate, write idempotent RolePermissionSeeder with D-02 role split (FOUND-01)
 - [x] 01-03-foundation-PLAN.md — AttachCorrelationId middleware + DomainEvent base class + Auditor service + integration_events migration + IntegrationLogger with header redaction + BaseCommand + Context::hydrated callback for queue boundary propagation (FOUND-03, FOUND-04, FOUND-05)
 - [x] 01-04-seams-PLAN.md — webhook_receipts + suggestions + sync_diffs migrations; VerifyWooHmacSignature middleware + WooWebhookController + OrderReceived/CustomerRegistered events; SuggestionApplier contract + StubApplier + ApplySuggestionJob + Filament SuggestionResource (admin-only) + seeded test suggestion; WooClient skeleton with WOO_WRITE_ENABLED shadow-mode gate (FOUND-06, FOUND-07, FOUND-08)
-- [ ] 01-05-horizon-alerting-PLAN.md — Horizon config with 7 supervisors + admin-only gate; AlertRecipient model + Filament Resource (admin-only) + AlertDistribution Notifiable + ThrottledFailedJobNotifier 5-min dedup listener; 3 retention prune commands (activity log, integration events, sync_diffs conditional) + schedule; CI pipeline (Deptrac + Pest + Larastan + Pint) (FOUND-09, FOUND-10, FOUND-11, FOUND-12)
+- [x] 01-05-horizon-alerting-PLAN.md — Horizon config with 7 supervisors + admin-only gate; AlertRecipient model + Filament Resource (admin-only) + AlertDistribution Notifiable + ThrottledFailedJobNotifier 5-min dedup listener; 3 retention prune commands (activity log, integration events, sync_diffs conditional) + schedule; CI pipeline (Deptrac + Pest + Larastan + Pint) (FOUND-09, FOUND-10, FOUND-11, FOUND-12)
 **UI hint**: yes
 
 ### Phase 2: Supplier Sync

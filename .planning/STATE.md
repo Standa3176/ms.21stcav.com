@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: verifying
-stopped_at: Completed Phase 02 Plan 02 (external clients) — SupplierClient + WooClient.get() + live-write with 429 backoff; 16 new tests green, 126 total
-last_updated: "2026-04-18T21:37:18.543Z"
+stopped_at: "Completed Phase 02 Plan 03 (orchestration) — DomainEvent retrofit + AbortGuard + iterator/matcher/diff + SyncChunkJob + MarkMissingSkusJob + sync:supplier command; 66 new tests, 192 total, 0 Deptrac violations, 0 Phase 1 regressions"
+last_updated: "2026-04-18T22:10:07.296Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 10
-  completed_plans: 7
-  percent: 70
+  completed_plans: 8
+  percent: 80
 ---
 
 # Project State
@@ -59,6 +59,7 @@ Progress: [████░░░░░░] 40%
 | Phase 01 P05 | 85 min | 4 tasks | 21 files |
 | Phase 02 P01 | 10m | 2 tasks | 24 files |
 | Phase 02 P02 | 45m | 2 tasks | 14 files |
+| Phase 02-supplier-sync P03-orchestration | 25m | 3 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 02]: Plan 02-02: WooClient is no longer final — WooRateLimitTest subclasses via anonymous class to override protected sleepMicros(int) test seam for deterministic timing assertions without real usleep delays
 - [Phase 02]: Plan 02-02: SupplierClient bind() not singleton() — token state lives in Cache (external), instance has no sockets/cURL handles, tests get fresh instance per resolve; WooClient remains singleton because Automattic cURL handle is worth reusing
 - [Phase 02]: Plan 02-02: correlation_id column is VARCHAR(36) across integration_events + 3 other Phase 1 tables — tests MUST use plain Str::uuid() not prefixed IDs (e.g. test-{uuid} = 41 chars, SQLSTATE[22001] truncation)
+- [Phase 02-supplier-sync]: Phase 02 P03: DomainEvent retrofitted with ShouldDispatchAfterCommit (Pitfall P2-I); 0 Phase 1 regressions
+- [Phase 02-supplier-sync]: Phase 02 P03: AbortGuard is STATELESS with DB-backed counters (NOT singleton) — multi-worker supervisors share state via sync_runs row atomic SQL (Checker blocker fix)
+- [Phase 02-supplier-sync]: Phase 02 P03: SyncSupplierCommand registered via ServiceProvider::commands() inside runningInConsole() guard (Artisan::starting() does not exist on Laravel 12 Kernel)
+- [Phase 02-supplier-sync]: Phase 02 P03: Deptrac Sync→Products cross-domain allowed (depfile.yaml + deptrac.yaml) — anticipated by Plan 02-01 key-decisions, needed for SyncChunkJob's local mirror + idempotency check
 
 ### Pending Todos
 
@@ -113,6 +118,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T21:37:18.531Z
-Stopped at: Completed Phase 02 Plan 02 (external clients) — SupplierClient + WooClient.get() + live-write with 429 backoff; 16 new tests green, 126 total
+Last session: 2026-04-18T22:10:07.284Z
+Stopped at: Completed Phase 02 Plan 03 (orchestration) — DomainEvent retrofit + AbortGuard + iterator/matcher/diff + SyncChunkJob + MarkMissingSkusJob + sync:supplier command; 66 new tests, 192 total, 0 Deptrac violations, 0 Phase 1 regressions
 Resume file: None

@@ -178,24 +178,102 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Empty on initialisation — populated by `/gsd-plan-phase` as each phase's plan confirms its REQ-ID coverage.
+Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status` advances as plans land and phases verify.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUND-01 – FOUND-13 | Phase 1 | Pending |
-| SYNC-01 – SYNC-13 | Phase 2 | Pending |
-| PRCE-01 – PRCE-10 | Phase 3 | Pending |
-| CRM-01 – CRM-13 | Phase 4 | Pending |
-| COMP-01 – COMP-12 | Phase 5 | Pending |
-| AUTO-01 – AUTO-11 | Phase 6 | Pending |
-| DASH-01 – DASH-06 | Phase 7 | Pending |
-| CUT-01 – CUT-07 | Phase 7 | Pending |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| FOUND-06 | Phase 1 | Pending |
+| FOUND-07 | Phase 1 | Pending |
+| FOUND-08 | Phase 1 | Pending |
+| FOUND-09 | Phase 1 | Pending |
+| FOUND-10 | Phase 1 | Pending |
+| FOUND-11 | Phase 1 | Pending |
+| FOUND-12 | Phase 1 | Pending |
+| FOUND-13 | Phase 1 | Pending |
+| SYNC-01 | Phase 2 | Pending |
+| SYNC-02 | Phase 2 | Pending |
+| SYNC-03 | Phase 2 | Pending |
+| SYNC-04 | Phase 2 | Pending |
+| SYNC-05 | Phase 2 | Pending |
+| SYNC-06 | Phase 2 | Pending |
+| SYNC-07 | Phase 2 | Pending |
+| SYNC-08 | Phase 2 | Pending |
+| SYNC-09 | Phase 2 | Pending |
+| SYNC-10 | Phase 2 | Pending |
+| SYNC-11 | Phase 2 | Pending |
+| SYNC-12 | Phase 2 | Pending |
+| SYNC-13 | Phase 2 | Pending |
+| PRCE-01 | Phase 3 | Pending |
+| PRCE-02 | Phase 3 | Pending |
+| PRCE-03 | Phase 3 | Pending |
+| PRCE-04 | Phase 3 | Pending |
+| PRCE-05 | Phase 3 | Pending |
+| PRCE-06 | Phase 3 | Pending |
+| PRCE-07 | Phase 3 | Pending |
+| PRCE-08 | Phase 3 | Pending |
+| PRCE-09 | Phase 3 | Pending |
+| PRCE-10 | Phase 3 | Pending |
+| CRM-01 | Phase 4 | Pending |
+| CRM-02 | Phase 4 | Pending |
+| CRM-03 | Phase 4 | Pending |
+| CRM-04 | Phase 4 | Pending |
+| CRM-05 | Phase 4 | Pending |
+| CRM-06 | Phase 4 | Pending |
+| CRM-07 | Phase 4 | Pending |
+| CRM-08 | Phase 4 | Pending |
+| CRM-09 | Phase 4 | Pending |
+| CRM-10 | Phase 4 | Pending |
+| CRM-11 | Phase 4 | Pending |
+| CRM-12 | Phase 4 | Pending |
+| CRM-13 | Phase 4 | Pending |
+| COMP-01 | Phase 5 | Pending |
+| COMP-02 | Phase 5 | Pending |
+| COMP-03 | Phase 5 | Pending |
+| COMP-04 | Phase 5 | Pending |
+| COMP-05 | Phase 5 | Pending |
+| COMP-06 | Phase 5 | Pending |
+| COMP-07 | Phase 5 | Pending |
+| COMP-08 | Phase 5 | Pending |
+| COMP-09 | Phase 5 | Pending |
+| COMP-10 | Phase 5 | Pending |
+| COMP-11 | Phase 5 | Pending |
+| COMP-12 | Phase 5 | Pending |
+| AUTO-01 | Phase 6 | Pending |
+| AUTO-02 | Phase 6 | Pending |
+| AUTO-03 | Phase 6 | Pending |
+| AUTO-04 | Phase 6 | Pending |
+| AUTO-05 | Phase 6 | Pending |
+| AUTO-06 | Phase 6 | Pending |
+| AUTO-07 | Phase 6 | Pending |
+| AUTO-08 | Phase 6 | Pending |
+| AUTO-09 | Phase 6 | Pending |
+| AUTO-10 | Phase 6 | Pending |
+| AUTO-11 | Phase 6 | Pending |
+| DASH-01 | Phase 7 | Pending |
+| DASH-02 | Phase 7 | Pending |
+| DASH-03 | Phase 7 | Pending |
+| DASH-04 | Phase 7 | Pending |
+| DASH-05 | Phase 7 | Pending |
+| DASH-06 | Phase 7 | Pending |
+| CUT-01 | Phase 7 | Pending |
+| CUT-02 | Phase 7 | Pending |
+| CUT-03 | Phase 7 | Pending |
+| CUT-04 | Phase 7 | Pending |
+| CUT-05 | Phase 7 | Pending |
+| CUT-06 | Phase 7 | Pending |
+| CUT-07 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 85 total (13 FOUND + 13 SYNC + 10 PRCE + 13 CRM + 12 COMP + 11 AUTO + 6 DASH + 7 CUT)
 - Mapped to phases: 85
 - Unmapped: 0 ✓
+- Duplicates: 0 ✓
 
 ---
 *Requirements defined: 2026-04-18*
-*Last updated: 2026-04-18 after initial definition*
+*Traceability expanded per-REQ-ID: 2026-04-18 at roadmap creation*

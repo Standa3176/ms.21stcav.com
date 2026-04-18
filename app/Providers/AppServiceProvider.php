@@ -4,8 +4,13 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Suggestions\Appliers\StubApplier;
+use App\Domain\Suggestions\Models\Suggestion;
+use App\Domain\Suggestions\Policies\SuggestionPolicy;
+use App\Domain\Suggestions\Services\SuggestionApplierResolver;
 use Illuminate\Log\Context\Repository;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Spatie\Activitylog\Facades\LogBatch;
 
@@ -16,7 +21,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Plan 04: SuggestionApplierResolver must be a singleton so every producer,
+        // job and admin action resolves the SAME registry instance (not a fresh, empty copy).
+        $this->app->singleton(SuggestionApplierResolver::class);
     }
 
     /**
@@ -39,5 +46,20 @@ class AppServiceProvider extends ServiceProvider
         Context::dehydrating(function (Repository $context): void {
             // e.g. Log::debug('Context dehydrating', ['correlation_id' => $context->get('correlation_id')]);
         });
+
+        // ── Plan 04: Suggestions seam ────────────────────────────────────
+        // Register the stub applier for kind='test' (Phase 1 acceptance fixture).
+        // Phase 5+ producers extend this line:
+        //   $resolver->register('margin_change', MarginChangeApplier::class);
+        $this->app->afterResolving(
+            SuggestionApplierResolver::class,
+            function (SuggestionApplierResolver $resolver): void {
+                $resolver->register('test', StubApplier::class);
+            }
+        );
+
+        // Admin-only gate on Suggestion model — defence-in-depth on top of Shield
+        // permission assignment (Pitfall K).
+        Gate::policy(Suggestion::class, SuggestionPolicy::class);
     }
 }

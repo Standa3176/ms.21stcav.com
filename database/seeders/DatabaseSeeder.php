@@ -22,7 +22,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RolePermissionSeeder::class,
-            // Plan 04 adds: TestSuggestionSeeder
+            TestSuggestionSeeder::class,
             // Plan 05 adds: AlertRecipientSeeder (admin email)
         ]);
 

@@ -6,8 +6,8 @@ namespace App\Domain\Alerting\Filament\Resources;
 
 use App\Domain\Alerting\Filament\Resources\AlertRecipientResource\Pages;
 use App\Domain\Alerting\Models\AlertRecipient;
-use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;

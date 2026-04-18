@@ -1,5 +1,9 @@
 <?php
 
+declare(strict_types=1);
+
+use Spatie\FailedJobMonitor\Notification;
+
 /*
 |--------------------------------------------------------------------------
 | spatie/laravel-failed-job-monitor configuration
@@ -24,7 +28,7 @@ return [
      * The notification that will be sent when a job fails. Our custom listener
      * re-uses this class so the email template + channels are consistent.
      */
-    'notification' => \Spatie\FailedJobMonitor\Notification::class,
+    'notification' => Notification::class,
 
     /*
      * Package's auto-listener notifiable is DISABLED — our listener owns dispatch.

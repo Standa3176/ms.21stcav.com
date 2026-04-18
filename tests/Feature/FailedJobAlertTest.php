@@ -8,8 +8,11 @@ use App\Domain\Alerting\Notifiables\AlertDistribution;
 use App\Models\User;
 use Database\Seeders\AlertRecipientSeeder;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Contracts\Queue\Job;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Queue\Events\JobFailed;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Spatie\FailedJobMonitor\Notification as FailedJobMonitorNotification;
 
@@ -21,18 +24,18 @@ beforeEach(function () {
 /** Build a fake JobFailed event with a predictable fingerprint. */
 function fakeJobFailed(string $jobClass = 'App\\Test\\FakeJob', string $exMessage = 'boom'): JobFailed
 {
-    $job = \Mockery::mock(\Illuminate\Contracts\Queue\Job::class);
+    $job = Mockery::mock(Job::class);
     $job->shouldReceive('resolveName')->andReturn($jobClass);
     $job->shouldReceive('payload')->andReturn(['job' => $jobClass]);
 
-    return new JobFailed('redis', $job, new \RuntimeException($exMessage));
+    return new JobFailed('redis', $job, new RuntimeException($exMessage));
 }
 
 it('AlertDistribution routes mail to all active recipients', function () {
     AlertRecipient::create(['email' => 'a@example.com', 'name' => 'Alice', 'is_active' => true]);
     AlertRecipient::create(['email' => 'b@example.com', 'name' => 'Bob', 'is_active' => false]);
 
-    $routes = (new AlertDistribution())->routeNotificationForMail();
+    $routes = (new AlertDistribution)->routeNotificationForMail();
 
     // ops@meetingstore.co.uk (from seeder) + a@example.com = 2 active; Bob excluded.
     expect($routes)->toHaveKey('ops@meetingstore.co.uk');
@@ -41,18 +44,18 @@ it('AlertDistribution routes mail to all active recipients', function () {
 });
 
 it('AlertDistribution explicitly refuses to route to Slack (D-10)', function () {
-    expect((new AlertDistribution())->routeNotificationForSlack())->toBeNull();
+    expect((new AlertDistribution)->routeNotificationForSlack())->toBeNull();
 });
 
 it('AlertDistribution logs a warning when the recipient list is empty (Pitfall M defence)', function () {
     // Remove every recipient to simulate the edge case
     AlertRecipient::query()->delete();
 
-    \Illuminate\Support\Facades\Log::shouldReceive('warning')
+    Log::shouldReceive('warning')
         ->once()
         ->withArgs(fn ($message) => str_contains((string) $message, 'no active AlertRecipient'));
 
-    $routes = (new AlertDistribution())->routeNotificationForMail();
+    $routes = (new AlertDistribution)->routeNotificationForMail();
 
     expect($routes)->toBe([]);
 });
@@ -165,16 +168,16 @@ it('config/failed-job-monitor.php has notifiable=null (T-05-06 package listener 
 });
 
 it('EventServiceProvider registers ThrottledFailedJobNotifier on JobFailed', function () {
-    $dispatcher = app(\Illuminate\Events\Dispatcher::class);
+    $dispatcher = app(Dispatcher::class);
     $listeners = $dispatcher->getListeners(JobFailed::class);
 
     $found = collect($listeners)->contains(function ($listener) {
         // Laravel wraps listeners in closures; resolve the class name via the listener's string form.
-        $reflection = new \ReflectionFunction($listener);
+        $reflection = new ReflectionFunction($listener);
         $code = file_get_contents($reflection->getFileName());
 
         return str_contains((string) $code, 'ThrottledFailedJobNotifier')
-            || ($listener instanceof \Closure && str_contains((string) $reflection, 'ThrottledFailedJobNotifier'));
+            || ($listener instanceof Closure && str_contains((string) $reflection, 'ThrottledFailedJobNotifier'));
     });
 
     // Fallback: at minimum assert at least one listener is registered for JobFailed

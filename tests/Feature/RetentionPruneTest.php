@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Sync\Models\SyncDiff;
 use App\Foundation\Integration\Models\IntegrationEvent;
+use Illuminate\Console\Scheduling\Schedule;
 use Spatie\Activitylog\Models\Activity;
 
 it('prunes activity_log rows older than --days and leaves recent ones', function () {
@@ -34,12 +35,12 @@ it('writes a meta-audit row when activity_log is pruned (D-09)', function () {
 });
 
 it('prunes integration_events older than --days and writes meta-audit', function () {
-    \DB::table('integration_events')->insert([
+    DB::table('integration_events')->insert([
         'channel' => 'woo', 'direction' => 'outbound', 'operation' => 'old',
         'endpoint' => '/', 'method' => 'GET', 'status' => 'success',
         'correlation_id' => 'cid-old', 'created_at' => now()->subDays(100),
     ]);
-    \DB::table('integration_events')->insert([
+    DB::table('integration_events')->insert([
         'channel' => 'woo', 'direction' => 'outbound', 'operation' => 'recent',
         'endpoint' => '/', 'method' => 'GET', 'status' => 'success',
         'correlation_id' => 'cid-recent', 'created_at' => now()->subDays(10),
@@ -110,7 +111,7 @@ it('prunes sync_diffs older than 30 days when WOO_WRITE_ENABLED=true (post-cutov
 });
 
 it('schedules all 3 prune commands in routes/console.php', function () {
-    $schedule = app(\Illuminate\Console\Scheduling\Schedule::class);
+    $schedule = app(Schedule::class);
     $commandsOnSchedule = collect($schedule->events())
         ->map(fn ($e) => $e->command ?? $e->description)
         ->filter();

@@ -9,7 +9,7 @@ use Tests\TestCase;
 |--------------------------------------------------------------------------
 */
 
-uses(TestCase::class)->in('Feature', 'Unit');
+uses(TestCase::class)->in('Unit');
 uses(TestCase::class, RefreshDatabase::class)->in('Feature');
 
 /*

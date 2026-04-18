@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: verifying
-stopped_at: Completed Phase 02 Plan 01 (data model) — 18 tests green, 110 total
-last_updated: "2026-04-18T21:07:37.207Z"
+stopped_at: Completed Phase 02 Plan 02 (external clients) — SupplierClient + WooClient.get() + live-write with 429 backoff; 16 new tests green, 126 total
+last_updated: "2026-04-18T21:37:18.543Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 10
-  completed_plans: 6
-  percent: 60
+  completed_plans: 7
+  percent: 70
 ---
 
 # Project State
@@ -58,6 +58,7 @@ Progress: [████░░░░░░] 40%
 | Phase 01 P04 | ~19 min | 3 tasks | 25 files |
 | Phase 01 P05 | 85 min | 4 tasks | 21 files |
 | Phase 02 P01 | 10m | 2 tasks | 24 files |
+| Phase 02 P02 | 45m | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,11 @@ Recent decisions affecting current work:
 - [Phase 02]: Plan 02-01: observer uses forceFill + saveQuietly (not touch) to avoid activity_log bloat from routine variation saves
 - [Phase 02]: Plan 02-01: 6 models shipped in Task 1 (not Task 2) so factory smoke tests resolve — splitting models across tasks would fail TDD RED-phase class resolution
 - [Phase 02]: Plan 02-01: sync_runs.consecutive_failures shipped as unsignedInt default 0 (D-06(b) Checker blocker) — enables multi-worker AbortGuard via atomic SyncRun::increment across supervisor processes
+- [Phase 02]: Plan 02-02: automattic/woocommerce resolved to 3.1.0 not 3.1.1 — Packagist only advertises 3.1.0 as of 2026-04-18 install; caret pin ^3.1 matches both; functional parity (3.1.1 adds PHP 8.5 support, irrelevant on PHP 8.4 dev)
+- [Phase 02]: Plan 02-02: Automattic\WooCommerce\Client 3.1.0 does NOT expose patch() method — WooClient::patch() routes through $this->inner->http->request(endpoint, 'PATCH', payload) which is the same underlying generic method other verbs use
+- [Phase 02]: Plan 02-02: WooClient is no longer final — WooRateLimitTest subclasses via anonymous class to override protected sleepMicros(int) test seam for deterministic timing assertions without real usleep delays
+- [Phase 02]: Plan 02-02: SupplierClient bind() not singleton() — token state lives in Cache (external), instance has no sockets/cURL handles, tests get fresh instance per resolve; WooClient remains singleton because Automattic cURL handle is worth reusing
+- [Phase 02]: Plan 02-02: correlation_id column is VARCHAR(36) across integration_events + 3 other Phase 1 tables — tests MUST use plain Str::uuid() not prefixed IDs (e.g. test-{uuid} = 41 chars, SQLSTATE[22001] truncation)
 
 ### Pending Todos
 
@@ -107,6 +113,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T21:07:32.486Z
-Stopped at: Completed Phase 02 Plan 01 (data model) — 18 tests green, 110 total
+Last session: 2026-04-18T21:37:18.531Z
+Stopped at: Completed Phase 02 Plan 02 (external clients) — SupplierClient + WooClient.get() + live-write with 429 backoff; 16 new tests green, 126 total
 Resume file: None

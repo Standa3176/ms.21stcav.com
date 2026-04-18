@@ -25,16 +25,16 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Supplier sync (SYNC) — Module A
 
-- [ ] **SYNC-01**: A scheduled daily job pulls every Woo product's SKU + price + stock from the `21stcav.com` supplier API
-- [ ] **SYNC-02**: JWT tokens from `/generate_token.php` are auto-refreshed on 401 and the failing request retried once
+- [x] **SYNC-01**: A scheduled daily job pulls every Woo product's SKU + price + stock from the `21stcav.com` supplier API
+- [x] **SYNC-02**: JWT tokens from `/generate_token.php` are auto-refreshed on 401 and the failing request retried once
 - [ ] **SYNC-03**: Sync progress is persisted in `sync_runs` + `sync_cursors` so a crashed run can be resumed with `php artisan sync:supplier --resume={run_id}`
-- [ ] **SYNC-04**: Woo updates go through the REST API only — direct WordPress DB writes are forbidden and covered by an architectural test
+- [x] **SYNC-04**: Woo updates go through the REST API only — direct WordPress DB writes are forbidden and covered by an architectural test
 - [ ] **SYNC-05**: `products/batch` responses are parsed per-item; failed items are written to `sync_errors` and never silently dropped
 - [ ] **SYNC-06**: SKUs missing from the supplier are set to Woo status `pending`, unless tagged `custom-ms` (which stays `publish`)
 - [ ] **SYNC-07**: Products with `_exclude_from_auto_update` meta set are skipped by the sync and still counted in the report
 - [ ] **SYNC-08**: On completion the admin distribution list receives an emailed CSV report showing updated/skipped/failed counts per-SKU
 - [ ] **SYNC-09**: Dry-run mode runs the full sync pipeline but writes only to `sync_diffs` — Woo is untouched
-- [ ] **SYNC-10**: `withoutOverlapping` and an adaptive rate-limit middleware keep the sync within Woo's 100-requests/minute ceiling
+- [x] **SYNC-10**: `withoutOverlapping` and an adaptive rate-limit middleware keep the sync within Woo's 100-requests/minute ceiling
 - [ ] **SYNC-11**: A Filament "Supplier Sync Status" page shows the last run, duration, counts, and a per-SKU drill-down
 - [ ] **SYNC-12**: A Filament "Import Issues" page lists SKUs not found at the supplier, pending products, and products with missing cost/price
 - [ ] **SYNC-13**: Domain events `SupplierPriceChanged`, `SupplierStockChanged`, `SupplierSkuMissing` fire after each successful row update
@@ -195,16 +195,16 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | FOUND-11 | Phase 1 | Complete |
 | FOUND-12 | Phase 1 | Complete |
 | FOUND-13 | Phase 1 | Complete |
-| SYNC-01 | Phase 2 | Pending |
-| SYNC-02 | Phase 2 | Pending |
+| SYNC-01 | Phase 2 | Complete |
+| SYNC-02 | Phase 2 | Complete |
 | SYNC-03 | Phase 2 | Pending |
-| SYNC-04 | Phase 2 | Pending |
+| SYNC-04 | Phase 2 | Complete |
 | SYNC-05 | Phase 2 | Pending |
 | SYNC-06 | Phase 2 | Pending |
 | SYNC-07 | Phase 2 | Pending |
 | SYNC-08 | Phase 2 | Pending |
 | SYNC-09 | Phase 2 | Pending |
-| SYNC-10 | Phase 2 | Pending |
+| SYNC-10 | Phase 2 | Complete |
 | SYNC-11 | Phase 2 | Pending |
 | SYNC-12 | Phase 2 | Pending |
 | SYNC-13 | Phase 2 | Pending |

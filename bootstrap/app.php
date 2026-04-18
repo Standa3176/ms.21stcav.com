@@ -20,7 +20,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Webhook endpoints don't have sessions / CSRF tokens
         $middleware->validateCsrfTokens(except: ['webhooks/*']);
 
-        // Plan 03 appends AttachCorrelationId middleware here
+        // FOUND-03: Attach correlation_id at HTTP entry for EVERY request (global middleware).
+        // Applies to web, api, webhooks AND the /up health route — infrastructure-level tracing.
+        // Queued jobs hydrate Context automatically via Laravel 12's dehydrate/hydrate mechanism.
+        $middleware->append(\App\Http\Middleware\AttachCorrelationId::class);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-rbac-PLAN.md
-last_updated: "2026-04-18T17:11:00.000Z"
-last_activity: 2026-04-18 -- Phase 01 Plan 02 RBAC complete
+stopped_at: Completed 01-03-foundation-PLAN.md
+last_updated: "2026-04-18T17:03:10.417Z"
+last_activity: 2026-04-18
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 40
+  completed_plans: 3
+  percent: 60
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 1 of 7 (Foundation)
-Plan: 2 of 5 in current phase (01-02-rbac complete)
-Status: Ready to execute (Plan 03 next — Wave 2 second)
-Last activity: 2026-04-18 -- Phase 01 Plan 02 RBAC complete
+Plan: 3 of 5 in current phase (01-02-rbac complete)
+Status: Ready to execute
+Last activity: 2026-04-18
 
 Progress: [████░░░░░░] 40%
 
@@ -54,6 +54,7 @@ Progress: [████░░░░░░] 40%
 *Updated after each plan completion*
 | Phase 01 P01-scaffold | 50m | 3 tasks | 25 files |
 | Phase 01 P02-rbac | 35m | 2 tasks | 9 files |
+| Phase 01 P03 | 40m | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,10 @@ Recent decisions affecting current work:
 - [Phase 01 P02]: Shield's auto-created `super_admin` + `panel_user` roles disabled in `config/filament-shield.php` — D-02 locks role set to exactly 4 (admin/pricing_manager/sales/read_only)
 - [Phase 01 P02]: Shield 3.9.10's RolePolicy stub leaks 4 unrendered `{{ Placeholder }}` literal strings — MUST audit all Shield-generated Policies going forward (deferred-items pitfall)
 - [Phase 01 P02]: Admin user seeded via DatabaseSeeder (admin@meetingstore.co.uk / password) — operator must rotate password before production
+- [Phase 01]: Phase 01 P03: AttachCorrelationId registered GLOBALLY (not per-group) — Laravel 12 health:/up route bypasses web+api groups; global registration threads correlation_id through all HTTP entries including health checks
+- [Phase 01]: Phase 01 P03: BaseCommand abstract method named perform() — execute() and run() both collide with Laravel/Symfony Command base class concrete methods
+- [Phase 01]: Phase 01 P03: testing DB isolation via phpunit.xml DB_DATABASE=meetingstore_ops_testing — MySQL (not sqlite :memory) preserves JSON column + nullableUlidMorphs semantics parity with prod; resolves Plan 02 RefreshDatabase-truncation handoff
+- [Phase 01]: Phase 01 P03: Context::hydrated callback calls BOTH startBatch() AND setBatch() — setBatch alone is a spatie no-op when no batch is open; discovered during Pitfall J queue-boundary test authoring
 
 ### Pending Todos
 
@@ -88,6 +93,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T17:11:00.000Z
-Stopped at: Completed 01-02-rbac-PLAN.md
+Last session: 2026-04-18T17:03:10.407Z
+Stopped at: Completed 01-03-foundation-PLAN.md
 Resume file: None

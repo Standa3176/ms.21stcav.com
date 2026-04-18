@@ -11,9 +11,9 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 - [x] **FOUND-01**: Laravel 12 + Filament 3.3 admin app boots with authenticated users and role-based access (admin / pricing_manager / sales / read_only)
 - [x] **FOUND-02**: `app/Domain/<Module>/` layout enforced by Deptrac CI — cross-domain imports fail the build
-- [ ] **FOUND-03**: Domain event bus publishes events with a `correlation_id` that threads through audit, integration, and suggestion rows
-- [ ] **FOUND-04**: `audit_log` records every tracked-model change (actor, before, after, correlation_id) via `spatie/laravel-activitylog`
-- [ ] **FOUND-05**: `integration_events` records every outbound API attempt (endpoint, request, response, latency, status, correlation_id)
+- [x] **FOUND-03**: Domain event bus publishes events with a `correlation_id` that threads through audit, integration, and suggestion rows
+- [x] **FOUND-04**: `audit_log` records every tracked-model change (actor, before, after, correlation_id) via `spatie/laravel-activitylog`
+- [x] **FOUND-05**: `integration_events` records every outbound API attempt (endpoint, request, response, latency, status, correlation_id)
 - [ ] **FOUND-06**: `suggestions` table + Filament inbox let a human review, approve, or reject any proposed mutation before it's applied
 - [ ] **FOUND-07**: Inbound Woo webhooks are HMAC-verified, persisted raw, deduped by `X-WC-Webhook-Delivery-ID`, and queued within 200ms
 - [ ] **FOUND-08**: `WOO_WRITE_ENABLED` env flag (default `false`) routes every Woo write to a `sync_diffs` table instead of calling Woo
@@ -184,9 +184,9 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 |-------------|-------|--------|
 | FOUND-01 | Phase 1 | Complete |
 | FOUND-02 | Phase 1 | Complete |
-| FOUND-03 | Phase 1 | Pending |
-| FOUND-04 | Phase 1 | Pending |
-| FOUND-05 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Complete |
+| FOUND-04 | Phase 1 | Complete |
+| FOUND-05 | Phase 1 | Complete |
 | FOUND-06 | Phase 1 | Pending |
 | FOUND-07 | Phase 1 | Pending |
 | FOUND-08 | Phase 1 | Pending |

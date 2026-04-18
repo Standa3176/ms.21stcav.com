@@ -20,15 +20,19 @@ return [
         'fqcn' => 'App\\Models\\User',
     ],
 
+    // D-02 locks the role set to exactly {admin, pricing_manager, sales, read_only}.
+    // Disable Shield's auto-created `super_admin` and `panel_user` roles so the
+    // seeder is the single source of truth for roles (prevents drift: T-02-03
+    // admin-assignment + 01-02 plan's "exactly 4 roles" assertion).
     'super_admin' => [
-        'enabled' => true,
+        'enabled' => false,
         'name' => 'super_admin',
         'define_via_gate' => false,
         'intercept_gate' => 'before', // after
     ],
 
     'panel_user' => [
-        'enabled' => true,
+        'enabled' => false,
         'name' => 'panel_user',
     ],
 

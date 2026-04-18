@@ -59,7 +59,7 @@ Plans:
 - [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
 - [x] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
 - [x] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
-- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
+- [x] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 3: Pricing Engine
@@ -77,7 +77,7 @@ Plans:
 - [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
 - [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
 - [x] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
-- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [x] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
 - [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
@@ -96,7 +96,7 @@ Plans:
 Plans:
 - [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
 - [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
-- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [x] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
 - [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
 - [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
@@ -114,7 +114,7 @@ Plans:
 **Plans:** 5 plans
 Plans:
 - [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
-- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
 - [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
 - [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
 - [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
@@ -132,7 +132,7 @@ Plans:
   5. Every `CreateWooProductJob` attempt writes to `integration_events` with request/response/latency, and a failed attempt retries per Horizon policy before surfacing in the notification centre
 **Plans:** 5 plans
 Plans:
-- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
 - [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
 - [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
 - [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)

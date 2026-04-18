@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: verifying
-stopped_at: Completed 02-04-reporting-ui-PLAN.md (bd5f82c + 0da1ab2 + 5db84b5 — Phase 2 Plans 1-4 complete)
-last_updated: "2026-04-18T22:49:32.497Z"
+stopped_at: Completed 02-05-guardrails-PLAN.md (8f7c76f + c3dc2e7 — Phase 2 COMPLETE, all 5 plans shipped)
+last_updated: "2026-04-18T23:13:29.720Z"
 last_activity: 2026-04-18
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -61,6 +61,7 @@ Progress: [████░░░░░░] 40%
 | Phase 02 P02 | 45m | 2 tasks | 14 files |
 | Phase 02-supplier-sync P03-orchestration | 25m | 3 tasks | 26 files |
 | Phase 02-supplier-sync P04-reporting-ui | ~30 min | 3 tasks | 24 files |
+| Phase 02-supplier-sync P05-guardrails | ~12 min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,10 @@ Recent decisions affecting current work:
 - [Phase 02-supplier-sync]: Phase 02 P03: Deptrac Sync→Products cross-domain allowed (depfile.yaml + deptrac.yaml) — anticipated by Plan 02-01 key-decisions, needed for SyncChunkJob's local mirror + idempotency check
 - [Phase 02-supplier-sync]: Shield 3.9.10 emits  separator for multi-word Resources (e.g. view_sync::run); seeder LIKE patterns now cover BOTH underscore + :: styles forward-compatibly
 - [Phase 02-supplier-sync]: Pitfall P2-A CSV flush via explicit unset($writer) before return — SimpleExcelWriter's __destruct flush timing is non-deterministic; async Mail::attach on queued mail would read partial file otherwise
+- [Phase 02-supplier-sync]: Plan 02-05: SYNC-04 enforced via Deptrac WpDirectDb layer (classLike regex matching Illuminate\Support\Facades\DB) + architectural negative test; SyncChunkJob's DB::transaction wrapper removed — atomicity preserved via Woo remote write + row-level Eloquent + cursor-last ordering + P2-F idempotency
+- [Phase 02-supplier-sync]: Plan 02-05: PolicyTemplateIntegrityTest promoted from tests/Feature to tests/Architecture; extended from 1 to 3 tests (literal grep + positive control count + Gate::policy binding resolution). Feature version deleted in same commit — no duplication.
+- [Phase 02-supplier-sync]: Plan 02-05: PruneSyncErrorsCommand extends Illuminate\Console\Command (Phase 1 Prune* pattern), not BaseCommand — consistency with the 3 existing prunes outweighed the correlation-id hop BaseCommand would add; --days=0 is a graceful no-op safety guard.
+- [Phase 02-supplier-sync]: Plan 02-05: Deptrac negative-test assertion is exit-code-only (not stdout-grep) — deptrac-shim phar output is unreliable via Symfony\Process on Windows PHP; exit code is the CI-authoritative signal.
 
 ### Pending Todos
 
@@ -121,6 +126,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T22:49:32.484Z
-Stopped at: Completed 02-04-reporting-ui-PLAN.md (bd5f82c + 0da1ab2 + 5db84b5 — Phase 2 Plans 1-4 complete)
+Last session: 2026-04-18T23:13:29.708Z
+Stopped at: Completed 02-05-guardrails-PLAN.md (8f7c76f + c3dc2e7 — Phase 2 COMPLETE, all 5 plans shipped)
 Resume file: None

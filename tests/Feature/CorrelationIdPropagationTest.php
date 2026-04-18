@@ -82,3 +82,21 @@ it('DomainEvent sets occurredAt to ISO-8601 timestamp', function () {
 
     expect($event->occurredAt)->toMatch('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/');
 });
+
+it('preserves correlation_id across queue boundary (Pitfall J)', function () {
+    // Laravel 12's Context dehydrates into queued-job payloads automatically.
+    // Even with the sync driver (used in tests), the dehydrate/hydrate code path fires.
+    Context::add('correlation_id', 'queue-boundary-cid-1');
+
+    // Serialize the dehydrated Context state as a queued job would.
+    $serialized = serialize(Context::dehydrate());
+
+    // Clear Context to simulate a fresh worker process.
+    Context::flush();
+    expect(Context::get('correlation_id'))->toBeNull();
+
+    // Re-hydrate (simulating what Laravel's queue worker does when a job boots).
+    Context::hydrate(unserialize($serialized));
+
+    expect(Context::get('correlation_id'))->toBe('queue-boundary-cid-1');
+});

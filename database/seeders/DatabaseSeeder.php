@@ -23,7 +23,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             RolePermissionSeeder::class,
             TestSuggestionSeeder::class,
-            // Plan 05 adds: AlertRecipientSeeder (admin email)
+            AlertRecipientSeeder::class,
         ]);
 
         $admin = User::firstOrCreate(

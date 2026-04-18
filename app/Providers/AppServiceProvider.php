@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Alerting\Models\AlertRecipient;
+use App\Domain\Alerting\Policies\AlertRecipientPolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
@@ -61,5 +63,9 @@ class AppServiceProvider extends ServiceProvider
         // Admin-only gate on Suggestion model — defence-in-depth on top of Shield
         // permission assignment (Pitfall K).
         Gate::policy(Suggestion::class, SuggestionPolicy::class);
+
+        // Plan 05: admin-only gate on AlertRecipient (T-05-07; Pitfall K).
+        // Leaking ops email addresses would expose staff to targeted phishing.
+        Gate::policy(AlertRecipient::class, AlertRecipientPolicy::class);
     }
 }

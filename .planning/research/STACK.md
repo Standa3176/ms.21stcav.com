@@ -16,8 +16,8 @@
 | Woo REST | `automattic/woocommerce` ^3.1 | Official Automattic client. Thin Guzzle wrapper; all we need. No Laravel-specific wrapper. |
 | Woo webhooks | Custom middleware — no package | HMAC-SHA256 + base64 on raw body; too simple to pull in a dependency. |
 | Bitrix24 CRM | `bitrix24/b24phpsdk` ^1.x (official) | Only officially-supported, inbound-webhook-auth PHP SDK. Vendor-origin caveat flagged below. |
-| Roles / perms | `spatie/laravel-permission` ^7.2 + `bezhansalleh/filament-shield` ^3.3 | The Filament-world standard for RBAC. |
-| Audit log | `spatie/laravel-activitylog` ^4.12 + `rmsramos/activitylog` (Filament viewer) | Purpose-built for "audit everything" constraint. **Not** event-sourcing. |
+| Roles / perms | `spatie/laravel-permission` ^6.0 + `bezhansalleh/filament-shield` ^3.3 | The Filament-world standard for RBAC. *(April 2026 verified: v7.x not yet Filament 3.3-compatible; resolver picks v6 floor.)* |
+| Audit log | `spatie/laravel-activitylog` ^4.12 + `rmsramos/activitylog` ^2.0 (Filament viewer) | Purpose-built for "audit everything" constraint. **Not** event-sourcing. *(rmsramos v2 required for Filament 3.3 compat.)* |
 | CSV ingest | `spatie/simple-excel` ^3.9 | Generator-based, constant memory; right fit for n8n drops. |
 | Charts | Filament built-in (Chart.js) — fall back to `leandrocfe/filament-apex-charts` if we hit limits | Keep vanilla; only add ApexCharts if dashboards demand it. |
 | Testing | Pest 3 + PHPUnit 11 (both) | Pest as primary; PHPUnit still runs since Pest sits on top. |
@@ -49,10 +49,10 @@
 |---|---|---|---|
 | `automattic/woocommerce` | ^3.1 (3.1.1 added PHP 8.5 support Jan 2026) | Woo REST client | Official Automattic library. Thin wrapper over Guzzle with WP HMAC signing for HTTP (non-HTTPS) endpoints. No stale dependencies. **Do not** wrap it in a Laravel "helper package" — write our own `WooClient` service. |
 | `bitrix24/b24phpsdk` | ^1.x (PHP 8.2–8.4 production line) | Bitrix24 REST | **Official** Bitrix-org SDK, supports inbound-webhook auth (our auth mode), has typed responses and generator-based bulk ops. MEDIUM confidence only because we haven't shipped against it; `mesilov/bitrix24-php-sdk` is the veteran community fallback if we hit sharp edges. |
-| `spatie/laravel-permission` | ^7.2 | RBAC database + traits | Industry standard. Open Items flagged "admin only, or separate sales/ops roles?" — this package makes either trivial. |
+| `spatie/laravel-permission` | ^6.0 | RBAC database + traits | Industry standard. Open Items flagged "admin only, or separate sales/ops roles?" — this package makes either trivial. *(April 2026 verified — v7.x not yet resolvable alongside Filament 3.3; v6 is the resolver floor. Tracked in 01-01-SUMMARY deviations.)* |
 | `bezhansalleh/filament-shield` | ^3.3 (keep on 3.x while Filament is 3.x) | Filament × Spatie Permission glue | Generates per-resource/page/widget permissions automatically; saves weeks of boilerplate. **Must match Filament major version** — do not install v4.x on Filament 3. |
 | `spatie/laravel-activitylog` | ^4.12 | Model-change audit log | Project constraint: "Audit everything." Drops `activity_log` table, auto-logs model events via `LogsActivity` trait. |
-| `rmsramos/activitylog` | ^1.x | Filament viewer for Spatie activitylog | Read-only Filament Resource showing activity log entries with relationship managers. Actively maintained; chosen over `Z3d0X/filament-logger` (unmaintained) and `pxlrbt/filament-activity-log` (thinner UI). |
+| `rmsramos/activitylog` | ^2.0 | Filament viewer for Spatie activitylog | Read-only Filament Resource showing activity log entries with relationship managers. Actively maintained; chosen over `Z3d0X/filament-logger` (unmaintained) and `pxlrbt/filament-activity-log` (thinner UI). *(v2.x required for Filament 3.3 compat — April 2026 verified.)* |
 | `spatie/simple-excel` | ^3.9 | CSV read/write with generators | Handles the n8n competitor CSV drops with constant memory. Chosen over `maatwebsite/laravel-excel` (heavy, import/export abstractions we don't need) and `league/csv` (lower-level; we'd re-implement the generator layer ourselves). |
 | `sentry/sentry-laravel` | ^4.x | Error tracking | Laravel's officially-endorsed error tracker. Captures queue-job failures, HTTP-client errors to Woo/Bitrix/21stcav. |
 | `laravel/pulse` | ^1.4 | Lightweight prod metrics | Redis storage = minimal overhead. Queue throughput, slow queries, exceptions — perfect for a sync-heavy app. |
@@ -192,12 +192,12 @@ composer require automattic/woocommerce:"^3.1"
 composer require bitrix24/b24phpsdk:"^1.0"
 
 # RBAC
-composer require spatie/laravel-permission:"^7.2"
+composer require spatie/laravel-permission:"^6.0"
 composer require bezhansalleh/filament-shield:"^3.3"
 
 # Audit log
 composer require spatie/laravel-activitylog:"^4.12"
-composer require rmsramos/activitylog:"^1.0"
+composer require rmsramos/activitylog:"^2.0"
 
 # CSV ingest
 composer require spatie/simple-excel:"^3.9"
@@ -282,10 +282,10 @@ composer require --dev barryvdh/laravel-debugbar:"^3.0"
 | `laravel/telescope` | ^5.0 | ✅ | n/a | ✅ | `--dev` only. |
 | `automattic/woocommerce` | ^3.1 | ✅ | n/a | ✅ | 3.1.1 also supports PHP 8.5. |
 | `bitrix24/b24phpsdk` | ^1.0 | ✅ | n/a | ✅ (8.2–8.4) | v3.x line is PHP 8.4+. |
-| `spatie/laravel-permission` | ^7.2 | ✅ | n/a | ✅ | |
+| `spatie/laravel-permission` | ^6.0 | ✅ | n/a | ✅ | **April 2026:** v7.x not yet Filament 3.3-compatible; resolver picks v6. |
 | `bezhansalleh/filament-shield` | ^3.3 | ✅ | ✅ (3.x line) | ✅ | Shield 4.x is Filament 4 only — do not cross streams. |
 | `spatie/laravel-activitylog` | ^4.12 | ✅ | n/a | ✅ | Supports Laravel 8–13. |
-| `rmsramos/activitylog` | ^1.0 | ✅ | ✅ | ✅ | |
+| `rmsramos/activitylog` | ^2.0 | ✅ | ✅ | ✅ | **April 2026:** v2.x required for Filament 3.3 compat. |
 | `spatie/simple-excel` | ^3.9 | ✅ | n/a | ✅ | |
 | `sentry/sentry-laravel` | ^4.0 | ✅ | n/a | ✅ | |
 | `pestphp/pest` | ^3.0 | ✅ | n/a | ✅ | Runs on PHPUnit 11. |

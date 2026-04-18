@@ -30,7 +30,8 @@ must_haves:
     - "Response includes `X-Correlation-Id` header matching the generated/inbound value"
     - "A `DomainEvent` abstract base class exists at `app/Foundation/Events/DomainEvent.php` with `correlationId` and `occurredAt` readonly properties auto-populated from `Context`"
     - "An `Auditor` service at `app/Foundation/Audit/Services/Auditor.php` wraps spatie/activitylog with `record(string $action, array $context)` signature and threads `correlation_id` via `LogBatch::setBatch()`"
-    - "`integration_events` table exists with schema from 01-RESEARCH.md §6 (id, channel, direction, operation, nullableMorphs subject, correlation_id indexed, endpoint, method, request_body, request_headers, response_body, http_status, latency_ms, attempt, status, error_message, created_at — NO updated_at)"
+    - "`integration_events` table exists with schema from 01-RESEARCH.md §6 (id, channel, direction, operation, nullableUlidMorphs subject [CHAR(26) subject_id for ULID-keyed subjects such as Suggestion], correlation_id indexed, endpoint, method, request_body, request_headers, response_body, http_status, latency_ms, attempt, status, error_message, created_at — NO updated_at)"
+    - "Joining `integration_events.subject_id` against `suggestions.id` returns the originating Suggestion row when a Suggestion apply produced the integration event (proves the morph is ULID-capable end-to-end)"
     - "`IntegrationLogger::log(array $data): IntegrationEvent` redacts sensitive headers (`authorization`, `x-wc-webhook-signature`, `cookie`, `x-bitrix-signature`) before persist"
     - "`BaseCommand` abstract class attaches correlation_id at command handle() entry so artisan commands thread through audit/integration logs same as HTTP requests"
     - "`Context::hydrated` callback in AppServiceProvider re-opens spatie `LogBatch` inside queued jobs so audit rows thread correlation across queue boundary"
@@ -213,7 +214,7 @@ Schema::create('integration_events', function (Blueprint $t) {
     $t->string('channel', 32);
     $t->string('direction', 8)->default('outbound');
     $t->string('operation', 64);
-    $t->nullableMorphs('subject');
+    $t->nullableUlidMorphs('subject');           // CHAR(26) subject_id for ULID-keyed subjects (e.g. Suggestion)
     $t->string('correlation_id', 36)->index();
     $t->string('endpoint', 255);
     $t->string('method', 8);
@@ -609,7 +610,7 @@ abstract class BaseCommand extends Command
                 $t->string('channel', 32);                         // 'woo' | 'bitrix' | 'supplier' | 'merchant_center' | 'suggestions'
                 $t->string('direction', 8)->default('outbound');   // 'outbound' | 'inbound'
                 $t->string('operation', 64);                        // 'product.update' | 'deal.create' | 'apply:test'
-                $t->nullableMorphs('subject');                      // optional link to domain model
+                $t->nullableUlidMorphs('subject');                  // CHAR(26) subject_id — supports ULID-keyed subjects (Suggestion, etc.)
                 $t->string('correlation_id', 36)->index();
                 $t->string('endpoint', 255);
                 $t->string('method', 8);                            // GET | POST | PUT | DELETE | PATCH | APPLY (internal)

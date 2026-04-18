@@ -2192,7 +2192,7 @@ LogBatch::endBatch();
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 None for Phase 1 planner. All Claude's-Discretion items from CONTEXT.md are resolved above. The 7 open questions from FEATURES.md (rounding rule, supplier image availability, MAP brands, UTM capture mechanism, retention windows, user roles, webhook-delivery SLA) are either:
 

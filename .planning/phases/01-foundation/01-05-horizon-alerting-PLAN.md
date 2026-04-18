@@ -52,20 +52,24 @@ user_setup:
 
 must_haves:
   truths:
-    - "`config/horizon.php` 'production' environment defines 7 supervisors: webhook-inbound-supervisor, crm-bitrix-supervisor, sync-woo-push-supervisor, sync-bulk-supervisor, competitor-csv-supervisor, critical-supervisor, default-supervisor"
-    - "Each supervisor declares exactly one queue from the 7 named set: `webhook-inbound`, `crm-bitrix`, `sync-woo-push`, `sync-bulk`, `competitor-csv`, `critical`, `default`"
+    # ---- User-observable outcomes (lead truths) ----
+    - "An operator runs `php artisan alerts:test-failure`; exactly one email lands at each active AlertRecipient address. A second dispatch within 5 minutes sends zero additional mails (D-13 dedup proven end-to-end)"
+    - "An admin visits `/horizon` and sees 7 supervisors (`webhook-inbound-supervisor`, `crm-bitrix-supervisor`, `sync-woo-push-supervisor`, `sync-bulk-supervisor`, `competitor-csv-supervisor`, `critical-supervisor`, `default-supervisor`) all in `running` state"
+    - "A 400-day-old `activity_log` row is gone after the scheduled 03:00 prune; the prune itself writes a meta-audit row recording the deletion count (D-04 + D-09 outcome)"
+    - "A non-admin user visiting `/horizon` receives 403 via `HorizonServiceProvider::gate()` (D-01 role enforcement surfaces in the queue dashboard)"
+    - "With `WOO_WRITE_ENABLED=false`, running `php artisan sync-diffs:prune` prints `Skipped — WOO_WRITE_ENABLED=false` and leaves every existing `sync_diffs` row intact (D-08 + Pitfall L observable outcome)"
+    # ---- Config-shape reinforcement (below outcomes) ----
+    - "`config/horizon.php` 'production' environment defines the 7 supervisors above; each declares exactly one queue from the 7 named set: `webhook-inbound`, `crm-bitrix`, `sync-woo-push`, `sync-bulk`, `competitor-csv`, `critical`, `default`"
     - "`config/horizon.php` 'local' environment defines one all-in-one supervisor covering all 7 queues"
     - "`HorizonServiceProvider::gate()` grants access only to users with admin role"
-    - "Booting `php artisan horizon` shows all 7 supervisors running in the dashboard (verified by existence check on `config('horizon.environments.production')`)"
     - "`alert_recipients` table exists with unique email column, name, is_active, timestamps"
     - "`AlertRecipient` model + Filament Resource exist; Resource is admin-only via `AlertRecipientPolicy`"
+    - "`AlertRecipientResource::getEloquentQuery()` is overridden as a no-op forward pattern even though no relation columns are rendered yet — establishes eager-load discipline so future relation columns cannot regress to N+1 (Gemini Concern MEDIUM)"
     - "`AlertDistribution` Notifiable routes to all `AlertRecipient::where('is_active', true)->pluck('name', 'email')`"
     - "`ThrottledFailedJobNotifier` listener fires on `Illuminate\\Queue\\Events\\JobFailed` with 5-minute dedup window keyed by fingerprint(job class + exception class + exception message)"
     - "spatie/failed-job-monitor config has `notifiable => null` so the package's built-in listener is suppressed (we own end-to-end dispatch)"
-    - "`TestFailingJob` dispatched via `php artisan alerts:test-failure` causes exactly one Mail notification to each active AlertRecipient; a second dispatch within 5 minutes sends zero mails (dedup proven)"
     - "`PruneActivityLogCommand` (365 days per D-04), `PruneIntegrationEventsCommand` (90 days per D-05), `PruneSyncDiffsCommand` (conditional on WOO_WRITE_ENABLED per D-08) all exist"
     - "Each prune command writes a meta-audit row via `Auditor::record(...)` (D-09)"
-    - "`PruneSyncDiffsCommand` exits 0 with `'Skipped — WOO_WRITE_ENABLED=false'` output when the flag is false, AND a sync_diffs row still exists after running (Pitfall L regression test)"
     - "`routes/console.php` schedules all 3 prunes: 03:00 activity log, 03:10 integration events, 03:30 sync diffs — each with `withoutOverlapping()`"
     - "`AlertRecipientSeeder` seeds one fallback row `ops@meetingstore.co.uk` (Pitfall M mitigation)"
     - "`.github/workflows/ci.yml` runs Deptrac + Pest + Larastan + Pint on every PR"
@@ -779,6 +783,19 @@ stopwaitsecs=3600
         protected static ?string $navigationGroup = 'Settings';
         protected static ?string $navigationLabel = 'Alert Recipients';
 
+        /**
+         * eager-load pattern from day one — add ->with([...]) when relations appear in the table
+         * (Gemini Concern MEDIUM, PITFALLS Pitfall 10).
+         *
+         * AlertRecipient currently has zero relations rendered in the table, so this is a no-op
+         * pass-through. Established here so future relation columns (e.g., createdByUser.name)
+         * cannot regress to N+1 — developers add ->with(['createdByUser']) inline when extending.
+         */
+        public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+        {
+            return parent::getEloquentQuery();
+        }
+
         public static function form(Form $form): Form
         {
             return $form->schema([
@@ -1040,7 +1057,7 @@ stopwaitsecs=3600
     Run: `vendor/bin/pest --filter=FailedJobAlert` — all 10 tests pass.
   </action>
   <verify>
-    <automated>test -f database/migrations/2026_04_18_104000_create_alert_recipients_table.php &amp;&amp; test -f app/Domain/Alerting/Models/AlertRecipient.php &amp;&amp; test -f app/Domain/Alerting/Notifiables/AlertDistribution.php &amp;&amp; test -f app/Domain/Alerting/Listeners/ThrottledFailedJobNotifier.php &amp;&amp; test -f app/Domain/Alerting/Policies/AlertRecipientPolicy.php &amp;&amp; test -f app/Domain/Alerting/Filament/Resources/AlertRecipientResource.php &amp;&amp; test -f database/seeders/AlertRecipientSeeder.php &amp;&amp; grep -q "AlertRecipientSeeder::class" database/seeders/DatabaseSeeder.php &amp;&amp; grep -q "ThrottledFailedJobNotifier" app/Providers/EventServiceProvider.php &amp;&amp; grep -q "'notifiable' => null" config/failed-job-monitor.php &amp;&amp; php artisan migrate --force &amp;&amp; php artisan db:seed --class=AlertRecipientSeeder --force &amp;&amp; vendor/bin/pest --filter=FailedJobAlert</automated>
+    <automated>test -f database/migrations/2026_04_18_104000_create_alert_recipients_table.php &amp;&amp; test -f app/Domain/Alerting/Models/AlertRecipient.php &amp;&amp; test -f app/Domain/Alerting/Notifiables/AlertDistribution.php &amp;&amp; test -f app/Domain/Alerting/Listeners/ThrottledFailedJobNotifier.php &amp;&amp; test -f app/Domain/Alerting/Policies/AlertRecipientPolicy.php &amp;&amp; test -f app/Domain/Alerting/Filament/Resources/AlertRecipientResource.php &amp;&amp; test -f database/seeders/AlertRecipientSeeder.php &amp;&amp; grep -q "AlertRecipientSeeder::class" database/seeders/DatabaseSeeder.php &amp;&amp; grep -q "ThrottledFailedJobNotifier" app/Providers/EventServiceProvider.php &amp;&amp; grep -q "'notifiable' => null" config/failed-job-monitor.php &amp;&amp; grep -q "getEloquentQuery" app/Domain/Alerting/Filament/Resources/AlertRecipientResource.php &amp;&amp; php artisan migrate --force &amp;&amp; php artisan db:seed --class=AlertRecipientSeeder --force &amp;&amp; vendor/bin/pest --filter=FailedJobAlert</automated>
   </verify>
   <done>
     alert_recipients table migrated; AlertRecipient model + Filament Resource (admin-only via policy); AlertDistribution Notifiable routes to active recipients only (mail channel only); ThrottledFailedJobNotifier dedup with 5-min cache key keyed by job+exception fingerprint; EventServiceProvider maps JobFailed → our listener; spatie package's auto-listener disabled via notifiable=null; AlertRecipientSeeder ships ops@meetingstore.co.uk fallback (Pitfall M); TestFailingJobCommand available via `php artisan alerts:test-failure`; FailedJobAlertTest (10 tests) all pass.
@@ -1461,6 +1478,8 @@ stopwaitsecs=3600
           - name: Migrate
             run: php artisan migrate --force
           - name: Run Pest
+            # TODO: raise to --min=80 after Phase 3 when feature coverage stabilises (Gemini Suggestion 3)
+            # Phase 1 is greenfield with many stub Resources; 60 is the realistic floor.
             run: vendor/bin/pest --coverage --min=60
     ```
 

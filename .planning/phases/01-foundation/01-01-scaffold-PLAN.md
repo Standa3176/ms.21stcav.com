@@ -15,7 +15,6 @@ files_modified:
   - config/queue.php
   - config/cache.php
   - config/session.php
-  - config/services.php
   - config/logging.php
   - routes/webhooks.php
   - depfile.yaml
@@ -31,7 +30,7 @@ files_modified:
   - app/Domain/CRM/.gitkeep
   - app/Domain/Suggestions/.gitkeep
   - app/Domain/Alerting/.gitkeep
-  - app/Domain/Feeds/Contracts/.gitkeep
+  - app/Domain/Feeds/Contracts/FeedGenerator.php
   - app/Foundation/Audit/.gitkeep
   - app/Foundation/Integration/.gitkeep
   - app/Foundation/Events/.gitkeep
@@ -59,6 +58,12 @@ user_setup:
         location: "/etc/redis/redis.conf — see 01-RESEARCH.md §4 Redis persistence"
       - task: "Install Supervisor for Horizon auto-restart"
         location: "/etc/supervisor/conf.d/horizon.conf — Plan 05 ships template"
+  - service: dev-shell
+    why: "Plans use Unix-shell idioms (mkdir -p, touch, rm -rf, heredoc); native Windows cmd.exe / PowerShell will fail on these"
+    env_vars: []
+    dashboard_config:
+      - task: "Windows users: execute every plan command in git-bash (Git for Windows ships it) or WSL2 — NOT cmd.exe or PowerShell. The bootstrap, mkdir/touch, deptrac violator setup, and Pest test commands all assume bash."
+        location: "Local dev machine — install Git for Windows from https://git-scm.com/download/win, then use 'Git Bash' from the Start menu"
 
 must_haves:
   truths:
@@ -370,24 +375,27 @@ From 01-RESEARCH.md §4 (config/database.php redis block):
     MAIL_FROM_NAME="MeetingStore Ops"
 
     # Phase 1 — Woo write gate (MUST default to false; do NOT flip to true until Phase 7 cutover)
+    # Valid values: 'false' (shadow mode, default) | 'true' (real Woo writes, post-Phase-7 only)
     WOO_WRITE_ENABLED=false
 
     # Phase 1 — Webhook HMAC secret (populated by ops at deploy; see Plan 04)
+    # Format: 32+ char random alphanumeric string — generate with `openssl rand -base64 32`
+    # Must EXACTLY match the secret entered in WooCommerce > Settings > Advanced > Webhooks > Secret
     WC_WEBHOOK_SECRET=
 
     # Phase 2 adds:
-    # WOO_URL=
-    # WOO_CONSUMER_KEY=
-    # WOO_CONSUMER_SECRET=
-    # SUPPLIER_API_URL=
+    # WOO_URL=                      # Format: https://<store>.com (no trailing slash; consumer key auth)
+    # WOO_CONSUMER_KEY=             # Format: ck_<64-hex>  — Woo > Settings > Advanced > REST API
+    # WOO_CONSUMER_SECRET=          # Format: cs_<64-hex>
+    # SUPPLIER_API_URL=             # Format: https://api.21stcav.com (central supplier endpoint, no trailing slash)
     # SUPPLIER_API_USER=
     # SUPPLIER_API_PASS=
 
     # Phase 4 adds:
-    # BITRIX_WEBHOOK_URL=
+    # BITRIX_INBOUND_WEBHOOK=       # Format: https://<portal>.bitrix24.com/rest/<user_id>/<token>/  (TRAILING SLASH REQUIRED)
 
-    SENTRY_LARAVEL_DSN=
-    SENTRY_TRACES_SAMPLE_RATE=0.1
+    SENTRY_LARAVEL_DSN=             # Format: https://<key>@<host>.ingest.sentry.io/<project_id>
+    SENTRY_TRACES_SAMPLE_RATE=0.1   # Float 0.0-1.0 — sample rate for performance traces
     ```
 
     **Copy `.env.example` → `.env` and run `php artisan key:generate`** so the local dev env is functional.
@@ -430,12 +438,11 @@ From 01-RESEARCH.md §4 (config/database.php redis block):
             'host' => env('REDIS_HOST', '127.0.0.1'),
             'username' => env('REDIS_USERNAME'),
             'password' => env('REDIS_PASSWORD'),
-            'port' => env('REDIS_PORT', '6239'),
+            'port' => env('REDIS_PORT', '6379'),
             'database' => env('REDIS_PULSE_DB', '3'),
         ],
     ],
     ```
-    (Typo intentional? No — correct the port to 6379 for pulse in the final write.)
 
     **Create the database and run migrations:**
 

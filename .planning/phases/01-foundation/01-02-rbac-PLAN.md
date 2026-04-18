@@ -21,6 +21,7 @@ user_setup: []
 must_haves:
   truths:
     - "`php artisan shield:install admin` has run and registered the Shield plugin on the `admin` Filament panel"
+    - "`php artisan db:table roles && php artisan db:table permissions && php artisan db:table model_has_roles && php artisan db:table role_has_permissions` all exit 0 (tables created by Plan 01's single migrate run; Plan 02 NEVER re-runs `php artisan migrate` per Gemini Concern HIGH)"
     - "`php artisan shield:generate --all --panel=admin` produces permissions for every Filament Resource discovered (Phase 1: none yet — Plan 04 adds Suggestion + AlertRecipient)"
     - "4 roles exist in the DB after seeder: `admin`, `pricing_manager`, `sales`, `read_only`"
     - "Admin role has ALL permissions (sync'd via `Permission::all()`)"
@@ -43,7 +44,7 @@ must_haves:
       provides: "Idempotent 4-role seeder (D-03)"
       contains: "firstOrCreate"
     - path: "database/migrations/2026_04_18_101000_create_permission_tables.php"
-      provides: "spatie/laravel-permission tables (roles, permissions, model_has_*, role_has_permissions)"
+      provides: "spatie/laravel-permission tables (roles, permissions, model_has_*, role_has_permissions) — file PUBLISHED by Plan 01 via vendor:publish, MIGRATED by Plan 01's `php artisan migrate` run; Plan 02 asserts the tables exist via `php artisan db:table` and never re-runs migrate (Gemini Concern HIGH)"
       contains: "Schema::create('permissions'"
     - path: "tests/Feature/RoleGatedNavigationTest.php"
       provides: "Pest feature test for Success Criterion 1"
@@ -139,21 +140,22 @@ Output: A Filament admin panel gated by Shield, 4 seeded roles with correct perm
   <behavior>
     - Test: `tests/Feature/ShieldInstallationTest.php` — assert `\BezhanSalleh\FilamentShield\FilamentShieldPlugin::class` appears in the admin panel's plugin list after boot
     - Test: `User::class` uses `Spatie\Permission\Traits\HasRoles` trait (reflection check)
-    - Test: `Schema::hasTable('roles')` and `Schema::hasTable('permissions')` and `Schema::hasTable('model_has_roles')` all return true after migration
+    - Test: `Schema::hasTable('roles')` and `Schema::hasTable('permissions')` and `Schema::hasTable('model_has_roles')` and `Schema::hasTable('role_has_permissions')` all return true (tables created by Plan 01's migrate run; this plan only asserts presence, never re-runs migrate per Concern HIGH from Gemini review)
   </behavior>
   <action>
-    **Step A — Run spatie/permission migration** (tables published by Plan 01 via `vendor:publish`):
+    **Step A — Assert spatie/permission tables exist** (Plan 01 Task 1 already ran `php artisan migrate` after `vendor:publish`; this plan does NOT re-run migrations).
+
+    Plan 01 is the SOLE entrypoint for `php artisan migrate`. Re-running it here was redundant (idempotent but confusing) — flagged by the Gemini review (Concern HIGH). This step now ASSERTS the tables exist and fails fast if they don't.
 
     ```bash
-    php artisan migrate
-    ```
-
-    This creates `permissions`, `roles`, `model_has_permissions`, `model_has_roles`, `role_has_permissions` tables. Confirm with:
-
-    ```bash
+    # Confirm Plan 01's migrate run created the spatie/permission tables:
     php artisan db:table permissions
     php artisan db:table roles
+    php artisan db:table model_has_roles
+    php artisan db:table role_has_permissions
     ```
+
+    All four `db:table` calls must succeed (exit 0). If any fails with "table not found", Plan 01 either skipped or failed — go back and re-run `composer install && php artisan migrate` from the Plan 01 working tree before continuing this plan. Do NOT add a `php artisan migrate` call here.
 
     **Step B — Add `HasRoles` trait to `App\Models\User`** (Pitfall C mitigation — ensure default `$fillable` is preserved):
 
@@ -321,7 +323,7 @@ Output: A Filament admin panel gated by Shield, 4 seeded roles with correct perm
     Run: `vendor/bin/pest --filter=ShieldInstallation` — all three tests must pass.
   </action>
   <verify>
-    <automated>test -f config/filament-shield.php &amp;&amp; grep -q "HasRoles" app/Models/User.php &amp;&amp; grep -q "FilamentShieldPlugin" app/Providers/Filament/AdminPanelProvider.php &amp;&amp; php artisan db:table roles &amp;&amp; php artisan db:table permissions &amp;&amp; vendor/bin/pest --filter=ShieldInstallation</automated>
+    <automated>test -f config/filament-shield.php &amp;&amp; grep -q "HasRoles" app/Models/User.php &amp;&amp; grep -q "FilamentShieldPlugin" app/Providers/Filament/AdminPanelProvider.php &amp;&amp; php artisan db:table roles &amp;&amp; php artisan db:table permissions &amp;&amp; php artisan db:table model_has_roles &amp;&amp; php artisan db:table role_has_permissions &amp;&amp; vendor/bin/pest --filter=ShieldInstallation</automated>
   </verify>
   <done>
     Shield plugin registered on admin panel; User has HasRoles trait; permission tables migrated; ShieldInstallationTest passes; `config/filament-shield.php` exists.
@@ -578,7 +580,7 @@ Output: A Filament admin panel gated by Shield, 4 seeded roles with correct perm
 </threat_model>
 
 <verification>
-- `php artisan migrate:fresh --seed --force` exits 0 and seeds 4 roles
+- `php artisan db:table roles && php artisan db:table permissions && php artisan db:table model_has_roles && php artisan db:table role_has_permissions` all exit 0 (tables exist from Plan 01 migrate run — Plan 02 NEVER re-runs `php artisan migrate`, per Gemini Concern HIGH)
 - `php artisan db:seed --class=RolePermissionSeeder --force` run twice consecutively produces no errors, no duplicate role rows
 - `vendor/bin/pest --filter=ShieldInstallation` passes (3 tests)
 - `vendor/bin/pest --filter=RoleGatedNavigation` passes (idempotency + admin all-permissions + read_only view-only + forbidden-mutations-on-readonly)

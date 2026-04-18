@@ -32,6 +32,8 @@ files_modified:
   - tests/Feature/WooWebhookTest.php
   - tests/Feature/ShadowModeTest.php
   - tests/Feature/SuggestionInboxTest.php
+  - tests/Feature/WebhookReceiptRedactionTest.php
+  - tests/Feature/SuggestionResourceQueryCountTest.php
 autonomous: true
 requirements:
   - FOUND-06
@@ -59,6 +61,10 @@ must_haves:
     - "`TestSuggestionSeeder` seeds ONE suggestion with `kind='test'`, `status='pending'` — visible in the Filament inbox"
     - "Approving the seeded test suggestion via Filament dispatches `ApplySuggestionJob`, which (synchronously, in tests) flips status to `applied` and writes an `integration_events` row with `operation='apply:test'`"
     - "HMAC-path latency from route entry → event dispatch is under 200ms in the feature test (FOUND-07 acceptance)"
+    - "After `ApplySuggestionJob` runs, `integration_events.subject_id` equals the Suggestion ULID (CHAR(26)) and `$event->subject` morph-resolves back to the Suggestion model (Warning 8 — nullableUlidMorphs end-to-end)"
+    - "Attempting the approve or reject Action as a `read_only` user via Livewire returns 403; the suggestion `status` remains `pending` (Warning 9 — ->authorize() gate beats ->visible() for defence-in-depth)"
+    - "POSTing a webhook with a leaked `Authorization` or `Cookie` header lands a `webhook_receipts` row with those header values replaced by `['***REDACTED***']`, while non-sensitive headers (Content-Type, User-Agent) survive verbatim (Gemini Concern MEDIUM — inbound header redaction parity with IntegrationLogger)"
+    - "Listing 10 resolved Suggestion rows in the Filament SuggestionResource executes a bounded number of queries (eager-load via getEloquentQuery), NOT one query per row to fetch resolvedByUser — proven by DB::getQueryLog() count assertion (Gemini Concern MEDIUM — N+1 prevention)"
   artifacts:
     - path: "database/migrations/2026_04_18_105000_create_webhook_receipts_table.php"
       provides: "webhook_receipts table + unique (source, delivery_id) constraint"
@@ -131,6 +137,8 @@ Ship the three feature seams that every Phase 2+ producer plugs into:
 Purpose: These three seams are the "no retrofit required" promise of Phase 1. Plan 05 alone can't satisfy Success Criteria 3, 4, or 6 without this plan.
 
 Output: A working HMAC endpoint, a working suggestions inbox with the seeded test suggestion, and a provably non-writing `WooClient` with every call landing in `sync_diffs`.
+
+> **Scope note (large plan):** This plan covers FOUND-06 + FOUND-07 + FOUND-08 across ~27 files in 3 tasks. Expect longer execution than other Phase 1 plans. **Checkpoint recommendation:** If execution exceeds 2h, pause after Task 1 (HMAC middleware + webhook_receipts) before continuing to Task 2 (suggestions seam) and Task 3 (shadow-mode WooClient). The three tasks are independent seams and can be resumed discretely.
 </objective>
 
 <execution_context>
@@ -436,6 +444,21 @@ Schema::create('sync_diffs', function (Blueprint $t) {
 
     class WebhookReceipt extends Model
     {
+        /** Sensitive header names (lower-cased) — value replaced with ['***REDACTED***'] before persist.
+         *  Mirrors IntegrationLogger::SENSITIVE_HEADERS for inbound parity (Gemini Concern MEDIUM).
+         *  X-WC-Webhook-Signature is HMAC output (not a raw secret) but redacted defensively in case
+         *  Woo or a misbehaving proxy ever forwards an Authorization / Cookie / X-Api-Key header.
+         */
+        public const SENSITIVE_HEADERS = [
+            'authorization',
+            'x-wc-webhook-signature',
+            'cookie',
+            'set-cookie',
+            'x-api-key',
+            'x-auth-token',
+            'x-session-token',
+        ];
+
         protected $fillable = [
             'source', 'topic', 'delivery_id',
             'headers', 'raw_body', 'correlation_id',
@@ -447,6 +470,23 @@ Schema::create('sync_diffs', function (Blueprint $t) {
             'received_at'  => 'datetime',
             'processed_at' => 'datetime',
         ];
+
+        /**
+         * Redact sensitive header values before persisting to webhook_receipts.headers.
+         * Mirrors IntegrationLogger::redactHeaders() for inbound defense-in-depth.
+         * Caller (WooWebhookController) MUST invoke this on $request->headers->all() before insert.
+         */
+        public static function redactHeaders(array $headers): array
+        {
+            $redacted = [];
+            foreach ($headers as $name => $value) {
+                $lower = strtolower((string) $name);
+                $redacted[$name] = in_array($lower, self::SENSITIVE_HEADERS, true)
+                    ? ['***REDACTED***']
+                    : $value;
+            }
+            return $redacted;
+        }
     }
     ```
 
@@ -898,7 +938,9 @@ Schema::create('sync_diffs', function (Blueprint $t) {
                     'source'         => 'woo',
                     'topic'          => $topic,
                     'delivery_id'    => $deliveryId,
-                    'headers'        => $request->headers->all(),
+                    // Defense-in-depth: redact sensitive inbound headers (Gemini Concern MEDIUM).
+                    // Mirrors IntegrationLogger's outbound redaction so inbound + outbound logs are symmetric.
+                    'headers'        => WebhookReceipt::redactHeaders($request->headers->all()),
                     'raw_body'       => $request->getContent(),
                     'correlation_id' => Context::get('correlation_id') ?? (string) Str::uuid(),
                     'received_at'    => now(),
@@ -1126,9 +1168,87 @@ Schema::create('sync_diffs', function (Blueprint $t) {
     ```
 
     Run: `vendor/bin/pest --filter=WooWebhook` — all 8 tests pass.
+
+    **Step F — Write `tests/Feature/WebhookReceiptRedactionTest.php`** (Gemini Concern MEDIUM — inbound header redaction):
+
+    ```php
+    <?php
+
+    use App\Domain\Webhooks\Models\WebhookReceipt;
+
+    it('redacts sensitive inbound headers via WebhookReceipt::redactHeaders()', function () {
+        $raw = [
+            'Content-Type'             => 'application/json',
+            'User-Agent'               => 'WooCommerce/9.0',
+            'Authorization'            => 'Bearer leaked-token-should-never-land',
+            'X-WC-Webhook-Signature'   => 'abc123==',
+            'cookie'                   => 'session=xyz',
+            'X-Api-Key'                => 'sk_live_should_be_redacted',
+            'set-cookie'               => 'tracking=1',
+            'X-Auth-Token'             => 'oauth-token',
+            'X-Session-Token'          => 'sess-token',
+        ];
+
+        $redacted = WebhookReceipt::redactHeaders($raw);
+
+        // Non-sensitive headers preserved verbatim
+        expect($redacted['Content-Type'])->toBe('application/json');
+        expect($redacted['User-Agent'])->toBe('WooCommerce/9.0');
+
+        // Sensitive headers replaced with ['***REDACTED***']
+        expect($redacted['Authorization'])->toBe(['***REDACTED***']);
+        expect($redacted['X-WC-Webhook-Signature'])->toBe(['***REDACTED***']);
+        expect($redacted['cookie'])->toBe(['***REDACTED***']);
+        expect($redacted['X-Api-Key'])->toBe(['***REDACTED***']);
+        expect($redacted['set-cookie'])->toBe(['***REDACTED***']);
+        expect($redacted['X-Auth-Token'])->toBe(['***REDACTED***']);
+        expect($redacted['X-Session-Token'])->toBe(['***REDACTED***']);
+    });
+
+    it('redacts sensitive headers on webhook_receipts insert via WooWebhookController', function () {
+        config(['services.woo.webhook_secret' => 'test-secret-alphanum-only']);
+
+        $body = json_encode(['id' => 999]);
+        $sig  = base64_encode(hash_hmac('sha256', $body, 'test-secret-alphanum-only', true));
+
+        // Send a request with a leaked Authorization header that Woo "shouldn't" send
+        $response = $this->call(
+            'POST', '/webhooks/woo/order', [], [], [],
+            [
+                'HTTP_X-WC-Webhook-Signature'   => $sig,
+                'HTTP_X-WC-Webhook-Delivery-ID' => 'wh_redact_test',
+                'HTTP_AUTHORIZATION'            => 'Bearer should-be-redacted',
+                'HTTP_COOKIE'                   => 'session=leaked',
+                'CONTENT_TYPE'                  => 'application/json',
+            ],
+            $body
+        );
+
+        $response->assertOk();
+
+        $receipt = WebhookReceipt::where('delivery_id', 'wh_redact_test')->firstOrFail();
+        $headers = $receipt->headers;
+
+        // Authorization + Cookie + Signature redacted in the persisted row even though HMAC verify passed.
+        // Symfony lower-cases header keys; check both variants for resilience.
+        $authVal   = $headers['authorization']             ?? $headers['Authorization']             ?? null;
+        $cookieVal = $headers['cookie']                    ?? $headers['Cookie']                    ?? null;
+        $sigVal    = $headers['x-wc-webhook-signature']    ?? $headers['X-WC-Webhook-Signature']    ?? null;
+
+        expect($authVal)->toBe(['***REDACTED***']);
+        expect($cookieVal)->toBe(['***REDACTED***']);
+        expect($sigVal)->toBe(['***REDACTED***']);
+
+        // Non-sensitive header survives
+        $contentType = $headers['content-type'] ?? $headers['Content-Type'] ?? null;
+        expect($contentType)->not->toBeNull();
+    });
+    ```
+
+    Run: `vendor/bin/pest --filter=WebhookReceiptRedaction` — both tests pass.
   </action>
   <verify>
-    <automated>test -f app/Domain/Webhooks/Http/Middleware/VerifyWooHmacSignature.php &amp;&amp; test -f app/Domain/Webhooks/Http/Controllers/WooWebhookController.php &amp;&amp; test -f app/Domain/Webhooks/Events/OrderReceived.php &amp;&amp; test -f app/Domain/Webhooks/Events/CustomerRegistered.php &amp;&amp; grep -q "VerifyWooHmacSignature" routes/webhooks.php &amp;&amp; grep -q "webhooks/woo" routes/webhooks.php &amp;&amp; vendor/bin/pest --filter=WooWebhook</automated>
+    <automated>test -f app/Domain/Webhooks/Http/Middleware/VerifyWooHmacSignature.php &amp;&amp; test -f app/Domain/Webhooks/Http/Controllers/WooWebhookController.php &amp;&amp; test -f app/Domain/Webhooks/Events/OrderReceived.php &amp;&amp; test -f app/Domain/Webhooks/Events/CustomerRegistered.php &amp;&amp; grep -q "VerifyWooHmacSignature" routes/webhooks.php &amp;&amp; grep -q "webhooks/woo" routes/webhooks.php &amp;&amp; grep -q "WebhookReceipt::redactHeaders" app/Domain/Webhooks/Http/Controllers/WooWebhookController.php &amp;&amp; grep -q "SENSITIVE_HEADERS" app/Domain/Webhooks/Models/WebhookReceipt.php &amp;&amp; vendor/bin/pest --filter=WooWebhook &amp;&amp; vendor/bin/pest --filter=WebhookReceiptRedaction</automated>
   </verify>
   <done>
     HMAC middleware verifies signature with hash_equals on raw body; controller ≤20 lines per method, writes receipt, fires event, returns 200; routes registered under HMAC group in routes/webhooks.php; 8 feature tests all pass including the <200ms latency assertion (FOUND-07 acceptance) and dedup-by-delivery-id test.
@@ -1350,7 +1470,7 @@ Schema::create('sync_diffs', function (Blueprint $t) {
                     'http_status'   => 200,
                     'status'        => 'success',
                     'subject_type'  => Suggestion::class,
-                    'subject_id'    => 0, // ulid — not an integer; use 0 placeholder. Phase 5 may switch morph to ulid-aware if needed.
+                    'subject_id'    => $suggestion->id, // ULID — integration_events.subject_id is nullableUlidMorphs (CHAR(26)) per Plan 03 migration; no cast needed.
                 ]);
             } catch (\Throwable $e) {
                 $suggestion->update([
@@ -1498,6 +1618,24 @@ Schema::create('sync_diffs', function (Blueprint $t) {
         protected static ?string $navigationGroup = 'Review';
         protected static ?string $recordTitleAttribute = 'kind';
 
+        /**
+         * Eager-load relations displayed in the table to prevent N+1 queries
+         * (Gemini Concern MEDIUM, PITFALLS Pitfall 10).
+         *
+         * Currently rendered relation columns:
+         *   - resolvedByUser.name  -> belongsTo(User)
+         *
+         * `proposedBy` is a polymorphic morphTo. If a future column renders proposedBy.* fields,
+         * extend this with `->with(['proposedBy'])` (Eloquent will fan out per concrete type).
+         *
+         * The accompanying tests/Feature/SuggestionResourceQueryCountTest.php asserts that listing
+         * N suggestions executes a bounded number of queries (not N + relation-fetches per row).
+         */
+        public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+        {
+            return parent::getEloquentQuery()->with(['resolvedByUser']);
+        }
+
         public static function table(Table $table): Table
         {
             return $table
@@ -1531,6 +1669,7 @@ Schema::create('sync_diffs', function (Blueprint $t) {
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->requiresConfirmation()
+                        ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
                         ->visible(fn (Suggestion $r) => $r->status === Suggestion::STATUS_PENDING)
                         ->action(function (Suggestion $record) {
                             $record->update([
@@ -1544,6 +1683,7 @@ Schema::create('sync_diffs', function (Blueprint $t) {
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->form([Textarea::make('rejection_reason')->required()->maxLength(2000)])
+                        ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
                         ->visible(fn (Suggestion $r) => $r->status === Suggestion::STATUS_PENDING)
                         ->action(function (Suggestion $record, array $data) {
                             $record->update([
@@ -1792,15 +1932,135 @@ Schema::create('sync_diffs', function (Blueprint $t) {
 
         expect($pm->can('viewAny', Suggestion::class))->toBeFalse();
     });
+
+    it('read_only user cannot invoke approve Action even via crafted POST (Warning 9 defence-in-depth)', function () {
+        $this->seed(TestSuggestionSeeder::class);
+        $readOnly = User::factory()->create();
+        $readOnly->assignRole('read_only');
+
+        \Filament\Facades\Filament::auth()->login($readOnly);
+        $suggestion = Suggestion::where('kind', 'test')->first();
+
+        \Pest\Livewire\livewire(\App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions::class)
+            ->callTableAction('approve', $suggestion)
+            ->assertForbidden();
+
+        // Status unchanged
+        expect($suggestion->fresh()->status)->toBe('pending');
+    });
+
+    it('read_only user cannot invoke reject Action even via crafted POST (Warning 9 defence-in-depth)', function () {
+        $this->seed(TestSuggestionSeeder::class);
+        $readOnly = User::factory()->create();
+        $readOnly->assignRole('read_only');
+
+        \Filament\Facades\Filament::auth()->login($readOnly);
+        $suggestion = Suggestion::where('kind', 'test')->first();
+
+        \Pest\Livewire\livewire(\App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions::class)
+            ->callTableAction('reject', $suggestion, data: ['rejection_reason' => 'nope'])
+            ->assertForbidden();
+
+        expect($suggestion->fresh()->status)->toBe('pending');
+    });
+
+    it('integration_events.subject_id for an applied suggestion stores the ULID and joins back to suggestions (Warning 8)', function () {
+        $suggestion = Suggestion::create([
+            'kind' => 'test',
+            'status' => 'pending',
+            'correlation_id' => 'cid-morph-join',
+            'payload' => [],
+            'proposed_at' => now(),
+        ]);
+
+        ApplySuggestionJob::dispatchSync($suggestion->id);
+
+        $event = IntegrationEvent::where('correlation_id', 'cid-morph-join')->firstOrFail();
+        expect($event->subject_id)->toBe($suggestion->id);
+        expect($event->subject_type)->toBe(Suggestion::class);
+        // Morph resolution works end-to-end
+        expect($event->subject)->toBeInstanceOf(Suggestion::class);
+        expect($event->subject->id)->toBe($suggestion->id);
+    });
     ```
 
-    Run: `vendor/bin/pest --filter=SuggestionInbox` — all 11 tests pass.
+    Run: `vendor/bin/pest --filter=SuggestionInbox` — all 14 tests pass.
+
+    **Step K — Write `tests/Feature/SuggestionResourceQueryCountTest.php`** (Gemini Concern MEDIUM — N+1 prevention via getEloquentQuery eager-load):
+
+    ```php
+    <?php
+
+    use App\Domain\Suggestions\Filament\Resources\SuggestionResource;
+    use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions;
+    use App\Domain\Suggestions\Models\Suggestion;
+    use App\Models\User;
+    use Database\Seeders\RolePermissionSeeder;
+    use Illuminate\Support\Facades\DB;
+
+    beforeEach(function () {
+        $this->seed(RolePermissionSeeder::class);
+    });
+
+    it('SuggestionResource::getEloquentQuery() eager-loads resolvedByUser', function () {
+        $query = SuggestionResource::getEloquentQuery();
+        $eagerLoads = $query->getEagerLoads();
+
+        expect($eagerLoads)->toHaveKey('resolvedByUser');
+    });
+
+    it('rendering N suggestions executes a BOUNDED number of queries (not N + N)', function () {
+        // Seed 10 resolved suggestions — each has a resolvedByUser belongsTo
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        for ($i = 0; $i < 10; $i++) {
+            Suggestion::create([
+                'kind'                 => 'test',
+                'status'               => 'applied',
+                'correlation_id'       => "cid-{$i}",
+                'payload'              => ['n' => $i],
+                'proposed_at'          => now(),
+                'resolved_by_user_id'  => $admin->id,
+                'resolved_at'          => now(),
+                'applied_at'           => now(),
+            ]);
+        }
+
+        \Filament\Facades\Filament::auth()->login($admin);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        \Pest\Livewire\livewire(ListSuggestions::class)
+            ->assertSuccessful()
+            ->assertCanSeeTableRecords(Suggestion::all());
+
+        $queries = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        // With eager loading: ~3-6 queries total (suggestions select + 1 users IN-clause + filament overhead).
+        // Without eager loading: 10 + N queries (one per row to fetch resolvedByUser).
+        // Bound is generous to allow filament internal queries; the WIN condition is "not N-per-row".
+        expect(count($queries))->toBeLessThan(15)
+            ->and(count($queries))->toBeGreaterThan(0);
+
+        // Belt-and-braces: assert no individual query selects a single user by id (typical N+1 shape)
+        $selectUserById = collect($queries)->filter(fn ($q) =>
+            str_contains($q['query'], 'from `users`') &&
+            str_contains($q['query'], '`id` = ?')
+        )->count();
+        expect($selectUserById)->toBe(0);  // eager load uses WHERE id IN (...) instead
+    });
+    ```
+
+    Run: `vendor/bin/pest --filter=SuggestionResourceQueryCount` — both tests pass.
   </action>
   <verify>
-    <automated>test -f app/Domain/Suggestions/Contracts/SuggestionApplier.php &amp;&amp; test -f app/Domain/Suggestions/Appliers/StubApplier.php &amp;&amp; test -f app/Domain/Suggestions/Services/SuggestionApplierResolver.php &amp;&amp; test -f app/Domain/Suggestions/Jobs/ApplySuggestionJob.php &amp;&amp; test -f app/Domain/Suggestions/Policies/SuggestionPolicy.php &amp;&amp; test -f app/Domain/Suggestions/Filament/Resources/SuggestionResource.php &amp;&amp; test -f database/seeders/TestSuggestionSeeder.php &amp;&amp; grep -q "TestSuggestionSeeder::class" database/seeders/DatabaseSeeder.php &amp;&amp; grep -q "register('test'" app/Providers/AppServiceProvider.php &amp;&amp; grep -q "Gate::policy" app/Providers/AppServiceProvider.php &amp;&amp; php artisan migrate --force &amp;&amp; php artisan db:seed --class=TestSuggestionSeeder --force &amp;&amp; vendor/bin/pest --filter=SuggestionInbox</automated>
+    <automated>test -f app/Domain/Suggestions/Contracts/SuggestionApplier.php &amp;&amp; test -f app/Domain/Suggestions/Appliers/StubApplier.php &amp;&amp; test -f app/Domain/Suggestions/Services/SuggestionApplierResolver.php &amp;&amp; test -f app/Domain/Suggestions/Jobs/ApplySuggestionJob.php &amp;&amp; test -f app/Domain/Suggestions/Policies/SuggestionPolicy.php &amp;&amp; test -f app/Domain/Suggestions/Filament/Resources/SuggestionResource.php &amp;&amp; test -f database/seeders/TestSuggestionSeeder.php &amp;&amp; grep -q "TestSuggestionSeeder::class" database/seeders/DatabaseSeeder.php &amp;&amp; grep -q "register('test'" app/Providers/AppServiceProvider.php &amp;&amp; grep -q "Gate::policy" app/Providers/AppServiceProvider.php &amp;&amp; grep -q "getEloquentQuery" app/Domain/Suggestions/Filament/Resources/SuggestionResource.php &amp;&amp; php artisan migrate --force &amp;&amp; php artisan db:seed --class=TestSuggestionSeeder --force &amp;&amp; vendor/bin/pest --filter=SuggestionInbox &amp;&amp; vendor/bin/pest --filter=SuggestionResourceQueryCount</automated>
   </verify>
   <done>
-    SuggestionApplier contract + StubApplier + Resolver + Job + Policy + Filament Resource + TestSuggestionSeeder all shipped; AppServiceProvider registers StubApplier for kind=test and wires Gate policy; seeder adds exactly one pending suggestion (idempotent); ApplySuggestionJob is idempotent on status=applied (one integration_events row regardless of retry count); read_only/sales/pricing_manager roles all 403 on SuggestionResource (Pitfall K mitigated); admin can access and see the seeded suggestion; SuggestionInboxTest passes all 11 cases.
+    SuggestionApplier contract + StubApplier + Resolver + Job + Policy + Filament Resource + TestSuggestionSeeder all shipped; AppServiceProvider registers StubApplier for kind=test and wires Gate policy; seeder adds exactly one pending suggestion (idempotent); ApplySuggestionJob is idempotent on status=applied (one integration_events row regardless of retry count); integration_events.subject_id stores the Suggestion ULID and joins back to suggestions (Warning 8 — proves nullableUlidMorphs is functioning end-to-end); read_only/sales/pricing_manager roles all 403 on SuggestionResource viewAny (Pitfall K mitigated); crafted POST against approve/reject Actions as read_only returns 403 per ->authorize() gate (Warning 9 defence-in-depth); admin can access and see the seeded suggestion; SuggestionInboxTest passes all 14 cases.
   </done>
 </task>
 
@@ -1815,6 +2075,8 @@ Schema::create('sync_diffs', function (Blueprint $t) {
 - `vendor/bin/pest --filter=ShadowMode` passes (4 tests — shadow-mode Woo gate)
 - `vendor/bin/pest --filter=WooWebhook` passes (8 tests — HMAC accept, reject-tampered, reject-missing-sig, reject-no-secret, dedup-by-delivery-id, X-Correlation-Id propagation, <200ms latency, customer route)
 - `vendor/bin/pest --filter=SuggestionInbox` passes (11 tests — contract + StubApplier + resolver + seeder idempotent + ApplySuggestionJob idempotent + Filament page + 3 role denial tests)
+- `vendor/bin/pest --filter=WebhookReceiptRedaction` passes (2 tests — static method + end-to-end redacts inbound Auth/Cookie/Signature on persist; non-sensitive headers preserved) — Gemini Concern MEDIUM
+- `vendor/bin/pest --filter=SuggestionResourceQueryCount` passes (2 tests — eager-load assertion + DB::getQueryLog() count bounded under 15 queries for 10 rows; zero per-row user lookups) — Gemini Concern MEDIUM
 - `vendor/bin/deptrac analyse --no-progress` exits 0 — all cross-boundary references go through `App\Foundation\*` (IntegrationLogger, Auditor) or the published `SuggestionApplier` contract; no Domain→Domain imports
 - `curl -X POST -H "X-WC-Webhook-Signature: $(echo -n '{}' | openssl dgst -sha256 -hmac 'test-secret-alphanum-only' -binary | base64)" -H "X-WC-Webhook-Delivery-ID: manual-test-1" http://localhost:8000/webhooks/woo/order -d '{}'` returns `{"status":"accepted"}`
 - `php artisan db:seed --class=DatabaseSeeder --force` seeds 4 roles + 1 test suggestion without errors

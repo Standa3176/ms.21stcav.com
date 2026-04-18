@@ -57,8 +57,17 @@ class RolePermissionSeeder extends Seeder
         //    — seeder is defensive: queries by name pattern, no-ops if the Resource doesn't exist yet.
         $pricingManagerPermissions = Permission::query()
             ->where(function ($q) {
-                // CRUD on product + pricing_rule (all actions)
+                // CRUD on product + product_variant + import_issue + pricing_rule (all actions).
+                //
+                // MySQL LIKE gotcha (Plan 02-04): `%_product` does NOT match
+                // `view_product_variant` — the trailing `_product` anchors to the END
+                // of the string. Same for `%_import_issue` vs `%_import_issue_*`. So
+                // we MUST add `%_product_variant` and `%_import_issue` patterns
+                // unconditionally; the broader `%_product` catches only the Product
+                // resource's permissions (view_product, update_product, etc.).
                 $q->where('name', 'like', '%_product')
+                    ->orWhere('name', 'like', '%_product_variant')   // Phase 2 — D-01 variant edit access
+                    ->orWhere('name', 'like', '%_import_issue')      // Phase 2 — SYNC-12 / D-09 triage
                     ->orWhere('name', 'like', '%_pricing_rule');
             })
             ->orWhere(function ($q) {

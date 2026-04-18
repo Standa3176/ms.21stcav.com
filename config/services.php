@@ -35,4 +35,22 @@ return [
         ],
     ],
 
+    'woo' => [
+        // Phase 2 populates url/consumer_key/consumer_secret; Phase 1 ships placeholders only
+        'url' => env('WOO_URL'),
+        'consumer_key' => env('WOO_CONSUMER_KEY'),
+        'consumer_secret' => env('WOO_CONSUMER_SECRET'),
+
+        // Phase 1 — webhook HMAC secret (Plan 04 middleware reads this)
+        'webhook_secret' => env('WC_WEBHOOK_SECRET'),
+
+        // Phase 1 — shadow-mode flag (D-08; MUST default to false)
+        'write_enabled' => env('WOO_WRITE_ENABLED', false),
+    ],
+
+    'woocommerce' => [
+        // Alias (some Filament plugins check services.woocommerce.*)
+        'webhook_secret' => env('WC_WEBHOOK_SECRET'),
+    ],
+
 ];

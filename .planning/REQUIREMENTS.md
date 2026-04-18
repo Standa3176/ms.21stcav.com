@@ -32,11 +32,11 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **SYNC-05**: `products/batch` responses are parsed per-item; failed items are written to `sync_errors` and never silently dropped
 - [x] **SYNC-06**: SKUs missing from the supplier are set to Woo status `pending`, unless tagged `custom-ms` (which stays `publish`)
 - [x] **SYNC-07**: Products with `_exclude_from_auto_update` meta set are skipped by the sync and still counted in the report
-- [ ] **SYNC-08**: On completion the admin distribution list receives an emailed CSV report showing updated/skipped/failed counts per-SKU
+- [x] **SYNC-08**: On completion the admin distribution list receives an emailed CSV report showing updated/skipped/failed counts per-SKU
 - [x] **SYNC-09**: Dry-run mode runs the full sync pipeline but writes only to `sync_diffs` — Woo is untouched
 - [x] **SYNC-10**: `withoutOverlapping` and an adaptive rate-limit middleware keep the sync within Woo's 100-requests/minute ceiling
-- [ ] **SYNC-11**: A Filament "Supplier Sync Status" page shows the last run, duration, counts, and a per-SKU drill-down
-- [ ] **SYNC-12**: A Filament "Import Issues" page lists SKUs not found at the supplier, pending products, and products with missing cost/price
+- [x] **SYNC-11**: A Filament "Supplier Sync Status" page shows the last run, duration, counts, and a per-SKU drill-down
+- [x] **SYNC-12**: A Filament "Import Issues" page lists SKUs not found at the supplier, pending products, and products with missing cost/price
 - [x] **SYNC-13**: Domain events `SupplierPriceChanged`, `SupplierStockChanged`, `SupplierSkuMissing` fire after each successful row update
 
 ### Pricing engine (PRCE) — Module B
@@ -202,11 +202,11 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | SYNC-05 | Phase 2 | Complete |
 | SYNC-06 | Phase 2 | Complete |
 | SYNC-07 | Phase 2 | Complete |
-| SYNC-08 | Phase 2 | Pending |
+| SYNC-08 | Phase 2 | Complete |
 | SYNC-09 | Phase 2 | Complete |
 | SYNC-10 | Phase 2 | Complete |
-| SYNC-11 | Phase 2 | Pending |
-| SYNC-12 | Phase 2 | Pending |
+| SYNC-11 | Phase 2 | Complete |
+| SYNC-12 | Phase 2 | Complete |
 | SYNC-13 | Phase 2 | Complete |
 | PRCE-01 | Phase 3 | Pending |
 | PRCE-02 | Phase 3 | Pending |

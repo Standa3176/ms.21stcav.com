@@ -53,7 +53,13 @@ Plans:
   4. A SKU missing from the supplier's response flips to Woo status `pending` unless it carries the `custom-ms` tag (which stays `publish`), and `_exclude_from_auto_update` products appear in the report as "skipped" with correct counts
   5. The Filament "Supplier Sync Status" page shows the last run's duration, updated/failed counts, and a per-SKU drill-down; the "Import Issues" page lists missing-at-supplier SKUs, pending products, and products with missing cost/price
   6. Domain events `SupplierPriceChanged`, `SupplierStockChanged`, and `SupplierSkuMissing` fire on the event bus after each successful row update (observable in `integration_events` with matching `correlation_id`)
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 3: Pricing Engine
@@ -66,7 +72,13 @@ Plans:
   3. Editing a `PricingRule` and previewing "simulated impact" lists the SKUs that would change before the rule is saved
   4. A `SupplierPriceChanged` event fired by Phase 2's sync causes a listener to recompute the final price via `PriceCalculator` (integer-pennies / BCMath) and fire `ProductPriceChanged` only when the output differs
   5. `php artisan pricing:recompute --all` dispatches a queued batch that recomputes every product's final price and surfaces progress in Horizon
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 4: Bitrix24 CRM Sync
@@ -80,7 +92,13 @@ Plans:
   4. UTM parameters and GA Client ID captured at Woo checkout appear on the resulting Bitrix Deal's configured custom fields; order notes appear as Deal comments; pipeline routing rules send B2B orders to a different Bitrix pipeline than retail orders
   5. A Bitrix API outage causes the push to retry N times, land in the dead-letter queue, and surface as a `suggestions('crm_push_failed')` row with a Filament "replay" action; the CRM push log shows every attempt (request/response/latency/retry count)
   6. `php artisan gdpr:erase-bitrix-customer --email=...` scrubs PII from the matched Bitrix Contact and related Deal, with the action recorded in the audit log
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 5: Competitor Analysis
@@ -93,7 +111,13 @@ Plans:
   3. When a competitor's margin delta exceeds the 8% threshold AND is corroborated by ≥3 consecutive scrapes AND ≥N sales in the last 90 days, a `margin_change` suggestion is created; approving it updates the matching `PricingRule`, fires `PricingRuleChanged`, and writes an audit-log entry with the full evidence trail
   4. The Filament "Competitor Analysis" page shows price trend charts per SKU, biggest margin deltas across the catalogue, and a per-competitor view; a stale-feed warning fires when a competitor hasn't reported in >48 hours
   5. Competitor CSV source files older than 90 days (configurable) are pruned by a scheduled command, with the prune action logged
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 6: Product Auto-Create
@@ -106,7 +130,13 @@ Plans:
   3. The Filament auto-create review inbox shows each draft with a completeness score, supports bulk approve/edit, and records rejection reasons when rejected; draft-first is the v1 default and immediate-publish is gated by an admin config flag
   4. On the product edit page, an admin can toggle per-field pins (title, description, image) via `ProductOverride`, and the next supplier sync leaves pinned fields untouched — observable via a regression test that runs a sync after pinning and asserts unchanged content
   5. Every `CreateWooProductJob` attempt writes to `integration_events` with request/response/latency, and a failed attempt retries per Horizon policy before surfacing in the notification centre
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ### Phase 7: Dashboard Polish + Cutover
@@ -119,7 +149,13 @@ Plans:
   3. The rollback drill is rehearsed end-to-end: flip `WOO_WRITE_ENABLED=false`, restore the Woo DB snapshot from a fresh dump, confirm the legacy plugin crons re-engage cleanly, and the runbook is updated with any gaps found during the drill
   4. The Stock Updater and itgalaxy Bitrix24 plugins are disabled in WordPress only after a monitored parallel-run window passes the parity threshold; the `wp_unschedule_event` commands have successfully removed the legacy crons before Laravel writes were enabled
   5. Laravel has run solo for 7 consecutive days without divergence alarms, the weekly scheduled report has landed in the admin distribution list, the ops handover docs cover resume-a-sync / replay-a-failed-CRM-push / refresh-Bitrix-schema / interpret-the-notification-centre, and a tabular view exports a filtered CSV successfully
-**Plans**: TBD
+**Plans:** 5 plans
+Plans:
+- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
+- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
+- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
+- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
+- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
 **UI hint**: yes
 
 ## Progress
@@ -130,7 +166,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 0/5 | Not started | - |
-| 2. Supplier Sync | 0/TBD | Not started | - |
+| 2. Supplier Sync | 0/5 | Not started | - |
 | 3. Pricing Engine | 0/TBD | Not started | - |
 | 4. Bitrix24 CRM Sync | 0/TBD | Not started | - |
 | 5. Competitor Analysis | 0/TBD | Not started | - |

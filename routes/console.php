@@ -34,13 +34,20 @@ Schedule::command('integration-events:prune --days=90')
     ->withoutOverlapping(30)
     ->onOneServer();
 
+// D-07: sync_errors — 90 days (Phase 2 Plan 05 — replaces the Phase 1 TODO marker)
+Schedule::command('sync-errors:prune', ['--days' => 90])
+    ->dailyAt('03:20')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune sync_errors older than 90 days (D-07 retention)');
+
 // D-08: sync_diffs — conditional (no-op while WOO_WRITE_ENABLED=false per Pitfall L)
 Schedule::command('sync-diffs:prune')
     ->dailyAt('03:30')
     ->withoutOverlapping(30)
     ->onOneServer();
 
-// TODO: Phase 2 adds `sync-errors:prune --days=90` (D-07) once Phase 2 ships the sync_errors table.
 // TODO: Phase 5 adds `competitor-csv:prune --days=90` (D-06) once Phase 5 ships the csv_parse_errors table.
 
 // Phase 2 (D-05) — Daily supplier sync. COMMENTED OUT; Phase 7 cutover runbook

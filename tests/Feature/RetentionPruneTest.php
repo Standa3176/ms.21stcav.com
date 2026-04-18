@@ -110,7 +110,7 @@ it('prunes sync_diffs older than 30 days when WOO_WRITE_ENABLED=true (post-cutov
     expect(Activity::where('description', 'sync-diffs.pruned')->exists())->toBeTrue();
 });
 
-it('schedules all 3 prune commands in routes/console.php', function () {
+it('schedules all 4 prune commands in routes/console.php', function () {
     $schedule = app(Schedule::class);
     $commandsOnSchedule = collect($schedule->events())
         ->map(fn ($e) => $e->command ?? $e->description)
@@ -119,6 +119,7 @@ it('schedules all 3 prune commands in routes/console.php', function () {
     $expected = [
         'activitylog:prune',
         'integration-events:prune',
+        'sync-errors:prune',  // Phase 2 Plan 05 (D-07)
         'sync-diffs:prune',
     ];
 
@@ -132,9 +133,9 @@ it('routes/console.php file uses withoutOverlapping on each prune', function () 
     $contents = file_get_contents(base_path('routes/console.php'));
     expect($contents)->toContain('withoutOverlapping');
 
-    // Each of the 3 commands should have withoutOverlapping declared
+    // Each of the 4 commands should have withoutOverlapping declared
     $withoutOverlappingCount = substr_count($contents, 'withoutOverlapping');
-    expect($withoutOverlappingCount)->toBeGreaterThanOrEqual(3);
+    expect($withoutOverlappingCount)->toBeGreaterThanOrEqual(4);
 });
 
 it('PruneActivityLogCommand honours custom --days argument', function () {

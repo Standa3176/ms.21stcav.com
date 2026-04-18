@@ -1,0 +1,12 @@
+includes:
+    - vendor/nunomaduro/larastan/extension.neon
+
+parameters:
+    paths:
+        - app/
+    level: 6
+    ignoreErrors:
+        # Filament Resource protected statics — ignore "never read" noise
+        - '#Property App\\Filament.*::\$navigation[A-Za-z]+ is never read#'
+    checkMissingIterableValueType: false
+    checkGenericClassInNonGenericObjectType: false

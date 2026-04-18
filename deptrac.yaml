@@ -1,0 +1,62 @@
+parameters:
+  paths:
+    - ./app
+  exclude_files:
+    - '#.*test.*#'
+  layers:
+    - name: Products
+      collectors:
+        - type: directory
+          regex: app/Domain/Products/.*
+    - name: Pricing
+      collectors:
+        - type: directory
+          regex: app/Domain/Pricing/.*
+    - name: Competitor
+      collectors:
+        - type: directory
+          regex: app/Domain/Competitor/.*
+    - name: Sync
+      collectors:
+        - type: directory
+          regex: app/Domain/Sync/.*
+    - name: Webhooks
+      collectors:
+        - type: directory
+          regex: app/Domain/Webhooks/.*
+    - name: CRM
+      collectors:
+        - type: directory
+          regex: app/Domain/CRM/.*
+    - name: Suggestions
+      collectors:
+        - type: directory
+          regex: app/Domain/Suggestions/.*
+    - name: Alerting
+      collectors:
+        - type: directory
+          regex: app/Domain/Alerting/.*
+    - name: Feeds
+      collectors:
+        - type: directory
+          regex: app/Domain/Feeds/.*
+    - name: Foundation
+      collectors:
+        - type: directory
+          regex: app/Foundation/.*
+    - name: Http
+      collectors:
+        - type: directory
+          regex: app/Http/.*
+  ruleset:
+    Products:     [Foundation]
+    Pricing:      [Foundation]
+    Competitor:   [Foundation]
+    Sync:         [Foundation]
+    Webhooks:     [Foundation]
+    CRM:          [Foundation]
+    Suggestions:  [Foundation]
+    Alerting:     [Foundation]
+    Feeds:        [Foundation]
+    Foundation:   []
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds]

@@ -54,7 +54,7 @@ must_haves:
     - "`php artisan sync:supplier --live --dry-run` exits with a non-zero code and a clear error message (D-04 mutually exclusive)"
     - "`php artisan sync:supplier --resume={run_id}` picks up from cursor_page + cursor_sku and does not double-push already-synced SKUs (SYNC-03)"
     - "A SyncChunkJob that encounters a per-SKU failure records it in sync_errors and continues processing the remainder of the page (SYNC-05)"
-    - "D-06 aborts fire: >20% error rate after 500 SKUs OR 50 consecutive failures OR JWT refresh failure → run.status='aborted', cursor persisted, ThrottledFailedJobNotifier alert fired once"
+    - "D-06 aborts fire via DB-BACKED counters (Checker blocker fix — not in-memory): >20% error rate after 500 SKUs OR 50 consecutive failures (counter shared across 2-3 sync-woo-push workers via SyncRun.failed_count / total_skus / consecutive_failures DB columns) OR JWT refresh failure → run.status='aborted', cursor persisted, ThrottledFailedJobNotifier alert fired once"
     - "Missing-at-supplier SKUs flip to Woo status=pending UNLESS is_custom_ms=true (D-03/SYNC-06); missing variations flip to status=private (D-03 granular)"
     - "`_exclude_from_auto_update` products are skipped but counted (SYNC-07)"
     - "After a successful write, `SupplierPriceChanged` / `SupplierStockChanged` / `SupplierSkuMissing` / `NewSupplierSkuDetected` events dispatch via DomainEvent+ShouldDispatchAfterCommit; listeners only fire after the enclosing transaction commits (Pitfall P2-I retrofit)"
@@ -77,7 +77,7 @@ must_haves:
     - path: "app/Domain/Sync/Services/SkuMatcher.php"
       provides: "build(array) + match(string): ?array in-memory supplier-SKU hashmap"
     - path: "app/Domain/Sync/Services/AbortGuard.php"
-      provides: "throwIfTriggered/recordSuccess/recordFailure — D-06 tiered aborts (a/b/c)"
+      provides: "throwIfTriggered/recordSuccess/recordFailure/triggerJwtFailure — D-06 tiered aborts (a/b/c) via DB-backed atomic counters on SyncRun (Checker-blocker fix: multi-worker supervisors now share state)"
     - path: "app/Domain/Sync/Services/SyncDiffEngine.php"
       provides: "diff(skuRow, supplierRow): ?array — returns {endpoint, payload, action, reason, old_*, new_*}"
     - path: "app/Domain/Sync/Jobs/SyncChunkJob.php"
@@ -169,6 +169,13 @@ SyncRun::findResumable(int $id): self;
 $run->errors();  // HasMany
 $run->items();   // HasMany (SyncRunItem)
 $run->cursor_page; $run->cursor_sku; $run->dry_run; $run->correlation_id;
+
+// Columns used by AbortGuard — P01 ships the schema with consecutive_failures
+// (unsigned int default 0 NOT NULL) per Checker blocker fix. AbortGuard reads/writes
+// these via Eloquent ->increment() / ->update() so 2-3 sync-woo-push workers share state.
+$run->failed_count;
+$run->total_skus;
+$run->consecutive_failures;
 
 // Write-only: SyncError::create([sync_run_id, sku, woo_product_id?, woo_variation_id?, error_class, error_message, correlation_id, created_at])
 // Write-only: SyncRunItem::create([sync_run_id, sku, woo_*, action, reason, old_price, new_price, old_stock, new_stock, error_message, correlation_id, created_at])
@@ -454,14 +461,18 @@ vendor/bin/pest  # full suite
     - Test M2: Matcher is case-sensitive on SKUs (Woo convention per AUTO-08 preview; ops can decide Phase 6).
     - Test M3: Stores supplierFeed by reference efficiently — a 10,000-SKU feed built + 10k matches runs in < 100ms (perf sanity).
 
-    Tests in tests/Feature/AbortGuardTest.php:
-    - Test B1: Error rate ≤ 20% after 500 samples → throwIfTriggered does NOT throw.
-    - Test B2: Error rate > 20% after 500 samples → throws SyncAbortException with reason=error_rate (D-06a).
-    - Test B3: Error rate > 20% with ONLY 400 samples → does NOT throw (below min-samples threshold).
-    - Test B4: 50 consecutive failures (recordFailure → recordFailure × 50, no recordSuccess between) → throws with reason=consecutive_failures (D-06b).
-    - Test B5: recordSuccess resets the consecutive counter to 0.
-    - Test B6: Marking jwt_refresh_failed = true → throwIfTriggered throws with reason=jwt_refresh (D-06c).
-    - Test B7: AbortGuard counters are per-run — creating a new SyncRun resets all counters (test by dispatching two independent runs).
+    Tests in tests/Feature/AbortGuardTest.php — all tests seed a SyncRun via factory,
+    invoke recordSuccess/recordFailure which mutate DB columns atomically, then call
+    throwIfTriggered which reads the DB state (per Checker blocker fix):
+    - Test B1: Error rate ≤ 20% after 500 samples (e.g. 450 recordSuccess + 50 recordFailure) → throwIfTriggered does NOT throw. Assert $run->refresh()->failed_count === 50 AND $run->total_skus === 500.
+    - Test B2: Error rate > 20% after 500 samples (e.g. 400 successes + 101 failures) → throws SyncAbortException with reason=error_rate (D-06a). Assert DB state reflects counters at abort moment.
+    - Test B3: Error rate > 20% with ONLY 400 samples → does NOT throw (below ERROR_RATE_MIN_SAMPLES).
+    - Test B4: 50 consecutive failures (recordFailure × 50, no recordSuccess between) → throws with reason=consecutive_failures (D-06b). Assert $run->refresh()->consecutive_failures === 50.
+    - Test B5: recordSuccess resets consecutive_failures to 0 atomically. Seed consecutive_failures=49 via factory state, call recordSuccess once, assert column === 0 AND total_skus bumped by 1.
+    - Test B6: triggerJwtFailure($runId) sets abort_reason='jwt_refresh' on the DB row → throwIfTriggered throws with reason=jwt_refresh (D-06c) regardless of counter values.
+    - Test B7: AbortGuard counters are per-run — two SyncRun rows have independent DB counters (incrementing SyncRun A's consecutive_failures does NOT affect SyncRun B).
+    - Test B8 (NEW — Checker blocker): Two-worker shared-state test. Resolve TWO distinct AbortGuard instances (NOT singleton — AbortGuard is stateless now). Instance A calls recordFailure($runId) 25 times. Instance B calls recordFailure($runId) 25 times. EITHER instance then calls throwIfTriggered($runId) → MUST throw reason=consecutive_failures (DB column === 50). Pre-fix: each instance had its own in-memory counter of 25, neither would trip.
+    - Test B9 (atomic-increment verification): Run 10 sequential recordFailure calls; assert $run->refresh()->failed_count === 10 (proves ->increment() is a single SQL UPDATE, not a read-modify-write race). Optional: if Laravel Concurrency facade is available, run 10 concurrent recordFailure via Concurrency::run — same assertion.
 
     Tests in tests/Feature/SyncDiffEngineTest.php:
     - Test D1: Supplier row matches Woo row exactly (same price to 2dp, same stock int) → diff returns null (no-op).
@@ -615,73 +626,89 @@ final class SkuMatcher
 }
 ```
 
-**4. `app/Domain/Sync/Services/AbortGuard.php`** — RESEARCH Pattern 4 verbatim, keyed by run id in-memory:
+**4. `app/Domain/Sync/Services/AbortGuard.php`** — DB-BACKED counters (Checker blocker fix):
+
+Design change from the original in-memory version: `sync-woo-push-supervisor` runs 2-3 worker processes; each would have gotten its own `$counters[$runId]` array, so 50 consecutive failures split 17/17/16 would NEVER trip D-06(b). Fix: counters live on the `sync_runs` row (per P01 schema including new `consecutive_failures` column) so all workers read/write shared state via atomic SQL UPDATEs.
+
 ```php
 namespace App\Domain\Sync\Services;
 
 use App\Domain\Sync\Exceptions\SyncAbortException;
 use App\Domain\Sync\Models\SyncRun;
 
+/**
+ * D-06 tiered abort trigger — STATELESS service with DB-backed counters.
+ *
+ * Each method issues atomic SQL UPDATE / SELECT on the sync_runs row so multiple
+ * worker processes on sync-woo-push-supervisor share state. Previous in-memory
+ * design produced false-negatives under multi-worker supervisors (Checker blocker).
+ *
+ * Performance: ~3 DB writes per SKU + 1 DB read on throwIfTriggered → ~4.5k + 1.5k
+ * queries per 15k-SKU run. Acceptable on local MySQL (sub-ms per row). If profiling
+ * reveals this as a hot path, switch to Redis-cache-with-5s-TTL — research deviation,
+ * not required for v1 per Checker note.
+ */
 final class AbortGuard
 {
-    private const ERROR_RATE_THRESHOLD = 0.20;      // D-06(a)
+    private const ERROR_RATE_THRESHOLD = 0.20;        // D-06(a)
     private const ERROR_RATE_MIN_SAMPLES = 500;
     private const CONSECUTIVE_FAILURE_THRESHOLD = 50; // D-06(b)
 
-    /** @var array<int, array{processed:int, failed:int, consecutive:int, jwt_broken:bool}> */
-    private array $counters = [];
-
-    private function counters(int $runId): array
-    {
-        return $this->counters[$runId] ??= ['processed' => 0, 'failed' => 0, 'consecutive' => 0, 'jwt_broken' => false];
-    }
-
     public function recordSuccess(int $runId): void
     {
-        $c = &$this->counters[$runId];
-        $c = ['processed' => $c['processed'] + 1, 'failed' => $c['failed'], 'consecutive' => 0, 'jwt_broken' => $c['jwt_broken']];
+        // Two atomic UPDATEs. Reset consecutive_failures first so any concurrent
+        // reader sees the safer (lower) value during the brief window between them.
+        SyncRun::where('id', $runId)->update(['consecutive_failures' => 0]);
+        SyncRun::where('id', $runId)->increment('total_skus');
     }
 
     public function recordFailure(int $runId): void
     {
-        $c = &$this->counters[$runId];
-        $c = ['processed' => $c['processed'] + 1, 'failed' => $c['failed'] + 1, 'consecutive' => $c['consecutive'] + 1, 'jwt_broken' => $c['jwt_broken']];
+        // Three atomic increments. Each ->increment() is a single
+        // `UPDATE sync_runs SET col = col + 1 WHERE id = ?` — safe under MySQL's
+        // default REPEATABLE READ isolation; concurrent workers cannot race.
+        SyncRun::where('id', $runId)->increment('total_skus');
+        SyncRun::where('id', $runId)->increment('failed_count');
+        SyncRun::where('id', $runId)->increment('consecutive_failures');
     }
 
-    public function markJwtRefreshFailed(int $runId): void
+    /**
+     * D-06(c) — caller (SupplierClient's JwtRefreshFailedException catch in the
+     * orchestrator) invokes this to flag the run as JWT-broken. We stash the
+     * flag on abort_reason (reusing the existing enum) so even if the job
+     * crashes before the orchestrator catches SyncAbortException, operators
+     * can see the reason on the sync_runs row.
+     */
+    public function triggerJwtFailure(int $runId): void
     {
-        $this->counters($runId);
-        $this->counters[$runId]['jwt_broken'] = true;
+        SyncRun::where('id', $runId)->update(['abort_reason' => SyncRun::ABORT_JWT_REFRESH]);
     }
 
     public function throwIfTriggered(int $runId): void
     {
-        $c = $this->counters($runId);
+        // Single SELECT — projections only.
+        $run = SyncRun::query()
+            ->select(['id', 'failed_count', 'total_skus', 'consecutive_failures', 'abort_reason'])
+            ->findOrFail($runId);
 
-        if ($c['jwt_broken']) {
+        if ($run->abort_reason === SyncRun::ABORT_JWT_REFRESH) {
             throw new SyncAbortException(SyncRun::ABORT_JWT_REFRESH, 'JWT refresh failed (D-06c).');
         }
-        if ($c['consecutive'] >= self::CONSECUTIVE_FAILURE_THRESHOLD) {
-            throw new SyncAbortException(SyncRun::ABORT_CONSECUTIVE, "{$c['consecutive']} consecutive failures (D-06b).");
+        if ($run->consecutive_failures >= self::CONSECUTIVE_FAILURE_THRESHOLD) {
+            throw new SyncAbortException(SyncRun::ABORT_CONSECUTIVE, "{$run->consecutive_failures} consecutive failures (D-06b).");
         }
-        if ($c['processed'] >= self::ERROR_RATE_MIN_SAMPLES
-            && ($c['failed'] / max(1, $c['processed'])) > self::ERROR_RATE_THRESHOLD) {
-            $rate = number_format(($c['failed'] / $c['processed']) * 100, 1);
-            throw new SyncAbortException(SyncRun::ABORT_ERROR_RATE, "Error rate {$rate}% exceeded 20% after {$c['processed']} SKUs (D-06a).");
+        if ($run->total_skus >= self::ERROR_RATE_MIN_SAMPLES
+            && ($run->failed_count / max(1, $run->total_skus)) > self::ERROR_RATE_THRESHOLD) {
+            $rate = number_format(($run->failed_count / $run->total_skus) * 100, 1);
+            throw new SyncAbortException(SyncRun::ABORT_ERROR_RATE, "Error rate {$rate}% exceeded 20% after {$run->total_skus} SKUs (D-06a).");
         }
-    }
-
-    public function resetRun(int $runId): void
-    {
-        unset($this->counters[$runId]);
     }
 }
 ```
 
-Bind AbortGuard as a singleton in AppServiceProvider::register() so counters persist across chunk jobs in the same run within the same worker process:
-```php
-$this->app->singleton(\App\Domain\Sync\Services\AbortGuard::class);
-```
+**IMPORTANT — DO NOT bind AbortGuard as a singleton.** The earlier in-memory design required a singleton so counters persisted across chunk jobs in the same worker process. The DB-backed design is stateless — two worker processes resolving two AbortGuard instances still share state via the DB row. Remove any `$this->app->singleton(AbortGuard::class)` line if added. Default auto-resolve (fresh instance per injection) is correct.
+
+**IMPORTANT — Double-counting avoidance with SyncRun::incrementCounter.** SyncRun (from P01) exposes `$run->incrementCounter(string $action)` which also increments columns like `failed_count`. AbortGuard ALSO increments `failed_count`. To prevent double-counting: SyncChunkJob MUST call AbortGuard exclusively (do NOT also call `$run->incrementCounter('failed')` on the same failure). For non-failure actions (`skipped`, `missing`, `unknown_sku`), continue to use `$run->incrementCounter($action)` — those do not conflict with AbortGuard's columns. The canonical call sites are spelled out in Task 3 SyncChunkJob code below.
 
 **5. `app/Domain/Sync/Services/SyncDiffEngine.php`** — compares supplier ↔ Woo:
 ```php
@@ -775,10 +802,11 @@ vendor/bin/pest
     - 4 service classes + 1 exception exist in app/Domain/Sync/{Services,Exceptions}/
     - WooProductIteratorTest — 8 tests green (simple, variable, inner-page pagination, custom-ms slug/case, exclude meta, fromPage resume, grouped-skipped)
     - SkuMatcherTest — 3 tests green (build/match, case-sensitivity, perf < 100ms on 10k)
-    - AbortGuardTest — 7 tests green (all D-06 a/b/c triggers, reset, per-run isolation)
+    - AbortGuardTest — 9 tests green (all D-06 a/b/c triggers via DB-backed counters, reset, per-run isolation, two-worker shared-state test B8, atomic-increment test B9)
     - SyncDiffEngineTest — 8 tests green (no-op, price-only, stock-only, both, variation endpoint, exclude skipped, missing null, 2dp normalisation)
-    - Full Pest suite ≥ 163 passing (previous 137 + this task's 26)
-    - AbortGuard bound as singleton in AppServiceProvider::register()
+    - Full Pest suite ≥ 165 passing (previous 137 + this task's 28)
+    - AbortGuard is STATELESS (NOT bound as singleton) — each worker resolves its own instance, state lives on the sync_runs row
+    - Checker-blocker fix verified: two independent AbortGuard instances each recording 25 failures DO trip the 50-consecutive-failure threshold (Test B8)
   </done>
 </task>
 
@@ -826,6 +854,7 @@ vendor/bin/pest
     - Test Ms2: simple product with custom-ms tag → Woo is NOT touched (skipped); SupplierSkuMissing dispatched with newStatus='publish' (unchanged) + hadCustomMsTag=true.
     - Test Ms3: variation absent in supplier → WooClient->put("products/{$parent}/variations/{$vid}", ['status' => 'private']); parent stays publish; SupplierSkuMissing hasCustomMsTag=false regardless of parent's tag (D-03 explicit carve-out for variations).
     - Test Ms4: ImportIssue row created for every missing SKU (issue_type='missing_at_supplier').
+    - Test Ms5 (Warning 6 fix): SyncRunItem row for action='missing' has old_price + old_stock populated from the Woo-side state (passed through SyncSupplierCommand::missingRows['woo_price'] + ['woo_stock']); new_price + new_stock are NULL. Assert the row satisfies the D-10 CSV spec (all 11 columns present).
 
     Tests in tests/Feature/ExcludeFromAutoUpdateTest.php (SYNC-07):
     - Test X1: Woo product with _exclude_from_auto_update=yes meta → diff returns 'skipped' action; NO WooClient write; run.skipped_count incremented; sync_run_item row action='skipped' reason='exclude_from_auto_update'.
@@ -920,6 +949,8 @@ final class SyncChunkJob implements ShouldQueue
 
                 if ($diff['action'] === 'skipped') {
                     $this->writeRunItem($run, $skuRow, 'skipped', $diff);
+                    // skipped_count is disjoint from AbortGuard's DB-backed columns
+                    // (total_skus / failed_count / consecutive_failures) — no double-counting.
                     $run->incrementCounter('skipped');
                     $abortGuard->recordSuccess($run->id);
                     continue;
@@ -933,6 +964,9 @@ final class SyncChunkJob implements ShouldQueue
                 });
 
                 $this->dispatchDomainEvents($skuRow, $diff);
+                // incrementCounter('updated') bumps sync_runs.updated_count.
+                // AbortGuard::recordSuccess() bumps total_skus + resets consecutive_failures
+                // (disjoint columns — no double-counting).
                 $run->incrementCounter('updated');
                 $abortGuard->recordSuccess($run->id);
             } catch (SyncAbortException $e) {
@@ -949,7 +983,9 @@ final class SyncChunkJob implements ShouldQueue
                     'created_at' => now(),
                 ]);
                 $this->writeRunItem($run, $skuRow, 'failed', null, $e->getMessage());
-                $run->incrementCounter('failed');
+                // NOTE: DO NOT call $run->incrementCounter('failed') here — AbortGuard's
+                // recordFailure() already increments sync_runs.failed_count atomically
+                // (Checker blocker fix). Calling both would double-count.
                 $abortGuard->recordFailure($run->id);
             }
 
@@ -1066,7 +1102,7 @@ final class MarkMissingSkusJob implements ShouldQueue
 
     public function __construct(
         public readonly int $runId,
-        /** @var array<int, array{sku:string, type:string, woo_product_id:int, woo_variation_id:?int, is_custom_ms:bool}> */
+        /** @var array<int, array{sku:string, type:string, woo_product_id:int, woo_variation_id:?int, is_custom_ms:bool, woo_price:string, woo_stock:int}> */
         public readonly array $missingRows,
     ) {
         $this->onQueue('sync-bulk');
@@ -1098,10 +1134,11 @@ final class MarkMissingSkusJob implements ShouldQueue
             }
 
             try {
-                if ($shouldWrite && ! $run->dry_run) {
-                    $woo->put($endpoint, ['status' => $newStatus]);
-                } elseif ($shouldWrite && $run->dry_run) {
-                    // In dry-run, WooClient's shadow gate catches this — writes sync_diff instead
+                if ($shouldWrite) {
+                    // WooClient::put() routes through writeOrShadow(), which checks
+                    // config('services.woo.write_enabled') to decide shadow vs live.
+                    // The $run->dry_run flag is operator intent — the actual gate
+                    // is WOO_WRITE_ENABLED (belt and braces per D-04/SYNC-09).
                     $woo->put($endpoint, ['status' => $newStatus]);
                 }
 
@@ -1123,6 +1160,14 @@ final class MarkMissingSkusJob implements ShouldQueue
                     'woo_variation_id' => $row['woo_variation_id'],
                     'action' => 'missing',
                     'reason' => $row['is_custom_ms'] ? 'missing_at_supplier_custom_ms_preserved' : 'missing_at_supplier',
+                    // Warning 6 — D-10 CSV requires all 11 columns. Woo state IS known
+                    // for missing rows (the product exists in Woo), so populate
+                    // old_price + old_stock from the Woo-side data passed through
+                    // by SyncSupplierCommand::missingRows.
+                    'old_price' => $row['woo_price'] ?? null,
+                    'old_stock' => $row['woo_stock'] ?? null,
+                    'new_price' => null,
+                    'new_stock' => null,
                     'correlation_id' => $run->correlation_id,
                     'created_at' => now(),
                 ]);
@@ -1251,7 +1296,11 @@ final class SyncSupplierCommand extends BaseCommand
                 }
             }
 
-            // Missing SKUs: in Woo but not in supplier feed (SYNC-06 + D-03)
+            // Missing SKUs: in Woo but not in supplier feed (SYNC-06 + D-03).
+            // Include the Woo-side price + stock so MarkMissingSkusJob can populate
+            // SyncRunItem.old_price + old_stock (Warning 6 fix: D-10 CSV spec requires
+            // all 11 columns — for action='missing' the Woo state IS known because
+            // the row exists in Woo).
             foreach ($wooSkusSeen as $sku => $row) {
                 if (! isset($supplierFeed[$sku])) {
                     $missingRows[] = [
@@ -1260,6 +1309,8 @@ final class SyncSupplierCommand extends BaseCommand
                         'woo_product_id' => (int) $row['woo_product_id'],
                         'woo_variation_id' => $row['woo_variation_id'] ?? null,
                         'is_custom_ms' => (bool) $row['is_custom_ms'],
+                        'woo_price' => (string) ($row['price'] ?? ''),         // Warning 6 — D-10 CSV column
+                        'woo_stock' => (int) ($row['stock_quantity'] ?? 0),    // Warning 6 — D-10 CSV column
                     ];
                 }
             }
@@ -1306,15 +1357,31 @@ final class SyncSupplierCommand extends BaseCommand
 }
 ```
 
-**4. Register SyncSupplierCommand in `app/Console/Kernel.php`** (or `bootstrap/app.php` withCommands if Laravel 12 pattern) — actually Laravel 12 auto-discovers commands in `app/Console/Commands/` BUT our SyncSupplierCommand lives in `app/Domain/Sync/Commands/` so add it to the `withCommands` array in `bootstrap/app.php`:
+**4. Register SyncSupplierCommand via `app/Providers/AppServiceProvider.php`** (Warning 2 fix — AppServiceProvider is already in files_modified; bootstrap/app.php is NOT touched).
+
+Laravel 12 auto-discovers commands from `app/Console/Commands/` only. Our command lives at `app/Domain/Sync/Commands/SyncSupplierCommand.php`, so we register it explicitly via `Artisan::starting` inside AppServiceProvider::boot():
 
 ```php
-// bootstrap/app.php — in the ->withCommands(...) chain, add:
-->withCommands([
-    // ... existing ...
-    \App\Domain\Sync\Commands\SyncSupplierCommand::class,
-])
+// app/Providers/AppServiceProvider.php — in boot(), add:
+use Illuminate\Support\Facades\Artisan;
+
+public function boot(): void
+{
+    // ... existing Phase 1 + Phase 2 P01 Gate::policy registrations ...
+
+    // Phase 2 P03 — register the SyncSupplierCommand since it lives outside
+    // Laravel 12's auto-discovery path (app/Console/Commands/).
+    $this->app->booted(function () {
+        Artisan::starting(function ($artisan) {
+            $artisan->resolve(\App\Domain\Sync\Commands\SyncSupplierCommand::class);
+        });
+    });
+}
 ```
+
+Verify via `php artisan list | grep sync:supplier` returns the row.
+
+DO NOT modify `bootstrap/app.php` — keep Phase 1's withRouting/withMiddleware/withExceptions chain unchanged.
 
 **5. Update `routes/console.php`** — add the commented-out cron entry (D-05 kill-switch). DO NOT uncomment; Phase 7 runbook enables it:
 ```php

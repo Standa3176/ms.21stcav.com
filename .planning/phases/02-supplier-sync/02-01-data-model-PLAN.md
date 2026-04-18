@@ -42,6 +42,7 @@ must_haves:
   truths:
     - "Product + ProductVariant models support D-01 mixed simple/variable catalogue (parent-child via hasMany)"
     - "SyncRun model exposes a state machine (queued/running/completed/aborted/failed) with cursor_page + cursor_sku columns for SYNC-03 resume"
+    - "SyncRun schema includes DB-backed counters (failed_count, total_skus, consecutive_failures) so D-06 AbortGuard works across multi-worker supervisors (not in-memory per-process)"
     - "ImportIssue model backs SYNC-12 catalogue-health view and D-09 unknown-SKU logging"
     - "SyncRunItem is the denormalised append-only per-SKU log that feeds the D-10 11-column CSV report"
     - "Every new model has a factory so downstream plans can write feature tests without raw SQL"
@@ -51,7 +52,7 @@ must_haves:
     - path: "database/migrations/2026_04_18_200100_create_product_variants_table.php"
       provides: "Variation-level rows with unique woo_variation_id + unique sku + old_* delta columns"
     - path: "database/migrations/2026_04_18_200200_create_sync_runs_table.php"
-      provides: "SyncRun table with 5-state enum, dry_run flag, aggregate counters, cursor_page + cursor_sku"
+      provides: "SyncRun table with 5-state enum, dry_run flag, aggregate counters, cursor_page + cursor_sku, DB-backed consecutive_failures counter (D-06(b) shared-state fix)"
     - path: "database/migrations/2026_04_18_200300_create_sync_errors_table.php"
       provides: "Per-item failure log with FK sync_run_id + sku + woo_* ids + error_class/error_message + correlation_id"
     - path: "database/migrations/2026_04_18_200400_create_import_issues_table.php"
@@ -211,7 +212,7 @@ From Phase 1 Pitfall K pattern (01-02-SUMMARY + 01-04-SUMMARY + 01-05-SUMMARY):
     Before writing any migration, add tests to tests/Feature/Phase02DataModelTest.php asserting:
     - Test 1 (products schema): After migrate, `products` table has columns {id, woo_product_id (unsigned BIGINT unique), sku (VARCHAR(100) nullable indexed), name, type (enum: simple/variable/grouped/external indexed default simple), status (enum: publish/pending/draft/private indexed default publish), stock_status (enum: instock/outofstock/onbackorder default instock), buy_price (DECIMAL(12,4) nullable), sell_price (DECIMAL(12,4) nullable), cost_price (DECIMAL(12,4) nullable), is_custom_ms (bool default false indexed), exclude_from_auto_update (bool default false indexed), tags (json nullable), last_synced_at (timestamp nullable indexed), last_sync_run_id (unsignedBigInt nullable), created_at, updated_at, deleted_at}. Assert via `Schema::hasColumn` for each.
     - Test 2 (product_variants schema): Columns {id, product_id (FK constrained cascadeOnDelete), woo_variation_id (unsigned BIGINT unique), sku (VARCHAR(100) unique), name (nullable), buy_price, sell_price, old_buy_price, old_sell_price (all DECIMAL(12,4) nullable), stock_quantity (INT default 0), old_stock_quantity (INT nullable), status (enum publish/private indexed default publish), attributes (json nullable), last_synced_at (timestamp nullable indexed), timestamps}. Assert FK constraint via `DB::select("SHOW CREATE TABLE product_variants")` OR via Eloquent `Product::factory()->create()->variants()->count()` returning 0.
-    - Test 3 (sync_runs schema): Columns {id, started_at (indexed), completed_at (nullable), status (enum queued/running/completed/aborted/failed indexed default queued), dry_run (bool default true), total_skus/updated_count/skipped_count/failed_count/missing_count/unknown_sku_count (all INT default 0), abort_reason (enum error_rate/consecutive_failures/jwt_refresh/manual nullable), abort_message (text nullable), cursor_page (INT default 0), cursor_sku (VARCHAR(100) nullable), correlation_id (UUID indexed — use char(36) via $table->uuid), timestamps}.
+    - Test 3 (sync_runs schema): Columns {id, started_at (indexed), completed_at (nullable), status (enum queued/running/completed/aborted/failed indexed default queued), dry_run (bool default true), total_skus/updated_count/skipped_count/failed_count/missing_count/unknown_sku_count (all INT default 0), consecutive_failures (unsigned INT default 0 NOT NULL — D-06(b) shared-state counter per Checker blocker fix), abort_reason (enum error_rate/consecutive_failures/jwt_refresh/manual nullable), abort_message (text nullable), cursor_page (INT default 0), cursor_sku (VARCHAR(100) nullable), correlation_id (UUID indexed — use char(36) via $table->uuid), timestamps}. Test asserts `Schema::hasColumn('sync_runs', 'consecutive_failures')` is true AND default is 0 via factory-created row.
     - Test 4 (sync_errors schema): Columns {id, sync_run_id (FK constrained), sku, woo_product_id (nullable unsigned BIGINT), woo_variation_id (nullable unsigned BIGINT), error_class (VARCHAR(255)), error_message (TEXT), correlation_id (UUID indexed), created_at}. No updated_at (append-only).
     - Test 5 (import_issues schema): Columns {id, sku (VARCHAR(100) indexed), woo_product_id (nullable), woo_variation_id (nullable), issue_type (enum missing_at_supplier/unknown_sku/missing_cost_price/exclude_flag_no_metadata indexed), detected_at (indexed), last_seen_at, resolved_at (nullable indexed), notes (text nullable), correlation_id (UUID indexed), timestamps}.
     - Test 6 (sync_run_items schema): Columns {id, sync_run_id (FK constrained indexed), sku (VARCHAR(100)), woo_product_id (nullable), woo_variation_id (nullable), action (enum updated/skipped/failed/missing/unknown_sku), reason (VARCHAR(255) nullable), old_price/new_price (VARCHAR(32) nullable — 2dp strings per D-discretion exact match), old_stock/new_stock (INT nullable), error_message (text nullable), correlation_id (UUID indexed), created_at}. No updated_at.
@@ -280,6 +281,9 @@ Schema::create('sync_runs', function (Blueprint $t) {
     $t->integer('failed_count')->default(0);
     $t->integer('missing_count')->default(0);
     $t->integer('unknown_sku_count')->default(0);
+    // D-06(b) shared-state counter — per Checker blocker, AbortGuard reads/writes this
+    // atomically via SyncRun::increment so multi-worker supervisors share state.
+    $t->unsignedInteger('consecutive_failures')->default(0);
     $t->enum('abort_reason', ['error_rate', 'consecutive_failures', 'jwt_refresh', 'manual'])->nullable();
     $t->text('abort_message')->nullable();
     $t->integer('cursor_page')->default(0);
@@ -677,6 +681,7 @@ final class SyncRun extends Model
     protected $fillable = [
         'started_at', 'completed_at', 'status', 'dry_run',
         'total_skus', 'updated_count', 'skipped_count', 'failed_count', 'missing_count', 'unknown_sku_count',
+        'consecutive_failures',   // D-06(b) shared counter — Checker-blocker fix
         'abort_reason', 'abort_message',
         'cursor_page', 'cursor_sku', 'correlation_id',
     ];

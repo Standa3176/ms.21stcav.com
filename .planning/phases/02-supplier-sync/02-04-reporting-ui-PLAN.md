@@ -516,7 +516,7 @@ vendor/bin/pest  # full suite
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Ship SyncRunResource + ImportIssueResource + ProductResource + RelationManagers + AdminPanelProvider + RolePermissionSeeder + shield:generate audit</name>
+  <name>Task 2a: Ship SyncRunResource + ImportIssueResource + ProductResource + RelationManagers + AdminPanelProvider + RolePermissionSeeder (non-destructive — shield:generate happens in Task 2b)</name>
   <files>
     app/Domain/Sync/Filament/Resources/SyncRunResource.php,
     app/Domain/Sync/Filament/Resources/SyncRunResource/Pages/ListSyncRuns.php,
@@ -711,63 +711,216 @@ public static function canViewForRecord(\Illuminate\Database\Eloquent\Model $own
 ->discoverResources(in: app_path('Domain/Products/Filament/Resources'), for: 'App\\Domain\\Products\\Filament\\Resources')
 ```
 
-**5. Update `database/seeders/RolePermissionSeeder.php`** — verify these LIKE patterns are already present from Phase 1 (01-02-SUMMARY said they were forward-compat seeded). If not, add:
+**5. Update `database/seeders/RolePermissionSeeder.php`** — UNCONDITIONAL additions (Warning 3 fix).
+
+**Verified state:** Phase 1's RolePermissionSeeder currently has these LIKE patterns for pricing_manager:
+- `%_product` — matches e.g. `view_any_product`, `create_product`, `update_product`, etc.
+- `%_pricing_rule`
+- And explicit whereIn for `view_competitor_price`, `view_any_competitor_price`, `view_sync_run`, `view_any_sync_run`
+
+**MySQL LIKE gotcha:** `%_product` does NOT match `view_product_variant` — the pattern-end `_product` literally requires the permission name to end there. A product_variant permission like `view_product_variant` will NOT be caught. So we MUST add `%_product_variant` + `%_import_issue` explicitly.
+
+**Exact edit — inside the `$pricingManagerPermissions` query builder's outer `where` closure**, REPLACE:
 ```php
-// pricing_manager:
-'%_product', '%_product_variant', '%_import_issue',
-
-// read_only:
-'view_any_product', 'view_product', 'view_any_product_variant', 'view_product_variant',
-'view_any_sync_run', 'view_sync_run', 'view_any_import_issue', 'view_import_issue',
+$q->where('name', 'like', '%_product')
+    ->orWhere('name', 'like', '%_pricing_rule');
+```
+WITH:
+```php
+$q->where('name', 'like', '%_product')
+    ->orWhere('name', 'like', '%_product_variant')   // Phase 2 — D-01 variant edit access
+    ->orWhere('name', 'like', '%_import_issue')      // Phase 2 — SYNC-12 / D-09 triage
+    ->orWhere('name', 'like', '%_pricing_rule');
 ```
 
-**6. Run `shield:generate` + post-audit (Pitfall P2-H protocol):**
+**read_only** — no change required. The existing `Permission::query()->where('name', 'like', 'view_%')->get()` pattern already catches `view_product`, `view_any_product`, `view_product_variant`, `view_any_product_variant`, `view_sync_run`, `view_any_sync_run`, `view_import_issue`, `view_any_import_issue` because they all start with `view_`. Document this in a code comment above the read_only block:
+
+```php
+// read_only → Phase 2 new Resources (product_variant, sync_run, import_issue) are
+// auto-included because their Shield-generated view permissions all start with `view_`
+// (see pattern above). No explicit whereIn needed.
+```
+
+**Verification command (Task 2b runs this after shield:generate):**
 ```bash
-# BEFORE running, commit all hand-edited policies so `git checkout HEAD -- <file>` works if needed:
-git add app/Policies/*.php app/Domain/*/Policies/*.php
-git diff --cached --stat  # snapshot — save for post-generate comparison
-
-php artisan shield:generate --all --panel=admin --no-interaction
-
-# Grep for template literal leakage:
-grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null
-# Expected: empty output. If non-empty, restore each file via:
-# git checkout HEAD -- <path>
-
-php artisan db:seed --class=RolePermissionSeeder --force
+# Confirm the Phase 2 patterns are in the seeder file:
+grep -E "%_product_variant|%_import_issue" database/seeders/RolePermissionSeeder.php
+# Expected: 2 matches
 ```
 
-Expected damage to re-audit (hand-edited policies that will be regenerated):
-- `app/Policies/RolePolicy.php` — Phase 1's `{{ Placeholder }}` fix may be reverted; restore via `git checkout HEAD -- app/Policies/RolePolicy.php`
-- `app/Domain/Suggestions/Policies/SuggestionPolicy.php` — Phase 1 hasRole override; restore from git
-- `app/Domain/Alerting/Policies/AlertRecipientPolicy.php` — Phase 1 hasRole; restore from git
-- `app/Domain/Products/Policies/ProductPolicy.php` (P01) — may be regenerated; restore from git
-- `app/Domain/Products/Policies/ProductVariantPolicy.php` (P01) — restore from git
-- `app/Domain/Sync/Policies/SyncRunPolicy.php` (P01) — restore from git
-- `app/Domain/Sync/Policies/ImportIssuePolicy.php` (P01) — restore from git
+**Acceptance criterion update (ADD to Task 2b <done>):**
+- `grep -c "%_product_variant" database/seeders/RolePermissionSeeder.php` returns `1` (one match)
+- `grep -c "%_import_issue" database/seeders/RolePermissionSeeder.php` returns `1`
+- After `php artisan db:seed --class=RolePermissionSeeder --force`, the pricing_manager role holds permissions matching the new patterns (assert via `User::factory()->create()->assignRole('pricing_manager')->can('update_product_variant')` returns true).
 
-Shield MAY generate NEW Policy files for new Resources (ProductPolicy already exists → Shield won't overwrite? Verify. If Shield generates `app/Policies/ProductPolicy.php` at the ROOT path, delete it — our P01 policy lives at `app/Domain/Products/Policies/ProductPolicy.php`. Register the correct one via Gate::policy in AppServiceProvider (P01 already did this).
+**6. Write 3 Filament test files** per <behavior>. Use `\Livewire\Livewire::test()`, `actingAs(User::factory()->create()->assignRole('admin'))` per Phase 1 pattern. Verify N+1 prevention via `DB::getQueryLog()` bounded assertion.
 
-**7. Write 3 Filament test files** per <behavior>. Use `\Livewire\Livewire::test()`, `actingAs(User::factory()->create()->assignRole('admin'))` per Phase 1 pattern. Verify N+1 prevention via `DB::getQueryLog()` bounded assertion.
+**NOTE — shield:generate moved to Task 2b.** This task stops at "Resources + seeder patterns committed, tests green in the admin-gate-only shape". The Shield permissions for the 5 new Resources will appear after Task 2b runs `shield:generate`; before that, the Resources work via the hand-written policies from P01 (admin can reach the routes via Gate, pricing_manager/sales/read_only via their hasRole gates).
 
 **Self-check:**
 ```bash
 vendor/bin/pest --filter=SyncRunResource --filter=ImportIssueResource --filter=ProductResource
-vendor/bin/pest  # full suite — MUST stay green after shield:generate + policy restore
+vendor/bin/pest  # full suite — MUST stay green; Phase 1's 7 hand-edited policies still intact
 ```
+
+**Commit Task 2a separately** before proceeding to Task 2b so the destructive shield:generate step is isolated. Suggested commit message: `feat(02): phase 2 Filament Resources + RolePermissionSeeder patterns (shield:generate pending)`.
   </action>
   <verify>
-    <automated>vendor/bin/pest --filter=SyncRunResource &amp;&amp; vendor/bin/pest --filter=ImportIssueResource &amp;&amp; vendor/bin/pest --filter=ProductResource &amp;&amp; vendor/bin/pest</automated>
+    <automated>vendor/bin/pest --filter=SyncRunResource &amp;&amp; vendor/bin/pest --filter=ImportIssueResource &amp;&amp; vendor/bin/pest --filter=ProductResource</automated>
   </verify>
   <done>
     - 5 Filament Resources + 3 RelationManagers + 6 Pages under app/Domain/{Sync,Products}/Filament/Resources/
     - AdminPanelProvider discovers 4 resource directories (Suggestions + Alerting from Phase 1, Sync + Products new)
-    - `grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null` returns EMPTY (Pitfall P2-H mitigated)
-    - `php artisan shield:generate --all --panel=admin && php artisan db:seed --class=RolePermissionSeeder --force` runs idempotently
+    - RolePermissionSeeder contains Warning 3's UNCONDITIONAL additions: `grep -c "%_product_variant" database/seeders/RolePermissionSeeder.php` returns 1; same for `%_import_issue`
     - Visiting `/admin/sync-runs`, `/admin/import-issues`, `/admin/products` as admin renders Livewire components successfully (via Livewire::test)
     - 3 Resource test files, ≥ 20 tests green
-    - Full Pest suite ≥ 227 passing, 0 regressions
+    - Full Pest suite: 3 new Resource filter suites green; Phase 1's 7 hand-edited policies still intact (`grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null` returns empty — pre-shield baseline)
     - N+1 query test bounded: 10 SyncRun rows render in ≤ 12 DB queries total (P2-G prevention)
+    - Task committed separately from Task 2b (shield:generate) so destructive policy regeneration is isolated
+  </done>
+</task>
+
+<task type="auto" tdd="true">
+  <name>Task 2b: Run shield:generate + restore hand-edited policies + re-run seeder + verify full Pest suite (isolated destructive step)</name>
+  <files>
+    app/Policies/RolePolicy.php,
+    app/Domain/Suggestions/Policies/SuggestionPolicy.php,
+    app/Domain/Alerting/Policies/AlertRecipientPolicy.php,
+    app/Domain/Products/Policies/ProductPolicy.php,
+    app/Domain/Products/Policies/ProductVariantPolicy.php,
+    app/Domain/Sync/Policies/SyncRunPolicy.php,
+    app/Domain/Sync/Policies/ImportIssuePolicy.php,
+    database/seeders/RolePermissionSeeder.php
+  </files>
+  <read_first>
+    - 02-RESEARCH.md §12 Pitfall P2-H (shield:generate damage protocol, lines 1207-1217)
+    - 01-02-SUMMARY.md (how shield:generate behaves on fresh install vs existing Policies; forward-compat LIKE patterns)
+    - 01-04-SUMMARY.md + 01-05-SUMMARY.md (Phase 1 experience: 3 policies damaged, restored via `git checkout HEAD --`)
+    - Current state of all 7 policies listed in &lt;files&gt; (Task 2a committed them; they are the "pristine" snapshot Task 2b restores to if shield regenerates stubs)
+  </read_first>
+  <behavior>
+    No new tests — this task runs a destructive tool and verifies nothing regressed.
+    Success criteria are operational, not test-driven:
+    - `grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null` MUST return empty
+    - Full Pest suite must stay green (no behaviour change)
+    - `php artisan db:seed --class=RolePermissionSeeder --force` must run idempotently
+    - Every hand-edited policy from Task 2a's commit must be byte-identical to its pre-shield state (verified via `git diff --stat` + restore via `git checkout HEAD -- <file>` if drift is detected)
+  </behavior>
+  <action>
+**Pre-flight — Task 2a MUST be committed already.** This task relies on `git checkout HEAD -- <path>` to restore any damaged policy. If Task 2a is not yet committed, abort.
+
+```bash
+# Verify clean working tree (Task 2a committed):
+git status --porcelain app/Policies/ app/Domain/*/Policies/
+# Expected: empty output (all policy edits from Task 2a are committed)
+```
+
+**Step 1 — Snapshot the 7 hand-edited policies pre-generate:**
+```bash
+# Capture content hashes so we can detect drift after shield:generate
+for f in \
+    app/Policies/RolePolicy.php \
+    app/Domain/Suggestions/Policies/SuggestionPolicy.php \
+    app/Domain/Alerting/Policies/AlertRecipientPolicy.php \
+    app/Domain/Products/Policies/ProductPolicy.php \
+    app/Domain/Products/Policies/ProductVariantPolicy.php \
+    app/Domain/Sync/Policies/SyncRunPolicy.php \
+    app/Domain/Sync/Policies/ImportIssuePolicy.php ; do
+    echo "$(sha256sum "$f" 2>/dev/null || certutil -hashfile "$f" SHA256)  $f"
+done | tee /tmp/policy-hashes-pre.txt
+```
+
+**Step 2 — Run shield:generate:**
+```bash
+php artisan shield:generate --all --panel=admin --no-interaction
+```
+This generates permissions for the 5 new Resources (Sync + Products group). It may ALSO regenerate one or more Policy files.
+
+**Step 3 — Detect damage:**
+```bash
+# Template literal leak (Shield stub signature):
+grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null
+# Expected: empty. If non-empty, proceed to Step 4 restore.
+
+# Content drift detection:
+git diff --stat app/Policies/ app/Domain/*/Policies/
+# Expected: empty. If non-empty, each listed file needs restoration.
+```
+
+**Step 4 — Restore damaged policies:**
+```bash
+# For each damaged file (from grep OR git diff output):
+git checkout HEAD -- <policy-path>
+
+# Bulk variant if all 7 were touched:
+git checkout HEAD -- \
+    app/Policies/RolePolicy.php \
+    app/Domain/Suggestions/Policies/SuggestionPolicy.php \
+    app/Domain/Alerting/Policies/AlertRecipientPolicy.php \
+    app/Domain/Products/Policies/ProductPolicy.php \
+    app/Domain/Products/Policies/ProductVariantPolicy.php \
+    app/Domain/Sync/Policies/SyncRunPolicy.php \
+    app/Domain/Sync/Policies/ImportIssuePolicy.php
+```
+
+**Step 5 — Handle stray ProductPolicy at root.** Shield may create `app/Policies/ProductPolicy.php` (the default target path), but our canonical P01 policy lives at `app/Domain/Products/Policies/ProductPolicy.php`. Gate::policy in AppServiceProvider registers the Domain-path version. DELETE the stray if present:
+```bash
+if [ -f app/Policies/ProductPolicy.php ]; then
+    # Compare to Domain version — if Shield-generated (template literal OR different from Domain), delete
+    grep -l '{{ ' app/Policies/ProductPolicy.php && rm app/Policies/ProductPolicy.php
+fi
+```
+Same check for `app/Policies/ProductVariantPolicy.php`, `app/Policies/SyncRunPolicy.php`, `app/Policies/ImportIssuePolicy.php`.
+
+**Step 6 — Re-run seeder to attach new permissions to roles** (RolePermissionSeeder Warning 3 additions now come into play):
+```bash
+php artisan db:seed --class=RolePermissionSeeder --force
+# Expected output: "Roles synced: admin=N perms, pricing_manager=N, sales=N, read_only=N"
+# N values should INCREASE from the Task 2a baseline because Shield added the
+# 15 new permissions (3 resources x ~5 actions each, +some group-level ones).
+```
+
+**Step 7 — Verify post-shield integrity:**
+```bash
+# No template literal leakage:
+grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/ 2>/dev/null
+# Empty required.
+
+# Full Pest suite:
+vendor/bin/pest
+# Expected: ≥ 227 passing, 0 failures, 2 skipped-as-designed.
+
+# Seeder idempotency:
+php artisan db:seed --class=RolePermissionSeeder --force
+php artisan db:seed --class=RolePermissionSeeder --force  # second run
+# Both exit 0 without errors.
+
+# Permission attachment:
+php artisan tinker --execute='$u = \App\Models\User::factory()->create()->assignRole("pricing_manager"); dd($u->can("update_product_variant"), $u->can("resolve_import_issue"));'
+# Both should be truthy (pricing_manager can update variants + resolve import issues).
+```
+
+**Step 8 — Commit Task 2b separately:**
+```bash
+git add -p app/Policies app/Domain database/seeders
+git commit -m "feat(02): shield:generate for Phase 2 Resources + policy restoration (Pitfall P2-H)"
+```
+
+Document in the eventual 02-04-SUMMARY.md:
+- Which policies (if any) needed `git checkout HEAD --` restoration
+- Whether any stray root-path Policy files were deleted
+- Permission count delta per role (pricing_manager before vs after)
+  </action>
+  <verify>
+    <automated>vendor/bin/pest</automated>
+  </verify>
+  <done>
+    - `grep -rn '{{ ' app/Policies/ app/Domain/*/Policies/` returns empty
+    - `git diff --stat app/Policies app/Domain/*/Policies` returns empty after Step 4 restore
+    - `php artisan db:seed --class=RolePermissionSeeder --force` runs cleanly twice in a row (idempotency proof)
+    - `User::factory()->create()->assignRole('pricing_manager')->can('update_product_variant')` returns true — Warning 3 LIKE-pattern fix effective
+    - Full Pest suite ≥ 227 passing, 0 regressions
+    - Task committed separately from Task 2a
   </done>
 </task>
 

@@ -1,8 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
+use App\Foundation\Integration\Services\IntegrationLogger;
+use Automattic\WooCommerce\Client as AutomatticClient;
+use Automattic\WooCommerce\HttpClient\Response as WooResponse;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['services.woo.write_enabled' => false]);
@@ -24,11 +31,39 @@ it('records a SyncDiff instead of calling Woo when WOO_WRITE_ENABLED=false', fun
         ->and($result['diff_id'])->toBe($diff->id);
 });
 
-it('throws LogicException on write_enabled=true in Phase 1 (Phase 2 implements real write)', function () {
+/*
+ * P2-K: This test used to assert `LogicException` was thrown when write_enabled=true
+ * (Phase 1's placeholder). Phase 2 Plan 02 fills the writeLive() branch with a real
+ * Automattic\WooCommerce\Client invocation — the LogicException only remains as a
+ * safety fallback when $inner is null.
+ */
+it('WOO_WRITE_ENABLED=true invokes the Automattic client (replaces Phase 1 LogicException)', function () {
     config(['services.woo.write_enabled' => true]);
+    // correlation_id column is VARCHAR(36) — use a plain UUID, no prefix.
+    Context::add('correlation_id', (string) Str::uuid());
 
-    expect(fn () => app(WooClient::class)->put('products/1234', []))
-        ->toThrow(\LogicException::class);
+    $mockInner = Mockery::mock(AutomatticClient::class);
+    $mockHttp = Mockery::mock();
+    $mockHttp->shouldReceive('getResponse')->andReturn(new WooResponse(200, [], ''));
+    $mockInner->http = $mockHttp;
+
+    $mockInner->shouldReceive('put')
+        ->once()
+        ->with('products/1234', ['regular_price' => '99.99'])
+        ->andReturn(['id' => 1234, 'regular_price' => '99.99']);
+
+    $client = new WooClient(app(IntegrationLogger::class), $mockInner);
+    $result = $client->put('products/1234', ['regular_price' => '99.99']);
+
+    expect($result)->toHaveKey('id', 1234);
+
+    // integration_events row persisted with status=success
+    expect(IntegrationEvent::where('endpoint', 'products/1234')
+        ->where('status', 'success')
+        ->count())->toBe(1);
+
+    // NO sync_diffs row on a live write (live path does not shadow)
+    expect(SyncDiff::count())->toBe(0);
 });
 
 it('writes integration_events row with shadow_mode response when diff recorded', function () {

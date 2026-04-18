@@ -53,4 +53,13 @@ return [
         'webhook_secret' => env('WC_WEBHOOK_SECRET'),
     ],
 
+    // Phase 2 Plan 02 — 21stcav.com supplier API (SYNC-01 + SYNC-02 JWT auth).
+    // Operator populates credentials before running the first live sync; JWT cache
+    // key includes md5($username) so credential rotation naturally invalidates.
+    'supplier' => [
+        'url' => env('SUPPLIER_API_URL', 'https://21stcav.com'),
+        'username' => env('SUPPLIER_API_USERNAME'),
+        'password' => env('SUPPLIER_API_PASSWORD'),
+    ],
+
 ];

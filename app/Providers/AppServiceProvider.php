@@ -34,6 +34,42 @@ class AppServiceProvider extends ServiceProvider
         // Plan 04: SuggestionApplierResolver must be a singleton so every producer,
         // job and admin action resolves the SAME registry instance (not a fresh, empty copy).
         $this->app->singleton(SuggestionApplierResolver::class);
+
+        // ── Phase 2 Plan 02: Woo REST + Supplier API clients ─────────────
+        // Automattic's WooCommerce SDK binding — single shared instance per request
+        // (cURL handle + consumer key/secret are stable across calls).
+        $this->app->singleton(\Automattic\WooCommerce\Client::class, function ($app) {
+            return new \Automattic\WooCommerce\Client(
+                (string) config('services.woo.url', 'https://meetingstore.co.uk'),
+                (string) config('services.woo.consumer_key', ''),
+                (string) config('services.woo.consumer_secret', ''),
+                [
+                    'version' => 'wc/v3',
+                    'timeout' => 30,          // default 10s is too short for bulk writes
+                    'verify_ssl' => $app->isProduction(),  // local dev may use self-signed
+                ]
+            );
+        });
+
+        // WooClient wraps the Automattic client with shadow-mode gate + 429 backoff
+        // + IntegrationLogger threading. Singleton so per-request correlation_id flows
+        // naturally through the same logger instance.
+        $this->app->singleton(\App\Domain\Sync\Services\WooClient::class, function ($app) {
+            return new \App\Domain\Sync\Services\WooClient(
+                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
+                $app->make(\Automattic\WooCommerce\Client::class),
+            );
+        });
+
+        // SupplierClient — non-singleton is fine: JWT state lives in Cache, not on
+        // the instance, so re-instantiation is cheap and tests benefit from fresh
+        // instances per resolve.
+        $this->app->bind(\App\Domain\Sync\Services\SupplierClient::class, function ($app) {
+            return new \App\Domain\Sync\Services\SupplierClient(
+                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
+                $app->make(\Illuminate\Contracts\Cache\Repository::class),
+            );
+        });
     }
 
     /**

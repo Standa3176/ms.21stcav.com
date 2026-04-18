@@ -23,10 +23,19 @@ use Spatie\Permission\PermissionRegistrar;
  * (Suggestion in Plan 04, AlertRecipient in Plan 05, Product in Phase 2, etc.)
  * are auto-included once `shield:generate` produces their permissions.
  *
- * Permission name format verified against Shield 3.9.10 output
- * (01-02 execution): `{action}_{resource_snake_singular}` — e.g. `view_any_role`,
- * `create_pricing_rule`. NOT `::` separated. The LIKE patterns below assume
- * this format. See 01-02-SUMMARY.md for the verification record.
+ * Permission name format (verified 02-04 execution after shield:generate for
+ * Phase 2 Resources): Shield emits TWO styles depending on resource class name:
+ *   - Single-word: `{action}_{resource_snake_singular}` — e.g. `view_any_role`,
+ *     `view_product`, `create_suggestion`
+ *   - Multi-word (PascalCase): `{action}_{word1}::{word2}` — e.g. `view_sync::run`,
+ *     `update_import::issue`, `view_any_alert::recipient`
+ *
+ * The seeder's LIKE patterns cover BOTH styles so a future Shield separator
+ * change (or a Resource class rename) does not silently drop permissions.
+ *
+ * MySQL LIKE gotcha: `_` in a LIKE pattern is a single-char wildcard. So
+ * `%_product` matches `view_product`, `create_product`, etc. (underscore-sep).
+ * To match `sync::run`-style names we add explicit `%sync::run` patterns.
  */
 class RolePermissionSeeder extends Seeder
 {
@@ -59,24 +68,31 @@ class RolePermissionSeeder extends Seeder
             ->where(function ($q) {
                 // CRUD on product + product_variant + import_issue + pricing_rule (all actions).
                 //
-                // MySQL LIKE gotcha (Plan 02-04): `%_product` does NOT match
-                // `view_product_variant` — the trailing `_product` anchors to the END
-                // of the string. Same for `%_import_issue` vs `%_import_issue_*`. So
-                // we MUST add `%_product_variant` and `%_import_issue` patterns
-                // unconditionally; the broader `%_product` catches only the Product
-                // resource's permissions (view_product, update_product, etc.).
+                // Phase 1 style (underscore separator): `%_product`, `%_pricing_rule`.
+                // Phase 2 post-shield:generate style (:: separator): `%import::issue`,
+                // `%product::variant`.
+                //
+                // MySQL LIKE gotcha: `_` in a LIKE pattern is a single-char wildcard.
+                // `%_product` matches `view_product` (last char + "product"), so it
+                // catches all 12 Product perms. But `%_product_variant` WILL NOT match
+                // Shield's `view_product::variant` output (different separator); the
+                // `%product::variant` line below catches that second style.
                 $q->where('name', 'like', '%_product')
-                    ->orWhere('name', 'like', '%_product_variant')   // Phase 2 — D-01 variant edit access
-                    ->orWhere('name', 'like', '%_import_issue')      // Phase 2 — SYNC-12 / D-09 triage
+                    ->orWhere('name', 'like', '%_product_variant')       // underscore style (forward-compat)
+                    ->orWhere('name', 'like', '%product::variant')       // Shield :: style (Phase 2 observed)
+                    ->orWhere('name', 'like', '%_import_issue')          // underscore style (forward-compat)
+                    ->orWhere('name', 'like', '%import::issue')          // Shield :: style (Phase 2 observed)
                     ->orWhere('name', 'like', '%_pricing_rule');
             })
             ->orWhere(function ($q) {
-                // View-only on competitor_price + sync_run
+                // View-only on competitor_price + sync_run (both separator styles).
                 $q->whereIn('name', [
                     'view_competitor_price',
                     'view_any_competitor_price',
-                    'view_sync_run',
-                    'view_any_sync_run',
+                    'view_sync_run',         // underscore style (forward-compat)
+                    'view_any_sync_run',     // underscore style (forward-compat)
+                    'view_sync::run',        // Shield :: style (Phase 2 observed)
+                    'view_any_sync::run',    // Shield :: style (Phase 2 observed)
                 ]);
             })
             ->pluck('name')

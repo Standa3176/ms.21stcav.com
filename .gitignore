@@ -24,3 +24,6 @@ yarn-error.log
 
 # Deptrac cache
 .deptrac.cache
+
+# Temporary tool output (shield:generate logs, policy hash snapshots, etc.)
+/.tmp

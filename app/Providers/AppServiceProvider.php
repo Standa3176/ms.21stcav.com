@@ -121,5 +121,18 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ProductVariant::class, ProductVariantPolicy::class);
         Gate::policy(SyncRun::class, SyncRunPolicy::class);
         Gate::policy(ImportIssue::class, ImportIssuePolicy::class);
+
+        // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
+        // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.
+        // Our command lives under app/Domain/Sync/Commands/, so we register it
+        // explicitly via ServiceProvider::commands(). Keeping this in
+        // AppServiceProvider::boot avoids touching bootstrap/app.php (Warning 2 —
+        // iter-1 fix) and only runs the registration when artisan is bootstrapping
+        // (runningInConsole guard).
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                \App\Domain\Sync\Commands\SyncSupplierCommand::class,
+            ]);
+        }
     }
 }

@@ -42,3 +42,14 @@ Schedule::command('sync-diffs:prune')
 
 // TODO: Phase 2 adds `sync-errors:prune --days=90` (D-07) once Phase 2 ships the sync_errors table.
 // TODO: Phase 5 adds `competitor-csv:prune --days=90` (D-06) once Phase 5 ships the csv_parse_errors table.
+
+// Phase 2 (D-05) — Daily supplier sync. COMMENTED OUT; Phase 7 cutover runbook
+// enables this entry once parity with the legacy Stock Updater plugin is proven.
+// The commented entry itself is the kill-switch — no separate SYNC_CRON_LIVE flag.
+// Schedule::command('sync:supplier --live')
+//     ->dailyAt('02:00')
+//     ->onOneServer()
+//     ->withoutOverlapping(60)
+//     ->onQueue('sync-bulk')
+//     ->timezone('Europe/London')
+//     ->description('Daily 21stcav.com supplier sync (D-05 — enable post-Phase-7-cutover)');

@@ -52,7 +52,7 @@ parameters:
     Products:     [Foundation]
     Pricing:      [Foundation]
     Competitor:   [Foundation]
-    Sync:         [Foundation]
+    Sync:         [Foundation, Products]  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant (expected cross-domain call per Plan 02-01 key-decisions)
     Webhooks:     [Foundation]
     CRM:          [Foundation]
     Suggestions:  [Foundation]

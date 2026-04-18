@@ -1,17 +1,24 @@
 <?php
 
+use App\Domain\Webhooks\Http\Controllers\WooWebhookController;
+use App\Domain\Webhooks\Http\Middleware\VerifyWooHmacSignature;
+use Illuminate\Support\Facades\Route;
+
 /*
 |--------------------------------------------------------------------------
 | Webhook Routes
 |--------------------------------------------------------------------------
 |
-| Inbound webhook endpoints (Woo, Bitrix future). Registered in
-| bootstrap/app.php under the 'api' middleware group with CSRF excluded
-| for the 'webhooks/*' prefix.
-|
-| HMAC verification middleware is added per-route in Plan 04.
-|
-| Phase 1 Plan 01 ships this file empty to establish the registration seam.
+| Registered in bootstrap/app.php under 'api' middleware group (no session, no CSRF).
+| VerifyWooHmacSignature is registered FIRST on the /webhooks/woo/* group so that
+| the raw body is available when hash_hmac computes the expected signature
+| (Pitfall A — middleware ordering is load-bearing).
 */
 
-// Routes added in Plan 04 (VerifyWooHmacSignature + WooWebhookController)
+Route::prefix('webhooks/woo')
+    ->middleware([VerifyWooHmacSignature::class])
+    ->group(function () {
+        Route::post('order', [WooWebhookController::class, 'order'])->name('webhooks.woo.order');
+        Route::post('customer', [WooWebhookController::class, 'customer'])->name('webhooks.woo.customer');
+        // Phase 4 adds more topics (product.updated, etc.)
+    });

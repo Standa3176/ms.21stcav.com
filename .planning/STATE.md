@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Phase 1 context gathered
-last_updated: "2026-04-18T13:53:47.682Z"
+stopped_at: Completed 01-01-scaffold-PLAN.md
+last_updated: "2026-04-18T16:31:14.048Z"
 last_activity: 2026-04-18 -- Phase 01 planning complete
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 20
 ---
 
 # Project State
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: — (no data yet)
 
 *Updated after each plan completion*
+| Phase 01 P01-scaffold | 50m | 3 tasks | 25 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,7 @@ Recent decisions affecting current work:
 - Roadmap: CRM sync moved to Phase 4 (ahead of Competitor and Auto-Create) because sanctions-compliance risk on itgalaxy v1.50.1 is the original "why now" — every week deferred accumulates legal/security exposure
 - Roadmap: 7-phase structure locked as dependency-forced (cannot compress to coarse 3-5 without losing coherent delivery boundaries)
 - Stack: Laravel 12 + Filament 3.3 + Horizon + phpredis + `automattic/woocommerce` + `bitrix24/b24phpsdk` (official) with `mesilov/bitrix24-php-sdk` as documented fallback
+- [Phase 01]: Phase 1 scaffold: spatie/laravel-permission ^6.0 (not ^7.2 as STACK.md says; Shield 3.x requires ^6.0); rmsramos/activitylog ^2.0 (not ^1.0; first Laravel-12 compatible); Tailwind downgraded v4→v3.4.17 per Pitfall D (Filament 3 incompat with Tailwind 4); Horizon pcntl/posix bypassed on Windows dev
 
 ### Pending Todos
 
@@ -81,6 +83,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-18T08:29:43.359Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-foundation/01-CONTEXT.md
+Last session: 2026-04-18T16:31:14.037Z
+Stopped at: Completed 01-01-scaffold-PLAN.md
+Resume file: None

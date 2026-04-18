@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   6. The Filament suggestions inbox is reachable, empty, and an admin can open a seeded test suggestion and approve/reject it (the apply path is stubbed — Phase 5 is the first real producer)
 **Plans**: 5 plans
 Plans:
-- [ ] 01-01-scaffold-PLAN.md — Bootstrap Laravel 12, install Phase 1 composer packages, create app/Domain + app/Foundation skeleton, wire Deptrac module-boundary ruleset, ship FeedGenerator contract stub (FOUND-13), register webhooks route file (FOUND-02, FOUND-13)
+- [x] 01-01-scaffold-PLAN.md — Bootstrap Laravel 12, install Phase 1 composer packages, create app/Domain + app/Foundation skeleton, wire Deptrac module-boundary ruleset, ship FeedGenerator contract stub (FOUND-13), register webhooks route file (FOUND-02, FOUND-13)
 - [ ] 01-02-rbac-PLAN.md — Install Filament Shield, add HasRoles to User, run shield:generate, write idempotent RolePermissionSeeder with D-02 role split (FOUND-01)
 - [ ] 01-03-foundation-PLAN.md — AttachCorrelationId middleware + DomainEvent base class + Auditor service + integration_events migration + IntegrationLogger with header redaction + BaseCommand + Context::hydrated callback for queue boundary propagation (FOUND-03, FOUND-04, FOUND-05)
 - [ ] 01-04-seams-PLAN.md — webhook_receipts + suggestions + sync_diffs migrations; VerifyWooHmacSignature middleware + WooWebhookController + OrderReceived/CustomerRegistered events; SuggestionApplier contract + StubApplier + ApplySuggestionJob + Filament SuggestionResource (admin-only) + seeded test suggestion; WooClient skeleton with WOO_WRITE_ENABLED shadow-mode gate (FOUND-06, FOUND-07, FOUND-08)

@@ -10,7 +10,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 ### Foundation (FOUND)
 
 - [ ] **FOUND-01**: Laravel 12 + Filament 3.3 admin app boots with authenticated users and role-based access (admin / pricing_manager / sales / read_only)
-- [ ] **FOUND-02**: `app/Domain/<Module>/` layout enforced by Deptrac CI — cross-domain imports fail the build
+- [x] **FOUND-02**: `app/Domain/<Module>/` layout enforced by Deptrac CI — cross-domain imports fail the build
 - [ ] **FOUND-03**: Domain event bus publishes events with a `correlation_id` that threads through audit, integration, and suggestion rows
 - [ ] **FOUND-04**: `audit_log` records every tracked-model change (actor, before, after, correlation_id) via `spatie/laravel-activitylog`
 - [ ] **FOUND-05**: `integration_events` records every outbound API attempt (endpoint, request, response, latency, status, correlation_id)
@@ -21,7 +21,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [ ] **FOUND-10**: Redis persistence is configured (`appendonly yes`, `appendfsync everysec`) so a VPS reboot does not lose in-flight sync chunks
 - [ ] **FOUND-11**: Failed Horizon jobs trigger an admin email/Slack alert via `spatie/laravel-failed-job-monitor`
 - [ ] **FOUND-12**: Retention policies are configured and enforced for `audit_log`, `integration_events`, competitor CSVs, `sync_errors` via scheduled prune commands
-- [ ] **FOUND-13**: `FeedGenerator` interface stub exists (empty contract) so Phase 8 channel feeds slot in without refactor
+- [x] **FOUND-13**: `FeedGenerator` interface stub exists (empty contract) so Phase 8 channel feeds slot in without refactor
 
 ### Supplier sync (SYNC) — Module A
 
@@ -183,7 +183,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | FOUND-01 | Phase 1 | Pending |
-| FOUND-02 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Complete |
 | FOUND-03 | Phase 1 | Pending |
 | FOUND-04 | Phase 1 | Pending |
 | FOUND-05 | Phase 1 | Pending |
@@ -194,7 +194,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | FOUND-10 | Phase 1 | Pending |
 | FOUND-11 | Phase 1 | Pending |
 | FOUND-12 | Phase 1 | Pending |
-| FOUND-13 | Phase 1 | Pending |
+| FOUND-13 | Phase 1 | Complete |
 | SYNC-01 | Phase 2 | Pending |
 | SYNC-02 | Phase 2 | Pending |
 | SYNC-03 | Phase 2 | Pending |

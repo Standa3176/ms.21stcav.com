@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Pint (PSR-12 style)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, bcmath, redis
+          tools: composer
+      - uses: ramsey/composer-install@v3
+      - name: Run Pint
+        run: vendor/bin/pint --test
+
+  static-analysis:
+    name: Larastan (phpstan level 6)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, bcmath, redis
+          tools: composer
+      - uses: ramsey/composer-install@v3
+      - name: Run Larastan
+        run: vendor/bin/phpstan analyse --memory-limit=1G --no-progress
+
+  deptrac:
+    name: Deptrac (module boundaries)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, bcmath, redis
+          tools: composer
+      - uses: ramsey/composer-install@v3
+      - name: Run Deptrac
+        run: vendor/bin/deptrac analyse --no-progress
+
+  tests:
+    name: Pest (feature + unit + architecture)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: meetingstore_ops_testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        # Note: Redis persistence flags (appendonly yes, appendfsync everysec, noeviction)
+        # match the local dev docker-compose.yml for CI parity. Redis Docker image does
+        # not accept these via env — real persistence hardening lives on the production VPS
+        # per 01-RESEARCH.md §4 (documented in user_setup of 01-05-horizon-alerting-PLAN.md).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, bcmath, redis, pdo_mysql
+          tools: composer
+      - uses: ramsey/composer-install@v3
+      - name: Prepare .env
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          sed -i 's/^DB_USERNAME=.*/DB_USERNAME=root/' .env
+          sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=root/' .env
+          sed -i 's/^DB_DATABASE=.*/DB_DATABASE=meetingstore_ops_testing/' .env
+      - name: Migrate
+        run: php artisan migrate --force
+      - name: Run Pest
+        # TODO: raise to --min=80 after Phase 3 when feature coverage stabilises (Gemini Suggestion 3).
+        # Phase 1 is greenfield with many stub Resources; 60 is the realistic floor until
+        # Phase 2/3 ship real supplier sync + pricing flows.
+        run: vendor/bin/pest --coverage --min=60

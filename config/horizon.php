@@ -8,11 +8,6 @@ return [
     |--------------------------------------------------------------------------
     | Horizon Name
     |--------------------------------------------------------------------------
-    |
-    | This name appears in notifications and in the Horizon UI. Unique names
-    | can be useful while running multiple instances of Horizon within an
-    | application, allowing you to identify the Horizon you're viewing.
-    |
     */
 
     'name' => env('HORIZON_NAME'),
@@ -21,11 +16,6 @@ return [
     |--------------------------------------------------------------------------
     | Horizon Domain
     |--------------------------------------------------------------------------
-    |
-    | This is the subdomain where Horizon will be accessible from. If this
-    | setting is null, Horizon will reside under the same domain as the
-    | application. Otherwise, this value will serve as the subdomain.
-    |
     */
 
     'domain' => env('HORIZON_DOMAIN'),
@@ -34,11 +24,6 @@ return [
     |--------------------------------------------------------------------------
     | Horizon Path
     |--------------------------------------------------------------------------
-    |
-    | This is the URI path where Horizon will be accessible from. Feel free
-    | to change this path to anything you like. Note that the URI will not
-    | affect the paths of its internal API that aren't exposed to users.
-    |
     */
 
     'path' => env('HORIZON_PATH', 'horizon'),
@@ -48,23 +33,19 @@ return [
     | Horizon Redis Connection
     |--------------------------------------------------------------------------
     |
-    | This is the name of the Redis connection where Horizon will store the
-    | meta information required for it to function. It includes the list
-    | of supervisors, failed jobs, job metrics, and other information.
+    | Plan 01 provisioned a dedicated 'horizon' Redis connection (DB index 2)
+    | in config/database.php. Horizon metadata (queues, metrics, supervisors)
+    | lives on that logical DB, separate from cache (DB 1) and default (DB 0)
+    | so FLUSHDB on cache does not wipe queue state.
     |
     */
 
-    'use' => 'default',
+    'use' => 'horizon',
 
     /*
     |--------------------------------------------------------------------------
     | Horizon Redis Prefix
     |--------------------------------------------------------------------------
-    |
-    | This prefix will be used when storing all Horizon data in Redis. You
-    | may modify the prefix when you are running multiple installations
-    | of Horizon on the same server so that they don't have problems.
-    |
     */
 
     'prefix' => env(
@@ -76,11 +57,6 @@ return [
     |--------------------------------------------------------------------------
     | Horizon Route Middleware
     |--------------------------------------------------------------------------
-    |
-    | These middleware will get attached onto each Horizon route, giving you
-    | the chance to add your own middleware to this list or change any of
-    | the existing middleware. Or, you can simply stick with this list.
-    |
     */
 
     'middleware' => ['web'],
@@ -89,26 +65,22 @@ return [
     |--------------------------------------------------------------------------
     | Queue Wait Time Thresholds
     |--------------------------------------------------------------------------
-    |
-    | This option allows you to configure when the LongWaitDetected event
-    | will be fired. Every connection / queue combination may have its
-    | own, unique threshold (in seconds) before this event is fired.
-    |
     */
 
     'waits' => [
         'redis:default' => 60,
+        'redis:webhook-inbound' => 30,
+        'redis:crm-bitrix' => 120,
+        'redis:sync-woo-push' => 90,
+        'redis:sync-bulk' => 1800,
+        'redis:competitor-csv' => 600,
+        'redis:critical' => 30,
     ],
 
     /*
     |--------------------------------------------------------------------------
     | Job Trimming Times
     |--------------------------------------------------------------------------
-    |
-    | Here you can configure for how long (in minutes) you desire Horizon to
-    | persist the recent and failed jobs. Typically, recent jobs are kept
-    | for one hour while all failed jobs are stored for an entire week.
-    |
     */
 
     'trim' => [
@@ -124,11 +96,6 @@ return [
     |--------------------------------------------------------------------------
     | Silenced Jobs
     |--------------------------------------------------------------------------
-    |
-    | Silencing a job will instruct Horizon to not place the job in the list
-    | of completed jobs within the Horizon dashboard. This setting may be
-    | used to fully remove any noisy jobs from the completed jobs list.
-    |
     */
 
     'silenced' => [
@@ -143,11 +110,6 @@ return [
     |--------------------------------------------------------------------------
     | Metrics
     |--------------------------------------------------------------------------
-    |
-    | Here you can configure how many snapshots should be kept to display in
-    | the metrics graph. This will get used in combination with Horizon's
-    | `horizon:snapshot` schedule to define how long to retain metrics.
-    |
     */
 
     'metrics' => [
@@ -161,13 +123,6 @@ return [
     |--------------------------------------------------------------------------
     | Fast Termination
     |--------------------------------------------------------------------------
-    |
-    | When this option is enabled, Horizon's "terminate" command will not
-    | wait on all of the workers to terminate unless the --wait option
-    | is provided. Fast termination can shorten deployment delay by
-    | allowing a new instance of Horizon to start while the last
-    | instance will continue to terminate each of its workers.
-    |
     */
 
     'fast_termination' => false,
@@ -176,11 +131,6 @@ return [
     |--------------------------------------------------------------------------
     | Memory Limit (MB)
     |--------------------------------------------------------------------------
-    |
-    | This value describes the maximum amount of memory the Horizon master
-    | supervisor may consume before it is terminated and restarted. For
-    | configuring these limits on your workers, see the next section.
-    |
     */
 
     'memory_limit' => 64,
@@ -190,9 +140,14 @@ return [
     | Queue Worker Configuration
     |--------------------------------------------------------------------------
     |
-    | Here you may define the queue worker settings used by your application
-    | in all environments. These supervisors and settings handle all your
-    | queued jobs and will be provisioned by Horizon during deployment.
+    | FOUND-09 supervisors — 7 production supervisors mapping to 7 named queues
+    | per 01-RESEARCH.md §4. Worker counts respect external API rate limits:
+    |   - crm-bitrix-supervisor maxProcesses=2 (Bitrix 2 req/sec hard cap)
+    |   - sync-woo-push-supervisor maxProcesses<=3 (Woo 100 req/min headroom)
+    |
+    | Local dev uses a single all-in-one supervisor covering every queue so
+    | `php artisan horizon` runs on a single dev machine without supervisor
+    | multiplication.
     |
     */
 
@@ -214,16 +169,90 @@ return [
 
     'environments' => [
         'production' => [
-            'supervisor-1' => [
+            'webhook-inbound-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['webhook-inbound'],
+                'balance' => 'simple',
+                'minProcesses' => 3,
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
+                'tries' => 3,
+                'timeout' => 60,
+                'memory' => 128,
+            ],
+            'crm-bitrix-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['crm-bitrix'],
+                'balance' => 'simple',
+                'minProcesses' => 1,
+                'maxProcesses' => 2,
+                'tries' => 5,
+                'timeout' => 120,
+                'memory' => 256,
+            ],
+            'sync-woo-push-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['sync-woo-push'],
+                'balance' => 'auto',
+                'minProcesses' => 2,
+                'maxProcesses' => 3,
+                'tries' => 5,
+                'timeout' => 90,
+                'memory' => 256,
+            ],
+            'sync-bulk-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['sync-bulk'],
+                'balance' => 'simple',
+                'minProcesses' => 1,
+                'maxProcesses' => 1,
+                'tries' => 2,
+                'timeout' => 1800,
+                'memory' => 512,
+            ],
+            'competitor-csv-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['competitor-csv'],
+                'balance' => 'simple',
+                'minProcesses' => 1,
+                'maxProcesses' => 2,
+                'tries' => 3,
+                'timeout' => 600,
+                'memory' => 512,
+            ],
+            'critical-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['critical'],
+                'balance' => 'simple',
+                'minProcesses' => 2,
+                'maxProcesses' => 5,
+                'tries' => 3,
+                'timeout' => 60,
+                'memory' => 128,
+            ],
+            'default-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['default'],
+                'balance' => 'auto',
+                'minProcesses' => 1,
+                'maxProcesses' => 3,
+                'tries' => 3,
+                'timeout' => 120,
+                'memory' => 256,
             ],
         ],
 
         'local' => [
-            'supervisor-1' => [
+            'all-in-one' => [
+                'connection' => 'redis',
+                'queue' => ['critical', 'webhook-inbound', 'crm-bitrix', 'sync-woo-push', 'sync-bulk', 'competitor-csv', 'default'],
+                'balance' => 'auto',
+                'minProcesses' => 1,
                 'maxProcesses' => 3,
+                'tries' => 1,
+                'timeout' => 300,
+                'memory' => 128,
             ],
         ],
     ],
@@ -232,11 +261,6 @@ return [
     |--------------------------------------------------------------------------
     | File Watcher Configuration
     |--------------------------------------------------------------------------
-    |
-    | The following list of directories and files will be watched when using
-    | the `horizon:listen` command. Whenever any directories or files are
-    | changed, Horizon will automatically restart to apply all changes.
-    |
     */
 
     'watch' => [

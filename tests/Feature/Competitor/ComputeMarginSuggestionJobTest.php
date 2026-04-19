@@ -7,11 +7,29 @@ use App\Domain\Competitor\Jobs\ComputeMarginSuggestionJob;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorIngestRun;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Competitor\Services\MarginAnalyser;
+use App\Domain\Competitor\Services\SalesCounterService;
 use App\Domain\Pricing\Models\PricingRule;
+use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Event;
+
+/**
+ * Invoke the job handler directly — dispatchSync() triggers the failed-job
+ * monitor on any internal throw which masks the underlying error behind
+ * BadMethodCallException(Application::notify). Direct handle() call surfaces
+ * test failures cleanly.
+ */
+function runComputeMarginSuggestionJob(int $competitorId, string $sku): void
+{
+    (new ComputeMarginSuggestionJob($competitorId, $sku))->handle(
+        app(MarginAnalyser::class),
+        app(SalesCounterService::class),
+        app(RuleResolver::class),
+    );
+}
 
 uses(RefreshDatabase::class);
 
@@ -85,7 +103,7 @@ it('happy path: creates a margin_change Suggestion with D-07 evidence when all 3
 
     [$competitor, $product, $rule] = seedHappyPathFixture();
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'POP-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'POP-SKU');
 
     $suggestion = Suggestion::where('kind', 'margin_change')->first();
     expect($suggestion)->not->toBeNull();
@@ -132,7 +150,7 @@ it('does NOT create a suggestion when sales_count_90d is below the threshold', f
 
     [$competitor] = seedHappyPathFixture(['sales' => 5]);
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'POP-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'POP-SKU');
 
     expect(Suggestion::where('kind', 'margin_change')->count())->toBe(0);
     Event::assertNotDispatched(MarginSuggestionCreated::class);
@@ -174,7 +192,7 @@ it('does NOT create a suggestion when fewer than consecutive_scrapes_required ro
         ]);
     }
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'POP-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'POP-SKU');
 
     expect(Suggestion::where('kind', 'margin_change')->count())->toBe(0);
 });
@@ -218,7 +236,7 @@ it('does NOT create a suggestion when direction flips across the last 3 scrapes'
         ], $data));
     }
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'POP-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'POP-SKU');
 
     expect(Suggestion::where('kind', 'margin_change')->count())->toBe(0);
 });
@@ -226,14 +244,12 @@ it('does NOT create a suggestion when direction flips across the last 3 scrapes'
 it('does NOT create a suggestion when margin delta is below the threshold', function (): void {
     Event::fake([MarginSuggestionCreated::class]);
 
-    config(['competitor.consecutive_scrapes_required' => 3]);
-    config(['competitor.sales_threshold_90d' => 10]);
-    config(['competitor.min_margin_floor_bps' => 500]);
-    config(['competitor.margin_delta_threshold_bps' => 20000]);  // wildly high threshold → cannot pass
-
     [$competitor] = seedHappyPathFixture();
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'POP-SKU');
+    // Set AFTER the fixture so the fixture's config defaults don't override.
+    config(['competitor.margin_delta_threshold_bps' => 20000]);  // wildly high threshold → cannot pass
+
+    runComputeMarginSuggestionJob($competitor->id, 'POP-SKU');
 
     expect(Suggestion::where('kind', 'margin_change')->count())->toBe(0);
 });
@@ -275,7 +291,7 @@ it('does NOT create a suggestion when proposed margin is below the min-margin fl
         ]);
     }
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'LOWMARGIN-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'LOWMARGIN-SKU');
 
     expect(Suggestion::where('kind', 'margin_change')->count())->toBe(0);
 });
@@ -285,7 +301,7 @@ it('no-ops silently when the product SKU is not found (orphan handled upstream)'
 
     $competitor = Competitor::factory()->create();
 
-    ComputeMarginSuggestionJob::dispatchSync($competitor->id, 'UNKNOWN-SKU');
+    runComputeMarginSuggestionJob($competitor->id, 'UNKNOWN-SKU');
 
     expect(Suggestion::count())->toBe(0);
     Event::assertNotDispatched(MarginSuggestionCreated::class);

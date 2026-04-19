@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Alerting\Listeners\ThrottledFailedJobNotifier;
+use App\Domain\Competitor\Events\CompetitorPriceRecorded;
+use App\Domain\Competitor\Listeners\DispatchMarginAnalyserJob;
 use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
@@ -66,6 +68,14 @@ class EventServiceProvider extends ServiceProvider
         ],
         CustomerRegistered::class => [
             HandleCustomerRegistered::class,
+        ],
+
+        // Phase 5 Plan 03 Task 2 — DispatchMarginAnalyserJob debounces via
+        // Cache::add per (competitor_id, sku, YYYY-MM-DD) to prevent N-per-CSV
+        // analysis. On first-of-day, dispatches ComputeMarginSuggestionJob
+        // which runs the 3-threshold gate and creates margin_change Suggestions.
+        CompetitorPriceRecorded::class => [
+            DispatchMarginAnalyserJob::class,
         ],
     ];
 

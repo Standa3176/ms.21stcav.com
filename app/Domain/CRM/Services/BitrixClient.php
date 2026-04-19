@@ -33,8 +33,12 @@ use Throwable;
  * Plan 04-02 will bind this as a singleton in AppServiceProvider; Plan 04-01
  * binds it as transient so the bootstrap command gets a fresh instance.
  */
-final class BitrixClient
+class BitrixClient
 {
+    // Not marked final — Phase 2 P02 precedent: keeping this open allows
+    // tests to fake the client via Mockery::mock(BitrixClient::class) and
+    // enables Plan 04-02's rate-limit subclass test seam without a
+    // separate interface. Real subclasses never ship outside tests.
     /** Lazy-built SDK service builder — constructed on first write/read. */
     private ?ServiceBuilder $sdk = null;
 

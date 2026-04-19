@@ -219,7 +219,14 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
     // RefreshDatabase has already brought us to a fully-migrated state.
-    // Step=11 rolls back (newest first):
+    // Step=17 rolls back (newest first):
+    //   Phase 4 Plan 01 (6 migrations — Plan 04-01 Task 2 addition):
+    //     2026_04_20_080500_add_provider_to_sync_diffs
+    //     2026_04_20_080400_create_bitrix_backfill_runs_table
+    //     2026_04_20_080300_create_crm_pipeline_settings_table
+    //     2026_04_20_080200_create_crm_status_mappings_table
+    //     2026_04_20_080100_create_crm_field_mappings_table
+    //     2026_04_20_080000_create_bitrix_entity_map_table
     //   Phase 3 Plan 02 (2 additive columns on products + product_variants):
     //     2026_04_19_090300_add_pricing_keys_to_product_variants
     //     2026_04_19_090200_add_pricing_keys_to_products
@@ -235,9 +242,16 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     //     2026_04_18_200200_create_sync_runs_table
     //     2026_04_18_200100_create_product_variants_table
     //     2026_04_18_200000_create_products_table
-    // Step = 2 (Phase 3 Plan 02) + 2 (Phase 3 Plan 01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 11.
-    $this->artisan('migrate:rollback', ['--step' => 11])->assertExitCode(0);
+    // Step = 6 (Phase 4) + 2 (Phase 3 P02) + 2 (Phase 3 P01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 17.
+    $this->artisan('migrate:rollback', ['--step' => 17])->assertExitCode(0);
 
+    // Phase 4 tables gone
+    expect(Schema::hasTable('bitrix_entity_map'))->toBeFalse();
+    expect(Schema::hasTable('crm_field_mappings'))->toBeFalse();
+    expect(Schema::hasTable('crm_status_mappings'))->toBeFalse();
+    expect(Schema::hasTable('crm_pipeline_settings'))->toBeFalse();
+    expect(Schema::hasTable('bitrix_backfill_runs'))->toBeFalse();
+    // Phase 3 + 2 tables gone
     expect(Schema::hasTable('product_overrides'))->toBeFalse();
     expect(Schema::hasTable('pricing_rules'))->toBeFalse();
     expect(Schema::hasTable('sync_run_items'))->toBeFalse();
@@ -257,6 +271,12 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     expect(Schema::hasTable('sync_run_items'))->toBeTrue();
     expect(Schema::hasTable('pricing_rules'))->toBeTrue();
     expect(Schema::hasTable('product_overrides'))->toBeTrue();
+    // Phase 4 tables back up
+    expect(Schema::hasTable('bitrix_entity_map'))->toBeTrue();
+    expect(Schema::hasTable('crm_field_mappings'))->toBeTrue();
+    expect(Schema::hasTable('crm_status_mappings'))->toBeTrue();
+    expect(Schema::hasTable('crm_pipeline_settings'))->toBeTrue();
+    expect(Schema::hasTable('bitrix_backfill_runs'))->toBeTrue();
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

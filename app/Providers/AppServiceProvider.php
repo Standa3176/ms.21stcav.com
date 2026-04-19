@@ -205,6 +205,11 @@ class AppServiceProvider extends ServiceProvider
                 // Invalidates the 24h cache + refetches deal/contact/company
                 // schemas. Admin-triggered after Bitrix UF_CRM_* edits.
                 \App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand::class,
+                // Phase 4 Plan 05 — CRM-10 backfill (Task 1).
+                // Backfill has 3 modes (dry-run / live / adopt-legacy-deal-ids)
+                // and --since is REQUIRED (no default). GDPR erasure (Task 2)
+                // is registered below once the command class is defined.
+                \App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand::class,
             ]);
         }
     }

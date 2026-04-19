@@ -28,6 +28,9 @@ class DatabaseSeeder extends Seeder
             // Phase 4 Plan 01 — 7 Woo-status rows with placeholder Bitrix stage labels.
             // Admin replaces labels with real STAGE_IDs via Plan 04-04 Filament UI.
             \Database\Seeders\Phase4\CrmStatusMappingSeeder::class,
+            // Phase 4 Plan 03 — 40 default Woo↔Bitrix field mappings ported from
+            // the legacy itgalaxy plugin's CrmFields.php. Idempotent firstOrCreate.
+            \Database\Seeders\Phase4\CrmFieldMappingSeeder::class,
         ]);
 
         $admin = User::firstOrCreate(

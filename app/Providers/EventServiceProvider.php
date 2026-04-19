@@ -5,10 +5,14 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Alerting\Listeners\ThrottledFailedJobNotifier;
+use App\Domain\CRM\Listeners\HandleCustomerRegistered;
+use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Events\SupplierPriceChanged;
 use App\Domain\Sync\Listeners\StubNewSupplierSkuListener;
+use App\Domain\Webhooks\Events\CustomerRegistered;
+use App\Domain\Webhooks\Events\OrderReceived;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Queue\Events\JobFailed;
 
@@ -43,6 +47,16 @@ class EventServiceProvider extends ServiceProvider
         // emitted by Phase 2 on ProductPriceChanged).
         SupplierPriceChanged::class => [
             RecomputePriceListener::class,
+        ],
+
+        // Phase 4 Plan 03 D-08 — first real listeners on the Phase 1
+        // webhook events. Both run on the `crm-bitrix` Horizon queue and
+        // dispatch PushOrderToBitrixJob / PushCustomerToBitrixJob.
+        OrderReceived::class => [
+            HandleOrderReceived::class,
+        ],
+        CustomerRegistered::class => [
+            HandleCustomerRegistered::class,
         ],
     ];
 

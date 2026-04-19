@@ -36,6 +36,7 @@ final class Product extends Model
         'buy_price', 'sell_price', 'cost_price',
         'is_custom_ms', 'exclude_from_auto_update', 'tags',
         'last_synced_at', 'last_sync_run_id',
+        'last_sales_count_90d', 'last_sales_count_computed_at',
     ];
 
     protected $casts = [
@@ -46,6 +47,8 @@ final class Product extends Model
         'buy_price' => 'decimal:4',
         'sell_price' => 'decimal:4',
         'cost_price' => 'decimal:4',
+        'last_sales_count_90d' => 'int',
+        'last_sales_count_computed_at' => 'datetime',
     ];
 
     public function variants(): HasMany

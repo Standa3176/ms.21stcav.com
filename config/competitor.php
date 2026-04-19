@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+/*
+|--------------------------------------------------------------------------
+| Competitor Analysis Configuration (Phase 5 Plan 01)
+|--------------------------------------------------------------------------
+|
+| Centralised thresholds + retention for the competitor-CSV ingest pipeline
+| and MarginAnalyser noise-suppression gates (D-05..D-07).
+|
+| margin_delta_threshold_bps — 8% in basis points (REQUIREMENTS.md default).
+|   A competitor-vs-our-margin delta must exceed this before a margin_change
+|   suggestion fires.
+|
+| min_margin_floor_bps — 5% safety guard (Pitfall P5-E). Never recommend a
+|   rule change that would drive our margin below 5% — that's a money-loser
+|   regardless of what competitors charge.
+|
+| consecutive_scrapes_required — 3 (REQUIREMENTS.md default). Prevents
+|   knee-jerk suggestions from a single anomalous scrape.
+|
+| sales_threshold_90d — 10 orders. The "≥N sales" gate in the analyser.
+|   Slow-movers don't justify margin changes no matter how aggressive the
+|   competitor pricing — 10 / 90d ≈ real demand.
+|
+| beat_by_pennies — 1p. How much lower than the competitor we aim to land.
+|   Margin-change suggestion payloads reverse-engineer the new margin from
+|   (competitor_ex_vat - beat_by_pennies).
+|
+| csv_retention_days — 90. Applies ONLY to raw CSV source files under
+|   storage/app/competitors/archive/. competitor_prices rows are NEVER pruned
+|   per COMP-07 mandate.
+|
+| stale_feed_hours — 48. Active competitors with no data in >48h trigger
+|   stale-feed alerts (COMP-11).
+|
+| csv_chunk_size — 100. Rows per CompetitorCsvChunkJob dispatch.
+|
+| filename_regex — {slug}_{YYYY-MM-DD}.csv (D-01). Anchors prevent traversal.
+*/
+
+return [
+    'margin_delta_threshold_bps'   => (int) env('COMPETITOR_MARGIN_DELTA_BPS', 800),       // 8% in bps
+    'consecutive_scrapes_required' => (int) env('COMPETITOR_SCRAPES_REQUIRED', 3),
+    'sales_threshold_90d'          => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
+    'min_margin_floor_bps'         => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 500),   // 5% safety floor (P5-E)
+    'beat_by_pennies'              => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
+    'csv_retention_days'           => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
+    'stale_feed_hours'             => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),
+    'csv_chunk_size'               => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
+    'filename_regex'               => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
+];

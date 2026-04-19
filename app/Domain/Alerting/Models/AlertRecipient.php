@@ -26,6 +26,10 @@ use Illuminate\Database\Eloquent\Model;
  * alerts. Default FALSE (evidence payloads may carry order PII) but the
  * seeded fallback row is force-updated to TRUE by the migration so the
  * Pitfall M "no active recipient" outage can't strand CRM alerts.
+ *
+ * Plan 05-01: receives_competitor_alerts is opt-in for competitor stale-feed
+ * + CSV-issue alerts (Phase 2 D-08 + Phase 4 D-12 pattern). Default FALSE;
+ * seeded fallback force-updated TRUE so alerts always land somewhere.
  */
 class AlertRecipient extends Model
 {
@@ -38,12 +42,14 @@ class AlertRecipient extends Model
         'notes',
         'receives_sync_reports',
         'receives_crm_alerts',
+        'receives_competitor_alerts',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'receives_sync_reports' => 'boolean',
         'receives_crm_alerts' => 'boolean',
+        'receives_competitor_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -62,5 +68,11 @@ class AlertRecipient extends Model
     public function scopeReceivesCrmAlerts(Builder $q): Builder
     {
         return $q->where('receives_crm_alerts', true);
+    }
+
+    /** Scope: only rows opted-in to competitor stale-feed / CSV-issue alerts (Plan 05-01). */
+    public function scopeReceivesCompetitorAlerts(Builder $q): Builder
+    {
+        return $q->where('receives_competitor_alerts', true);
     }
 }

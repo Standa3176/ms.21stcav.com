@@ -171,6 +171,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\CRM\Models\CrmPipelineSetting::class, \App\Domain\CRM\Policies\CrmPipelineSettingPolicy::class);
         Gate::policy(\App\Domain\CRM\Models\BitrixBackfillRun::class,  \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class);
 
+        // Phase 4 Plan 05 — GDPR erasure audit (CRM-13). Admin read-only;
+        // create/update/delete denied (append-only from GdprEraser service).
+        Gate::policy(\App\Domain\CRM\Models\GdprErasureLogEntry::class, \App\Domain\CRM\Policies\GdprErasureLogEntryPolicy::class);
+
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);
@@ -205,11 +209,12 @@ class AppServiceProvider extends ServiceProvider
                 // Invalidates the 24h cache + refetches deal/contact/company
                 // schemas. Admin-triggered after Bitrix UF_CRM_* edits.
                 \App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand::class,
-                // Phase 4 Plan 05 — CRM-10 backfill (Task 1).
+                // Phase 4 Plan 05 — CRM-10 backfill + CRM-13 GDPR erasure.
                 // Backfill has 3 modes (dry-run / live / adopt-legacy-deal-ids)
-                // and --since is REQUIRED (no default). GDPR erasure (Task 2)
-                // is registered below once the command class is defined.
+                // and --since is REQUIRED (no default). GDPR erasure requires
+                // typed ERASE confirmation + dispatches EraseBitrixContactJob.
                 \App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand::class,
+                \App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand::class,
             ]);
         }
     }

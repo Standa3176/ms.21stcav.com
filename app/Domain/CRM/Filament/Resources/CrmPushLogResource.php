@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\CRM\Filament\Resources;
 
+use App\Domain\CRM\Filament\Actions\EraseCustomerAction;
 use App\Domain\CRM\Filament\Resources\CrmPushLogResource\Pages;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use Filament\Resources\Resource;
@@ -176,6 +177,13 @@ class CrmPushLogResource extends Resource
 
                         return $q;
                     }),
+            ])
+            ->headerActions([
+                // Phase 4 Plan 05 Task 2 — CRM-13 GDPR erasure dual-entry-point.
+                // Admin-only (->authorize inside the action); requires typing
+                // ERASE into a confirmation field; dispatches the same
+                // EraseBitrixContactJob the CLI command does.
+                EraseCustomerAction::make(),
             ]);
     }
 

@@ -90,9 +90,11 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     // 9 = RolePolicy + SuggestionPolicy + AlertRecipientPolicy (Phase 1)
     //   + ProductPolicy + ProductVariantPolicy + SyncRunPolicy + ImportIssuePolicy (Phase 2)
     //   + PricingRulePolicy + ProductOverridePolicy (Phase 3)
-    // 14 = above + 5 CRM policies (Phase 4 Plan 01)
+    // 15 = above + 5 CRM policies (Phase 4 Plan 01) + CrmPushLogPolicy (Plan 04)
+    //      + GdprErasureLogEntryPolicy (Plan 05). Floor raised 14 → 16 to
+    //      absorb the final two Phase 4 policies.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(14, 'Expected ≥ 14 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(16, 'Expected ≥ 16 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -115,6 +117,8 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\CRM\Models\CrmStatusMapping::class => \App\Domain\CRM\Policies\CrmStatusMappingPolicy::class,
         \App\Domain\CRM\Models\CrmPipelineSetting::class => \App\Domain\CRM\Policies\CrmPipelineSettingPolicy::class,
         \App\Domain\CRM\Models\BitrixBackfillRun::class => \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class,
+        // Phase 4 Plan 05 — GDPR erasure audit (indefinite-retention read-only).
+        \App\Domain\CRM\Models\GdprErasureLogEntry::class => \App\Domain\CRM\Policies\GdprErasureLogEntryPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

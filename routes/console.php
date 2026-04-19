@@ -62,6 +62,18 @@ Schedule::command('competitor:watch')
     ->timezone('Europe/London')
     ->description('Watch storage/app/competitors/incoming/ for aged CSVs (Phase 5 Plan 02)');
 
+// Phase 5 Plan 03 — nightly 02:00 sales-counter recache (COMP-08 / COMP-09
+// hybrid strategy). Chunks Product by 100 SKUs per RecacheSalesCountsJob on
+// the sync-bulk queue. A3 fallback: job body is currently a stub (WooClient
+// lacks /orders) — real-time IncrementSkuSalesCount listener is authoritative
+// until WooClient gains a getOrders method in a post-Phase-5 plan.
+Schedule::command('competitor:sales-recache')
+    ->dailyAt('02:00')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Recompute last_sales_count_90d for every Product (Phase 5 Plan 03; A3 fallback stub)');
+
 // Phase 2 (D-05) — Daily supplier sync. COMMENTED OUT; Phase 7 cutover runbook
 // enables this entry once parity with the legacy Stock Updater plugin is proven.
 // The commented entry itself is the kill-switch — no separate SYNC_CRON_LIVE flag.

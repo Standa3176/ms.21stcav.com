@@ -135,6 +135,12 @@ class AppServiceProvider extends ServiceProvider
                 // Phase 5 Plan 02 D-08 — SECOND real producer on the Suggestions seam.
                 // No-op stub until Phase 6 ships the real supplier-request-list wiring.
                 $resolver->register('new_product_opportunity', \App\Domain\Competitor\Appliers\NewProductOpportunityApplier::class);
+                // Phase 5 Plan 03 Task 3 — THIRD real producer (and the first
+                // PRODUCTIVE one beyond the CRM retry seam). Approving a
+                // margin_change Suggestion updates PricingRule via Eloquent →
+                // PricingRuleObserver fires PricingRuleChanged → Phase 3's
+                // recompute chain picks up the new margin.
+                $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
             }
         );
 
@@ -233,6 +239,11 @@ class AppServiceProvider extends ServiceProvider
                 \App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
+                // Phase 5 Plan 03 Task 3 — nightly 02:00 sales-counter recache.
+                // A3 fallback: dispatched job is currently a stub (WooClient lacks
+                // /orders); command + schedule ship so future WooClient extension
+                // activates real recache with zero plumbing changes.
+                \App\Domain\Competitor\Console\Commands\CompetitorSalesRecacheCommand::class,
             ]);
         }
     }

@@ -145,17 +145,22 @@ it('Auditor records competitor.margin_change_applied with before/after context',
         'proposed_at' => now(),
     ]);
 
-    $auditorSpy = \Mockery::spy(\App\Foundation\Audit\Services\Auditor::class);
-    $applier = new MarginChangeApplier($auditorSpy);
+    app(MarginChangeApplier::class)->apply($suggestion);
 
-    $applier->apply($suggestion);
+    // Auditor writes via spatie/activitylog to the 'system' log — assert on
+    // the resulting activity_log row (Auditor::class is final; integration-
+    // level assertion is preferred over mocking the final class anyway).
+    $activity = \Spatie\Activitylog\Models\Activity::query()
+        ->where('log_name', 'system')
+        ->where('description', 'competitor.margin_change_applied')
+        ->latest('id')
+        ->first();
 
-    $auditorSpy->shouldHaveReceived('record')
-        ->with('competitor.margin_change_applied', \Mockery::on(function (array $ctx) use ($suggestion, $rule) {
-            return ($ctx['suggestion_id'] ?? null) === $suggestion->id
-                && ($ctx['pricing_rule_id'] ?? null) === $rule->id
-                && ($ctx['old_margin_bps'] ?? null) === 5000
-                && ($ctx['new_margin_bps'] ?? null) === 7500;
-        }))
-        ->once();
+    expect($activity)->not->toBeNull();
+
+    $properties = $activity->properties->toArray();
+    expect($properties['suggestion_id'] ?? null)->toBe($suggestion->id);
+    expect($properties['pricing_rule_id'] ?? null)->toBe($rule->id);
+    expect($properties['old_margin_bps'] ?? null)->toBe(5000);
+    expect($properties['new_margin_bps'] ?? null)->toBe(7500);
 });

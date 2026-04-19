@@ -29,6 +29,8 @@ uses(RefreshDatabase::class);
 */
 
 it('is queued on the sync-bulk queue (reserved for long-running sync work)', function (): void {
+    // Queueable trait exposes $queue; constructor routes via onQueue() to
+    // avoid PHP 8.4 trait collision (Plan 05-02 precedent).
     $job = new RecacheSalesCountsJob(['SKU-A']);
 
     expect($job->queue)->toBe('sync-bulk');

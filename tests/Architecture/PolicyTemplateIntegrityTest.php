@@ -38,6 +38,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
+        app_path('Domain/Pricing/Policies'),
         app_path('Domain/Products/Policies'),
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
@@ -67,6 +68,7 @@ it('has at least 7 Policy files under the scanned roots (positive control)', fun
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
+        app_path('Domain/Pricing/Policies'),
         app_path('Domain/Products/Policies'),
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
@@ -82,10 +84,11 @@ it('has at least 7 Policy files under the scanned roots (positive control)', fun
         }
     }
 
-    // 7 = RolePolicy + SuggestionPolicy + AlertRecipientPolicy (Phase 1)
+    // 9 = RolePolicy + SuggestionPolicy + AlertRecipientPolicy (Phase 1)
     //   + ProductPolicy + ProductVariantPolicy + SyncRunPolicy + ImportIssuePolicy (Phase 2)
+    //   + PricingRulePolicy + ProductOverridePolicy (Phase 3)
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(7, 'Expected ≥ 7 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(9, 'Expected ≥ 9 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -100,6 +103,8 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\Products\Models\ProductVariant::class => \App\Domain\Products\Policies\ProductVariantPolicy::class,
         \App\Domain\Sync\Models\SyncRun::class => \App\Domain\Sync\Policies\SyncRunPolicy::class,
         \App\Domain\Sync\Models\ImportIssue::class => \App\Domain\Sync\Policies\ImportIssuePolicy::class,
+        \App\Domain\Pricing\Models\PricingRule::class => \App\Domain\Pricing\Policies\PricingRulePolicy::class,
+        \App\Domain\Pricing\Models\ProductOverride::class => \App\Domain\Pricing\Policies\ProductOverridePolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

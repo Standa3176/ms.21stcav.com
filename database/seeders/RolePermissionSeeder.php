@@ -82,7 +82,10 @@ class RolePermissionSeeder extends Seeder
                     ->orWhere('name', 'like', '%product::variant')       // Shield :: style (Phase 2 observed)
                     ->orWhere('name', 'like', '%_import_issue')          // underscore style (forward-compat)
                     ->orWhere('name', 'like', '%import::issue')          // Shield :: style (Phase 2 observed)
-                    ->orWhere('name', 'like', '%_pricing_rule');
+                    ->orWhere('name', 'like', '%_pricing_rule')          // underscore style
+                    ->orWhere('name', 'like', '%pricing::rule')          // Shield :: style (Phase 3 forward-compat)
+                    ->orWhere('name', 'like', '%_product_override')      // underscore style
+                    ->orWhere('name', 'like', '%product::override');     // Shield :: style (Phase 3 forward-compat)
             })
             ->orWhere(function ($q) {
                 // View-only on competitor_price + sync_run (both separator styles).

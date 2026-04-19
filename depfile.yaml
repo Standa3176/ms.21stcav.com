@@ -57,7 +57,7 @@ parameters:
           regex: '^Illuminate\\Support\\Facades\\DB$'
   ruleset:
     Products:     [Foundation]
-    Pricing:      [Foundation]
+    Pricing:      [Foundation, Products]  # Plan 03-01: ProductOverride BelongsTo(Product); RuleResolver in Plan 02 reads product buy_price + brand_id/category_id. Read-only — Pricing never writes products.
     Competitor:   [Foundation]
     Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]

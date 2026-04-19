@@ -6,6 +6,10 @@ namespace App\Providers;
 
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Alerting\Policies\AlertRecipientPolicy;
+use App\Domain\Pricing\Models\PricingRule;
+use App\Domain\Pricing\Models\ProductOverride;
+use App\Domain\Pricing\Policies\PricingRulePolicy;
+use App\Domain\Pricing\Policies\ProductOverridePolicy;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductVariant;
 use App\Domain\Products\Policies\ProductPolicy;
@@ -121,6 +125,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ProductVariant::class, ProductVariantPolicy::class);
         Gate::policy(SyncRun::class, SyncRunPolicy::class);
         Gate::policy(ImportIssue::class, ImportIssuePolicy::class);
+
+        // ── Phase 3 Plan 01: Pricing domain policies ─────────────────────
+        // Gates PricingRule + ProductOverride writes to admin + pricing_manager.
+        // Hand-written hasRole() checks per Pitfall K + P2-H; DO NOT regenerate
+        // via shield:generate (Plan 02-05 PolicyTemplateIntegrityTest catches).
+        Gate::policy(PricingRule::class, PricingRulePolicy::class);
+        Gate::policy(ProductOverride::class, ProductOverridePolicy::class);
 
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.

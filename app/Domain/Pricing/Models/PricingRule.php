@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Pricing\Models;
 
+use App\Domain\Pricing\Observers\PricingRuleObserver;
 use Database\Factories\Domain\Pricing\PricingRuleFactory;
+use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Spatie\Activitylog\LogOptions;
@@ -24,6 +26,7 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * Scope enum constants are the single source of truth — code referring to
  * 'brand' as a magic string should use PricingRule::SCOPE_BRAND instead.
  */
+#[ObservedBy(PricingRuleObserver::class)]
 final class PricingRule extends Model
 {
     use HasFactory;

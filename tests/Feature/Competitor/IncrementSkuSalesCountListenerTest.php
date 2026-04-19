@@ -141,7 +141,7 @@ it('implements ShouldQueue and routes to default queue', function (): void {
 });
 
 it('is registered in EventServiceProvider::$listen for OrderReceived', function (): void {
-    $provider = app(EventServiceProvider::class);
+    $provider = new EventServiceProvider(app());
     $reflection = new ReflectionClass($provider);
     $listenProperty = $reflection->getProperty('listen');
     $listenProperty->setAccessible(true);

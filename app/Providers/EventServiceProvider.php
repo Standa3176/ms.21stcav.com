@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Domain\Alerting\Listeners\ThrottledFailedJobNotifier;
+use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
@@ -52,8 +53,16 @@ class EventServiceProvider extends ServiceProvider
         // Phase 4 Plan 03 D-08 — first real listeners on the Phase 1
         // webhook events. Both run on the `crm-bitrix` Horizon queue and
         // dispatch PushOrderToBitrixJob / PushCustomerToBitrixJob.
+        //
+        // Phase 5 Plan 03 Task 1 — IncrementSkuSalesCount is the real-time
+        // half of the hybrid sales-counter strategy. Runs on the `default`
+        // queue; walks raw_body.line_items and increments
+        // products.last_sales_count_90d by 1 per line item (W1 semantics —
+        // NOT multiplied by quantity). Identical aggregation in the nightly
+        // recache job prevents drift between the two paths.
         OrderReceived::class => [
             HandleOrderReceived::class,
+            IncrementSkuSalesCount::class,
         ],
         CustomerRegistered::class => [
             HandleCustomerRegistered::class,

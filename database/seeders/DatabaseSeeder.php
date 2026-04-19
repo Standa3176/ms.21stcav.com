@@ -42,6 +42,13 @@ class DatabaseSeeder extends Seeder
         AlertRecipient::where('email', 'ops@meetingstore.co.uk')
             ->update(['receives_competitor_alerts' => true]);
 
+        // Phase 5 Plan 04b — demo fixture for the human-verify walkthrough
+        // (T-05-04b-05 gate: local/testing only — seeder is otherwise inert).
+        // Idempotent: safe to call on every deploy.
+        if (app()->environment(['local', 'testing'])) {
+            $this->call(CompetitorDemoSeeder::class);
+        }
+
         $admin = User::firstOrCreate(
             ['email' => 'admin@meetingstore.co.uk'],
             [

@@ -244,6 +244,10 @@ class AppServiceProvider extends ServiceProvider
                 // /orders); command + schedule ship so future WooClient extension
                 // activates real recache with zero plumbing changes.
                 \App\Domain\Competitor\Console\Commands\CompetitorSalesRecacheCommand::class,
+                // Phase 5 Plan 04b Task 2 — hourly stale-feed detector (COMP-11).
+                // 48h threshold + 24h per-competitor dedup; routes via
+                // AlertRecipient.receives_competitor_alerts (Plan 05-01/05-04a).
+                \App\Domain\Competitor\Console\Commands\CompetitorCheckStaleCommand::class,
             ]);
         }
     }

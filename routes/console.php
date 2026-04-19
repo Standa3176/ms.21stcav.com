@@ -74,6 +74,18 @@ Schedule::command('competitor:sales-recache')
     ->timezone('Europe/London')
     ->description('Recompute last_sales_count_90d for every Product (Phase 5 Plan 03; A3 fallback stub)');
 
+// Phase 5 Plan 04b — hourly stale-feed detector (COMP-11). Notifies every
+// AlertRecipient where receives_competitor_alerts=true when an active
+// competitor hasn't ingested in >stale_feed_hours (default 48h). 24h per-
+// competitor dedup via Cache::add keyed on YYYY-MM-DD so the hourly cadence
+// cannot alert-fatigue ops — first miss of the day wins.
+Schedule::command('competitor:check-stale')
+    ->hourly()
+    ->withoutOverlapping(10)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Check for stale competitor feeds (>48h) and notify subscribers (Phase 5 Plan 04b, 24h dedup)');
+
 // Phase 2 (D-05) — Daily supplier sync. COMMENTED OUT; Phase 7 cutover runbook
 // enables this entry once parity with the legacy Stock Updater plugin is proven.
 // The commented entry itself is the kill-switch — no separate SYNC_CRON_LIVE flag.

@@ -7,6 +7,7 @@ namespace App\Domain\Alerting\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Notifications\Notifiable;
 
 /**
  * Email recipient for failed-job alerts (D-12) + sync-report distribution (D-08).
@@ -34,6 +35,7 @@ use Illuminate\Database\Eloquent\Model;
 class AlertRecipient extends Model
 {
     use HasFactory;
+    use Notifiable;
 
     protected $fillable = [
         'email',

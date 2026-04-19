@@ -48,7 +48,16 @@ Schedule::command('sync-diffs:prune')
     ->withoutOverlapping(30)
     ->onOneServer();
 
-// TODO: Phase 5 adds `competitor-csv:prune --days=90` (D-06) once Phase 5 ships the csv_parse_errors table.
+// Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive retention prune (COMP-12).
+// Default retention: config('competitor.csv_retention_days', 90). NEVER touches
+// competitor_prices / ingest_runs / csv_parse_errors rows — archive files only.
+// The 03:40 slot continues the 03:00/03:10/03:20/03:30 cascade from Phases 1 + 2.
+Schedule::command('competitor:csv-prune')
+    ->dailyAt('03:40')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune competitor CSV archive files older than 90d (COMP-12; D-09 auditable)');
 
 // Phase 5 Plan 02 — 5-minute competitor CSV watcher (COMP-01 + COMP-04).
 // Picks up aged files from storage/app/competitors/incoming/ and dispatches

@@ -248,6 +248,11 @@ class AppServiceProvider extends ServiceProvider
                 // 48h threshold + 24h per-competitor dedup; routes via
                 // AlertRecipient.receives_competitor_alerts (Plan 05-01/05-04a).
                 \App\Domain\Competitor\Console\Commands\CompetitorCheckStaleCommand::class,
+                // Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive prune (COMP-12).
+                // --days=0 is a no-op safety guard (explicit 0); otherwise falls back
+                // to config('competitor.csv_retention_days', 90). NEVER touches
+                // competitor_prices rows (COMP-07 mandate, permanent regression test).
+                \App\Domain\Competitor\Console\Commands\CompetitorCsvPruneCommand::class,
             ]);
         }
     }

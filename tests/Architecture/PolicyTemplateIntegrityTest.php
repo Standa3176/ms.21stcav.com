@@ -39,6 +39,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
+        app_path('Domain/Competitor/Policies'),   // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),          // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/Products/Policies'),
@@ -70,6 +71,7 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
+        app_path('Domain/Competitor/Policies'),   // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),          // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/Products/Policies'),
@@ -90,11 +92,13 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     // 9 = RolePolicy + SuggestionPolicy + AlertRecipientPolicy (Phase 1)
     //   + ProductPolicy + ProductVariantPolicy + SyncRunPolicy + ImportIssuePolicy (Phase 2)
     //   + PricingRulePolicy + ProductOverridePolicy (Phase 3)
-    // 15 = above + 5 CRM policies (Phase 4 Plan 01) + CrmPushLogPolicy (Plan 04)
-    //      + GdprErasureLogEntryPolicy (Plan 05). Floor raised 14 → 16 to
-    //      absorb the final two Phase 4 policies.
+    // 16 = above + 5 CRM policies (Phase 4 Plan 01) + CrmPushLogPolicy (Plan 04)
+    //      + GdprErasureLogEntryPolicy (Plan 05).
+    // 21 = above + 5 Competitor policies (Phase 5 Plan 01:
+    //      Competitor / CompetitorPrice / CompetitorCsvMapping /
+    //      CompetitorIngestRun / CsvParseError). Floor bumped 16 → 21.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(16, 'Expected ≥ 16 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(21, 'Expected ≥ 21 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -119,6 +123,12 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\CRM\Models\BitrixBackfillRun::class => \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class,
         // Phase 4 Plan 05 — GDPR erasure audit (indefinite-retention read-only).
         \App\Domain\CRM\Models\GdprErasureLogEntry::class => \App\Domain\CRM\Policies\GdprErasureLogEntryPolicy::class,
+        // Phase 5 Plan 01 — 5 Competitor policies (D-02 + D-04 role split).
+        \App\Domain\Competitor\Models\Competitor::class           => \App\Domain\Competitor\Policies\CompetitorPolicy::class,
+        \App\Domain\Competitor\Models\CompetitorPrice::class      => \App\Domain\Competitor\Policies\CompetitorPricePolicy::class,
+        \App\Domain\Competitor\Models\CompetitorCsvMapping::class => \App\Domain\Competitor\Policies\CompetitorCsvMappingPolicy::class,
+        \App\Domain\Competitor\Models\CompetitorIngestRun::class  => \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class,
+        \App\Domain\Competitor\Models\CsvParseError::class        => \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

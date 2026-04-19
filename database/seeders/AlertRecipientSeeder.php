@@ -24,8 +24,9 @@ class AlertRecipientSeeder extends Seeder
             [
                 'name' => 'Ops Fallback',
                 'is_active' => true,
-                'receives_sync_reports' => true,   // D-08 opt-in (Plan 02-04)
-                'receives_crm_alerts' => true,     // D-12 opt-in (Plan 04-03) — fallback always receives CRM alerts
+                'receives_sync_reports' => true,        // D-08 opt-in (Plan 02-04)
+                'receives_crm_alerts' => true,          // D-12 opt-in (Plan 04-03) — fallback always receives CRM alerts
+                'receives_competitor_alerts' => true,   // Plan 05-01 — fallback always receives competitor stale-feed / CSV-issue alerts
                 'notes' => 'Seeded fallback — Pitfall M mitigation. Replace with real ops addresses via /admin/alert-recipients.',
             ]
         );

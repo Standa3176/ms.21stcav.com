@@ -175,6 +175,19 @@ class AppServiceProvider extends ServiceProvider
         // create/update/delete denied (append-only from GdprEraser service).
         Gate::policy(\App\Domain\CRM\Models\GdprErasureLogEntry::class, \App\Domain\CRM\Policies\GdprErasureLogEntryPolicy::class);
 
+        // ── Phase 5 Plan 01: Competitor domain policies ─────────────────
+        // D-02 + D-04 role split: admin has full CRUD on competitors;
+        // pricing_manager can resolve quarantined CSV mappings + parse errors;
+        // sales can view competitor prices + ingest runs for quote context.
+        // Hand-written hasRole() checks per Pitfall K + P2-H + P5-F — do NOT
+        // regenerate via shield:generate. PolicyTemplateIntegrityTest
+        // (tests/Architecture) catches any Shield `{{ Placeholder }}` leaks.
+        Gate::policy(\App\Domain\Competitor\Models\Competitor::class,           \App\Domain\Competitor\Policies\CompetitorPolicy::class);
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorPrice::class,      \App\Domain\Competitor\Policies\CompetitorPricePolicy::class);
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorCsvMapping::class, \App\Domain\Competitor\Policies\CompetitorCsvMappingPolicy::class);
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorIngestRun::class,  \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class);
+        Gate::policy(\App\Domain\Competitor\Models\CsvParseError::class,        \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class);
+
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);

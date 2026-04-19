@@ -219,7 +219,15 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
     // RefreshDatabase has already brought us to a fully-migrated state.
-    // Step=17 rolls back (newest first):
+    // Step=27 rolls back (newest first):
+    //   Phase 5 Plan 01 (7 migrations — 5 new tables + 2 additive columns):
+    //     2026_04_21_090600_add_sales_count_90d_to_products
+    //     2026_04_21_090500_add_receives_competitor_alerts_to_alert_recipients
+    //     2026_04_21_090400_create_csv_parse_errors_table
+    //     2026_04_21_090300_create_competitor_prices_table
+    //     2026_04_21_090200_create_competitor_ingest_runs_table
+    //     2026_04_21_090100_create_competitor_csv_mappings_table
+    //     2026_04_21_090000_create_competitors_table
     //   Phase 4 Plan 01 (6 migrations — Plan 04-01 Task 2 addition):
     //     2026_04_20_080500_add_provider_to_sync_diffs
     //     2026_04_20_080400_create_bitrix_backfill_runs_table
@@ -247,9 +255,16 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     //     2026_04_20_090000_add_receives_crm_alerts_to_alert_recipients
     //   Phase 4 Plan 05 (1 new table):
     //     2026_04_20_100000_create_gdpr_erasure_log_table
-    // Step = 1 (Phase 4 P05) + 2 (Phase 4 P03) + 6 (Phase 4 P01) + 2 (Phase 3 P02) + 2 (Phase 3 P01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 20.
-    $this->artisan('migrate:rollback', ['--step' => 20])->assertExitCode(0);
+    // Step = 7 (Phase 5 P01) + 1 (Phase 4 P05) + 2 (Phase 4 P03) + 6 (Phase 4 P01) + 2 (Phase 3 P02) + 2 (Phase 3 P01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 27.
+    $this->artisan('migrate:rollback', ['--step' => 27])->assertExitCode(0);
 
+    // Phase 5 tables gone
+    expect(Schema::hasTable('competitors'))->toBeFalse();
+    expect(Schema::hasTable('competitor_csv_mappings'))->toBeFalse();
+    expect(Schema::hasTable('competitor_ingest_runs'))->toBeFalse();
+    expect(Schema::hasTable('competitor_prices'))->toBeFalse();
+    expect(Schema::hasTable('csv_parse_errors'))->toBeFalse();
+    expect(Schema::hasColumn('alert_recipients', 'receives_competitor_alerts'))->toBeFalse();
     // Phase 4 tables gone
     expect(Schema::hasTable('bitrix_entity_map'))->toBeFalse();
     expect(Schema::hasTable('crm_field_mappings'))->toBeFalse();
@@ -282,6 +297,14 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     expect(Schema::hasTable('crm_status_mappings'))->toBeTrue();
     expect(Schema::hasTable('crm_pipeline_settings'))->toBeTrue();
     expect(Schema::hasTable('bitrix_backfill_runs'))->toBeTrue();
+    // Phase 5 tables back up
+    expect(Schema::hasTable('competitors'))->toBeTrue();
+    expect(Schema::hasTable('competitor_csv_mappings'))->toBeTrue();
+    expect(Schema::hasTable('competitor_ingest_runs'))->toBeTrue();
+    expect(Schema::hasTable('competitor_prices'))->toBeTrue();
+    expect(Schema::hasTable('csv_parse_errors'))->toBeTrue();
+    expect(Schema::hasColumn('alert_recipients', 'receives_competitor_alerts'))->toBeTrue();
+    expect(Schema::hasColumn('products', 'last_sales_count_90d'))->toBeTrue();
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

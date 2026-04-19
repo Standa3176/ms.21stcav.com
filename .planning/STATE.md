@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-02-csv-ingest-pipeline-PLAN.md
-last_updated: "2026-04-19T20:30:49.258Z"
+stopped_at: Completed 05-03-margin-analyser-suggestion-producers-PLAN.md
+last_updated: "2026-04-19T21:19:54.300Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 26
-  completed_plans: 22
-  percent: 85
+  completed_plans: 23
+  percent: 88
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 05 (Competitor Analysis) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -70,6 +70,7 @@ Progress: [████░░░░░░] 40%
 | Phase 04 P05 | 40min | 3 tasks | 27 files |
 | Phase 05 P01 | ~17 min | 2 tasks | 34 files |
 | Phase 05-competitor-analysis P02 | ~30min | 2 tasks | 32 files |
+| Phase 05-competitor-analysis P03 | 41m | 3 tasks | 28 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Plan 05-02: Bus::batch with ->then()/->catch() chosen over chain-terminal for atomic archive/quarantine semantics; chunk size = 100 rows (config locked)
 - [Phase 05]: Plan 05-02: PHP 8.4 trait-collision — queue name set via onQueue() in constructor NOT public $queue property (Queueable trait incompatibility)
 - [Phase 05]: Plan 05-02: Deptrac config canonical file is deptrac.yaml (not depfile.yaml — both kept in sync; Plan 05-05 to consolidate)
+- [Phase 05-competitor-analysis]: Plan 05-03: A1 gate confirmed PricingRuleChanged event was missing — shipped event class + observer + #[ObservedBy] attribute on PricingRule (Laravel 11+ idiomatic registration; first use in this codebase).
+- [Phase 05-competitor-analysis]: Plan 05-03: A3 gate confirmed WooClient lacks /orders endpoint — RecacheSalesCountsJob ships as fallback STUB; logs recache.wooclient_orders_missing and exits. Real-time IncrementSkuSalesCount listener (W1 semantics: 1 per line-item, NOT multiplied by quantity) remains authoritative until post-Phase-5 WooClient extension. TODO-A3-FOLLOWUP carries the contract.
+- [Phase 05-competitor-analysis]: Plan 05-03: MarginChangeApplier fires PricingRuleChanged via the observer chain (NOT direct dispatch) — single source of truth for margin_basis_points changed semantics; future listeners on PricingRuleChanged don't need to know about this applier. THIRD real producer on Suggestions seam after CrmPushRetryApplier + NewProductOpportunityApplier.
 
 ### Pending Todos
 
@@ -155,6 +159,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T20:30:36.964Z
-Stopped at: Completed 05-02-csv-ingest-pipeline-PLAN.md
+Last session: 2026-04-19T21:19:39.283Z
+Stopped at: Completed 05-03-margin-analyser-suggestion-producers-PLAN.md
 Resume file: None

@@ -77,8 +77,8 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **COMP-05**: Per-row parse errors are logged to `csv_parse_errors` and surfaced in a Filament page — never discarded
 - [x] **COMP-06**: Currency symbols are stripped and prices divided by 1.2 to remove UK VAT before storage
 - [x] **COMP-07**: Every competitor price row is persisted to `competitor_prices` — history is never truncated
-- [ ] **COMP-08**: `MarginAnalyser` computes our-margin-at-competitor-price and suggests a new margin when delta ≥ threshold (default 8%) with noise suppression (≥3 consecutive scrapes AND ≥N sales/90d)
-- [ ] **COMP-09**: Margin-change suggestions write to the `suggestions` table; approval triggers a `PricingRule` update and audit-log entry
+- [x] **COMP-08**: `MarginAnalyser` computes our-margin-at-competitor-price and suggests a new margin when delta ≥ threshold (default 8%) with noise suppression (≥3 consecutive scrapes AND ≥N sales/90d)
+- [x] **COMP-09**: Margin-change suggestions write to the `suggestions` table; approval triggers a `PricingRule` update and audit-log entry
 - [ ] **COMP-10**: A Filament "Competitor Analysis" page shows price trend charts, biggest deltas, and a per-competitor view
 - [ ] **COMP-11**: Stale-feed detection warns the admin when a competitor hasn't reported in > 48h
 - [ ] **COMP-12**: Competitor CSV source files are pruned after 90 days (configurable)
@@ -238,8 +238,8 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | COMP-05 | Phase 5 | Complete |
 | COMP-06 | Phase 5 | Complete |
 | COMP-07 | Phase 5 | Complete |
-| COMP-08 | Phase 5 | Pending |
-| COMP-09 | Phase 5 | Pending |
+| COMP-08 | Phase 5 | Complete |
+| COMP-09 | Phase 5 | Complete |
 | COMP-10 | Phase 5 | Pending |
 | COMP-11 | Phase 5 | Pending |
 | COMP-12 | Phase 5 | Pending |

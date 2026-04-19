@@ -121,12 +121,17 @@ class AppServiceProvider extends ServiceProvider
 
         // ── Plan 04: Suggestions seam ────────────────────────────────────
         // Register the stub applier for kind='test' (Phase 1 acceptance fixture).
-        // Phase 5+ producers extend this line:
-        //   $resolver->register('margin_change', MarginChangeApplier::class);
+        //
+        // Phase 4 Plan 03 D-12: CrmPushRetryApplier is the FIRST real producer
+        // on this seam — registers against kind='crm_push_failed' so
+        // ApplySuggestionJob can re-dispatch PushOrderToBitrixJob /
+        // PushCustomerToBitrixJob when an admin clicks Replay on a failed
+        // suggestion in the Filament inbox.
         $this->app->afterResolving(
             SuggestionApplierResolver::class,
             function (SuggestionApplierResolver $resolver): void {
                 $resolver->register('test', StubApplier::class);
+                $resolver->register('crm_push_failed', \App\Domain\CRM\Appliers\CrmPushRetryApplier::class);
             }
         );
 

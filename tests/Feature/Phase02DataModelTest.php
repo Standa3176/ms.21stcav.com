@@ -242,8 +242,11 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     //     2026_04_18_200200_create_sync_runs_table
     //     2026_04_18_200100_create_product_variants_table
     //     2026_04_18_200000_create_products_table
-    // Step = 6 (Phase 4) + 2 (Phase 3 P02) + 2 (Phase 3 P01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 17.
-    $this->artisan('migrate:rollback', ['--step' => 17])->assertExitCode(0);
+    //   Phase 4 Plan 03 (2 additive migrations):
+    //     2026_04_20_090100_add_notes_hash_set_to_bitrix_entity_map
+    //     2026_04_20_090000_add_receives_crm_alerts_to_alert_recipients
+    // Step = 2 (Phase 4 P03) + 6 (Phase 4 P01) + 2 (Phase 3 P02) + 2 (Phase 3 P01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 19.
+    $this->artisan('migrate:rollback', ['--step' => 19])->assertExitCode(0);
 
     // Phase 4 tables gone
     expect(Schema::hasTable('bitrix_entity_map'))->toBeFalse();

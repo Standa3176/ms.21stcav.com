@@ -50,6 +50,18 @@ Schedule::command('sync-diffs:prune')
 
 // TODO: Phase 5 adds `competitor-csv:prune --days=90` (D-06) once Phase 5 ships the csv_parse_errors table.
 
+// Phase 5 Plan 02 — 5-minute competitor CSV watcher (COMP-01 + COMP-04).
+// Picks up aged files from storage/app/competitors/incoming/ and dispatches
+// IngestCompetitorCsvJob on the competitor-csv queue. withoutOverlapping(10)
+// prevents a slow cycle (e.g. 50k-row CSV buffering) colliding with the next
+// tick. onOneServer() ensures multi-worker deployments only process files once.
+Schedule::command('competitor:watch')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(10)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Watch storage/app/competitors/incoming/ for aged CSVs (Phase 5 Plan 02)');
+
 // Phase 2 (D-05) — Daily supplier sync. COMMENTED OUT; Phase 7 cutover runbook
 // enables this entry once parity with the legacy Stock Updater plugin is proven.
 // The commented entry itself is the kill-switch — no separate SYNC_CRON_LIVE flag.

@@ -45,7 +45,7 @@ afterEach(function (): void {
             foreach ($iter as $file) {
                 if ($file->isDir()) {
                     @rmdir($file->getPathname());
-                } else {
+                } elseif ($file->getFilename() !== '.gitkeep') {
                     @unlink($file->getPathname());
                 }
             }

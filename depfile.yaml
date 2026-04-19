@@ -66,7 +66,14 @@ parameters:
     # (Phase 5 will add Competitor → Pricing for the suggestions producer — NOT the reverse.)
     # Plan 03-05 deviation (Rule 3): WpDirectDb retained in the allow-list — the plan's literal ruleset `[Foundation, Products, Sync]` would break Plan 03-03's SimulatedImpactCalculator (6 Deptrac violations). Architectural intent preserved: Pricing never imports CRM/Competitor/Webhooks/Feeds/Alerting/Suggestions.
     Pricing:      [Foundation, Products, Sync, WpDirectDb]
-    Competitor:   [Foundation]
+    # Phase 5 Plan 02 — Competitor layer cross-domain allow-list (partial — Plan 05-05
+    # will add Alerting for stale-feed notification).
+    #   - Foundation: DomainEvent, BaseCommand, Context (every service extends)
+    #   - Pricing: PriceCalculator::stripVat (COMP-06) — single source of VAT math
+    #   - Products: Product model read (SKU match for orphan detection, D-08)
+    #   - Suggestions: NewProductOpportunityApplier producer (D-08 stub; real in Phase 6)
+    # Explicitly NOT allowed: CRM, Webhooks, Sync (write path), Feeds, Alerting (Plan 05-05 adds).
+    Competitor:   [Foundation, Pricing, Products, Suggestions]
     Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]
     # Phase 4 (Plans 04-02..04-05): CRM layer cross-domain allow-list.

@@ -132,6 +132,9 @@ class AppServiceProvider extends ServiceProvider
             function (SuggestionApplierResolver $resolver): void {
                 $resolver->register('test', StubApplier::class);
                 $resolver->register('crm_push_failed', \App\Domain\CRM\Appliers\CrmPushRetryApplier::class);
+                // Phase 5 Plan 02 D-08 — SECOND real producer on the Suggestions seam.
+                // No-op stub until Phase 6 ships the real supplier-request-list wiring.
+                $resolver->register('new_product_opportunity', \App\Domain\Competitor\Appliers\NewProductOpportunityApplier::class);
             }
         );
 
@@ -228,6 +231,8 @@ class AppServiceProvider extends ServiceProvider
                 // typed ERASE confirmation + dispatches EraseBitrixContactJob.
                 \App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand::class,
                 \App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand::class,
+                // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
+                \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
             ]);
         }
     }

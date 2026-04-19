@@ -26,6 +26,7 @@ it('apply() returns a phase_5_stub marker and includes the SKU', function (): vo
         'correlation_id' => 'test-corr',
         'evidence' => ['sku' => 'STUB-SKU-1', 'supporting_competitors' => 1],
         'payload' => ['sku' => 'STUB-SKU-1'],
+        'proposed_at' => now(),
     ]);
 
     $result = (new NewProductOpportunityApplier())->apply($suggestion);
@@ -44,6 +45,7 @@ it('is registered in AppServiceProvider::boot for kind new_product_opportunity',
         'correlation_id' => 'boot-test',
         'evidence' => ['sku' => 'ANY'],
         'payload' => ['sku' => 'ANY'],
+        'proposed_at' => now(),
     ]);
 
     $applier = $resolver->resolve($suggestion);

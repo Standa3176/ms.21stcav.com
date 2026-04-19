@@ -57,7 +57,15 @@ parameters:
           regex: '^Illuminate\\Support\\Facades\\DB$'
   ruleset:
     Products:     [Foundation]
-    Pricing:      [Foundation, Products, Sync, WpDirectDb]  # Plan 03-01: ProductOverride BelongsTo(Product); RuleResolver in Plan 02 reads product buy_price + brand_id/category_id. Plan 03-02: RecomputePriceListener subscribes to Sync\Events\SupplierPriceChanged and logs Sync\Models\ImportIssue on zero-price (D-10). Read-only consumer of Sync — Pricing never writes sync_runs/sync_errors/etc. Plan 03-03: WpDirectDb allowed — SimulatedImpactCalculator uses DB::beginTransaction+rollBack as the dry-run transactional boundary (PRCE-09); SYNC-04 ban still applies to Sync layer.
+    # Phase 3 (Plans 03-01..03-05): Pricing layer cross-domain allow-list.
+    #   - Foundation: DomainEvent, Auditor, IntegrationLogger, BaseCommand (all Pricing services extend these)
+    #   - Products: Product + ProductVariant (RuleResolver + PriceRecomputer read buy_price / brand_id / category_id)
+    #   - Sync: SupplierPriceChanged event + ImportIssue model (listener subscribes; PriceRecomputer writes missing_cost_price rows)
+    #   - WpDirectDb: SimulatedImpactCalculator uses DB::beginTransaction + rollBack as the PRCE-09 dry-run transactional boundary (narrowly scoped, SYNC-04 ban still applies to Sync layer)
+    # Explicitly NOT allowed: CRM, Competitor, Webhooks, Feeds, Alerting, Suggestions.
+    # (Phase 5 will add Competitor → Pricing for the suggestions producer — NOT the reverse.)
+    # Plan 03-05 deviation (Rule 3): WpDirectDb retained in the allow-list — the plan's literal ruleset `[Foundation, Products, Sync]` would break Plan 03-03's SimulatedImpactCalculator (6 Deptrac violations). Architectural intent preserved: Pricing never imports CRM/Competitor/Webhooks/Feeds/Alerting/Suggestions.
+    Pricing:      [Foundation, Products, Sync, WpDirectDb]
     Competitor:   [Foundation]
     Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]

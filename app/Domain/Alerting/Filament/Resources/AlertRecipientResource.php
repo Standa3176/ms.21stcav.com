@@ -67,6 +67,13 @@ class AlertRecipientResource extends Resource
                 ->label('Receives Sync Reports')
                 ->helperText('D-08: Opt-in to the daily supplier sync CSV report. Default true.')
                 ->default(true),
+            // Phase 4 Plan 04 — CRM alert opt-in (D-12 from Plan 04-03).
+            // Default FALSE (evidence payloads may carry order PII); seeded
+            // ops@meetingstore.co.uk row is force-set TRUE by the migration.
+            Toggle::make('receives_crm_alerts')
+                ->label('Receives CRM alerts')
+                ->helperText('Email this recipient when a Bitrix push exhausts retries (crm_push_failed).')
+                ->default(false),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -84,6 +91,9 @@ class AlertRecipientResource extends Resource
                 IconColumn::make('receives_sync_reports')
                     ->boolean()
                     ->label('Reports?'),
+                IconColumn::make('receives_crm_alerts')
+                    ->boolean()
+                    ->label('CRM alerts?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

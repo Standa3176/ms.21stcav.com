@@ -171,6 +171,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\CRM\Models\CrmPipelineSetting::class, \App\Domain\CRM\Policies\CrmPipelineSettingPolicy::class);
         Gate::policy(\App\Domain\CRM\Models\BitrixBackfillRun::class,  \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class);
 
+        // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
+        // CrmPushLogResource binds to IntegrationEvent but scopes the query to
+        // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);
+        // all mutations denied. This registration only affects CRM — the Resource
+        // is the only Filament surface that renders IntegrationEvent rows.
+        Gate::policy(\App\Foundation\Integration\Models\IntegrationEvent::class, \App\Domain\CRM\Policies\CrmPushLogPolicy::class);
+
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.
         // Our command lives under app/Domain/Sync/Commands/, so we register it

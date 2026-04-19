@@ -50,7 +50,13 @@ class RolePermissionSeeder extends Seeder
         $sales = Role::firstOrCreate(['name' => 'sales', 'guard_name' => 'web']);
         $readOnly = Role::firstOrCreate(['name' => 'read_only', 'guard_name' => 'web']);
 
-        // 3. admin → ALL permissions (idempotent sync)
+        // 3. admin → ALL permissions (idempotent sync).
+        //
+        // Phase 4 Plan 04 — admin auto-attaches:
+        //   %_crm_field_mapping  %_crm_status_mapping  %_crm_push_log
+        //   %_crm_pipeline_setting  %_bitrix_entity_map  %_bitrix_backfill_run
+        //   replay_suggestion   (plus every :: separator variant)
+        // via the Permission::all() grant below — no LIKE-pattern edits needed.
         $admin->syncPermissions(Permission::all());
 
         // 4. read_only → only view_* and view_any_* permissions across every Resource.
@@ -103,12 +109,19 @@ class RolePermissionSeeder extends Seeder
 
         $pricingManager->syncPermissions($pricingManagerPermissions);
 
-        // 6. sales → view-only on crm_push_log (D-02; Resource lands in Phase 4)
+        // 6. sales → view-only on crm_push_log (D-02; Resource shipped in Phase 4 Plan 04)
         $salesPermissions = Permission::query()
-            ->whereIn('name', [
-                'view_crm_push_log',
-                'view_any_crm_push_log',
-            ])
+            ->where(function ($q) {
+                // BOTH underscore + :: separator styles — forward-compat.
+                $q->where('name', 'like', '%_crm_push_log')
+                    ->orWhere('name', 'like', '%crm_push::log')
+                    ->orWhere('name', 'like', '%crm::push_log')
+                    ->orWhere('name', 'like', '%crm::push::log');
+            })
+            ->where(function ($q) {
+                // Read-only: view + view_any only.
+                $q->where('name', 'like', 'view_%');
+            })
             ->pluck('name')
             ->all();
 

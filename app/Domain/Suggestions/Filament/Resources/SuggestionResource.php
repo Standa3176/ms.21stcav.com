@@ -105,6 +105,34 @@ class SuggestionResource extends Resource
                             'resolved_at' => now(),
                         ]);
                     }),
+                // Phase 4 Plan 04 — replay action for crm_push_failed suggestions.
+                // Dispatches ApplySuggestionJob which resolves CrmPushRetryApplier
+                // (registered in AppServiceProvider) and re-dispatches the original
+                // PushOrderToBitrixJob / PushCustomerToBitrixJob with a fresh attempts
+                // counter. Warning 9 mandates ->authorize() alongside ->visible().
+                Action::make('replay')
+                    ->label('Replay CRM Push')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
+                    ->visible(fn (Suggestion $r) => $r->kind === 'crm_push_failed' && $r->status === Suggestion::STATUS_PENDING)
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Suggestion $r) => 'Replay CRM push for order #'.((is_array($r->payload) ? ($r->payload['woo_id'] ?? '?') : '?')))
+                    ->modalDescription('Dispatches ApplySuggestionJob which re-fires the original push job with a fresh attempts counter. Check the CRM Push Log for the retry result.')
+                    ->action(function (Suggestion $record): void {
+                        $record->update([
+                            'status' => Suggestion::STATUS_APPROVED,
+                            'resolved_by_user_id' => auth()->id(),
+                            'resolved_at' => now(),
+                        ]);
+                        ApplySuggestionJob::dispatch($record->id);
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('CRM push replay dispatched')
+                            ->body('Check CRM Push Log after a few seconds for the retry result.')
+                            ->send();
+                    }),
             ]);
     }
 

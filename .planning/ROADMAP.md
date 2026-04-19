@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Foundation** — Laravel + Filament + Horizon skeleton with modular domain structure, audit/integration/suggestions seams, RBAC, HMAC webhook middleware, and the `WOO_WRITE_ENABLED` shadow-mode flag
 - [ ] **Phase 2: Supplier Sync** — Daily resumable supplier pull, per-item Woo REST push with error capture, emailed CSV report, and Filament sync-status + import-issues pages
-- [ ] **Phase 3: Pricing Engine** — Most-specific-wins `PricingRule` resolver, integer-pennies VAT-inclusive calculator, per-product overrides, and a golden-fixture parity test against the legacy plugin
+- [x] **Phase 3: Pricing Engine** — Most-specific-wins `PricingRule` resolver, integer-pennies VAT-inclusive calculator, per-product overrides, and a golden-fixture parity test against the legacy plugin (completed 2026-04-19)
 - [ ] **Phase 4: Bitrix24 CRM Sync** — One-way Woo→Bitrix push of Deal + Contact + Company on order/customer events, dynamic field mapping, UTM/GA capture, backfill command, and GDPR erasure
 - [ ] **Phase 5: Competitor Analysis** — CSV watcher with BOM-safe ingest, full-history `competitor_prices`, margin-delta analyser producing Suggestions, trend/deltas dashboards
 - [ ] **Phase 6: Product Auto-Create** — New-SKU detection, SEO-templated draft Woo products, image pipeline + placeholder flow, review inbox with completeness scoring, and `ProductOverride` pin UI
@@ -72,13 +72,13 @@ Plans:
   3. Editing a `PricingRule` and previewing "simulated impact" lists the SKUs that would change before the rule is saved
   4. A `SupplierPriceChanged` event fired by Phase 2's sync causes a listener to recompute the final price via `PriceCalculator` (integer-pennies / BCMath) and fire `ProductPriceChanged` only when the output differs
   5. `php artisan pricing:recompute --all` dispatches a queued batch that recomputes every product's final price and surfaces progress in Horizon
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 Plans:
-- [ ] 03-01-data-model-calculator-PLAN.md — config/pricing.php + PriceCalculator (integer-pennies, HALF_UP, pure) + 50-triple golden fixtures + pricing_rules/product_overrides migrations + policies + factories + DefaultPricingTierSeeder (PRCE-01/03/04/05/06, D-01..D-09)
-- [ ] 03-02-resolver-listener-event-PLAN.md — RuleResolver (most-specific-wins, priority+id tiebreak, purity-tested) + brand_id/category_id columns on products + ProductPriceChanged event + RecomputePriceListener (default queue, D-13 penny-diff gate, D-10 zero-price ImportIssue) + EventServiceProvider wiring (PRCE-02, PRCE-07)
-- [ ] 03-03-filament-rule-explorer-PLAN.md — PricingRuleResource + ProductOverrideResource (role-gated) + Rule Explorer page (SKU → effective price + chain) + Simulated Impact page (transactional dry-run projection) + SimulatedImpactCalculator + seeder LIKE patterns + PolicyTemplateIntegrityTest extended (PRCE-08, PRCE-09)
-- [ ] 03-04-bulk-recompute-command-PLAN.md — PriceRecomputer shared core (listener + bulk both delegate) + RecomputePriceJob (ShouldQueue+ShouldBeUnique, sync-bulk queue) + pricing:recompute command (dry-run default D-12, --live opt-in, --only/--brand/--category scopes) (PRCE-10)
-- [ ] 03-05-guardrails-verification-PLAN.md — Deptrac Pricing layer (Foundation+Products+Sync allow-list) + DeptracPricingLayerTest + PricingRuleExclusiveSetTest + PriceCalculatorPurityTest + 03-VERIFICATION.md ship verdict
+- [x] 03-01-data-model-calculator-PLAN.md — config/pricing.php + PriceCalculator (integer-pennies, HALF_UP, pure) + 50-triple golden fixtures + pricing_rules/product_overrides migrations + policies + factories + DefaultPricingTierSeeder (PRCE-01/03/04/05/06, D-01..D-09)
+- [x] 03-02-resolver-listener-event-PLAN.md — RuleResolver (most-specific-wins, priority+id tiebreak, purity-tested) + brand_id/category_id columns on products + ProductPriceChanged event + RecomputePriceListener (default queue, D-13 penny-diff gate, D-10 zero-price ImportIssue) + EventServiceProvider wiring (PRCE-02, PRCE-07)
+- [x] 03-03-filament-rule-explorer-PLAN.md — PricingRuleResource + ProductOverrideResource (role-gated) + Rule Explorer page (SKU → effective price + chain) + Simulated Impact page (transactional dry-run projection) + SimulatedImpactCalculator + seeder LIKE patterns + PolicyTemplateIntegrityTest extended (PRCE-08, PRCE-09)
+- [x] 03-04-bulk-recompute-command-PLAN.md — PriceRecomputer shared core (listener + bulk both delegate) + RecomputePriceJob (ShouldQueue+ShouldBeUnique, sync-bulk queue) + pricing:recompute command (dry-run default D-12, --live opt-in, --only/--brand/--category scopes) (PRCE-10)
+- [x] 03-05-guardrails-verification-PLAN.md — Deptrac Pricing layer (Foundation+Products+Sync allow-list) + DeptracPricingLayerTest + PricingRuleExclusiveSetTest + PriceCalculatorPurityTest + 03-VERIFICATION.md ship verdict
 **UI hint**: yes
 
 ### Phase 4: Bitrix24 CRM Sync
@@ -167,7 +167,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. Foundation | 0/5 | Not started | - |
 | 2. Supplier Sync | 0/5 | Not started | - |
-| 3. Pricing Engine | 0/TBD | Not started | - |
+| 3. Pricing Engine | 5/5 | Complete    | 2026-04-19 |
 | 4. Bitrix24 CRM Sync | 0/TBD | Not started | - |
 | 5. Competitor Analysis | 0/TBD | Not started | - |
 | 6. Product Auto-Create | 0/TBD | Not started | - |

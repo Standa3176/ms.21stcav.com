@@ -22,32 +22,51 @@ use Illuminate\Support\Facades\Log;
  * Pitfall M defensive log: if the recipient list resolves empty (despite
  * seeder seeding ops@meetingstore.co.uk), emit a warning so we see the
  * silent-outage risk in logs.
+ *
+ * Plan 04-03 D-12: the constructor accepts an optional `onlyReceiving` column
+ * name so CRM-alert dispatches can filter to `receives_crm_alerts=true`.
+ * Default (null) preserves legacy behaviour (active recipients for failed-job
+ * alerts). A non-null value additionally filters on that boolean column.
  */
 final class AlertDistribution
 {
     use Notifiable;
 
+    public function __construct(
+        private readonly ?string $onlyReceiving = null,
+    ) {
+    }
+
     /**
      * Stable key for Laravel's Notification system (expected by NotificationFake
      * and message-bag keying in the notification pipeline). AlertDistribution is
      * a singleton-shaped notifiable — there's only one distribution list — so the
-     * key is a constant.
+     * key is a constant (per-channel suffix for CRM alerts so fake assertions
+     * can distinguish the two distribution flavours).
      */
     public function getKey(): string
     {
-        return 'alert-distribution';
+        return $this->onlyReceiving === null
+            ? 'alert-distribution'
+            : 'alert-distribution:'.$this->onlyReceiving;
     }
 
     /** @return array<string, string>  map of email => name for Laravel mail routing */
     public function routeNotificationForMail(): array
     {
-        $routes = AlertRecipient::where('is_active', true)
-            ->pluck('name', 'email')
-            ->all();
+        $query = AlertRecipient::where('is_active', true);
+
+        if ($this->onlyReceiving !== null) {
+            $query->where($this->onlyReceiving, true);
+        }
+
+        $routes = $query->pluck('name', 'email')->all();
 
         if (empty($routes)) {
             // Pitfall M safety net — should not fire because the seeder seeds a fallback row.
-            Log::warning('AlertDistribution: no active AlertRecipient rows — failed-job alerts will silently drop. Run AlertRecipientSeeder.');
+            Log::warning('AlertDistribution: no active AlertRecipient rows — alerts will silently drop. Run AlertRecipientSeeder.', [
+                'only_receiving' => $this->onlyReceiving,
+            ]);
         }
 
         return $routes;

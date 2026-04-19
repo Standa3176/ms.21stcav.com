@@ -57,6 +57,7 @@ final class BitrixEntityMap extends Model
         'email_hash',
         'last_payload_hash',
         'last_status_snapshot',
+        'notes_hash_set',
         'last_pushed_at',
         'last_correlation_id',
         'created_via',
@@ -65,6 +66,7 @@ final class BitrixEntityMap extends Model
     protected $casts = [
         'woo_id' => 'integer',
         'last_pushed_at' => 'datetime',
+        'notes_hash_set' => 'array',
     ];
 
     public function scopeDeals(Builder $q): Builder

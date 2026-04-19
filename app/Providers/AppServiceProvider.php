@@ -80,6 +80,22 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(\Illuminate\Contracts\Cache\Repository::class),
             );
         });
+
+        // ── Phase 4 Plan 02: Bitrix CRM client + schema cache ─────────────
+        // BitrixClient wraps the official b24phpsdk with shadow-mode gate,
+        // 2 req/sec throttle, and D-11 exception classification. Singleton so
+        // per-request correlation_id flows naturally through one logger instance
+        // and the per-instance throttle timestamp enforces the rate limit.
+        $this->app->singleton(\App\Domain\CRM\Services\BitrixClient::class, function ($app) {
+            return new \App\Domain\CRM\Services\BitrixClient(
+                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
+            );
+        });
+
+        // BitrixSchemaCache — singleton so the Laravel cache is consulted through
+        // one resolver per request and warm-up results short-circuit after the
+        // first fieldsFor() call in a chain.
+        $this->app->singleton(\App\Domain\CRM\Services\BitrixSchemaCache::class);
     }
 
     /**

@@ -69,7 +69,14 @@ parameters:
     Competitor:   [Foundation]
     Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]
-    CRM:          [Foundation]
+    # Phase 4 (Plans 04-02..04-05): CRM layer cross-domain allow-list.
+    #   - Foundation: IntegrationLogger, Auditor, DomainEvent, BaseCommand, Context (every CRM service extends these)
+    #   - Sync: SyncDiff model reused for CRM_WRITE_ENABLED=false shadow mode (Option A from RESEARCH.md)
+    #   - Alerting: AlertRecipient lookup for DLQ alert distribution on exhausted retries (Plan 04-03)
+    #   - Webhooks: subscribes to OrderReceived + CustomerRegistered events (Plan 04-03)
+    #   - Suggestions: CrmPushRetryApplier producer for kind='crm_push_failed' (Plan 04-03)
+    # Explicitly NOT allowed: Pricing, Products, Competitor, Feeds.
+    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions]
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]

@@ -4,41 +4,54 @@ declare(strict_types=1);
 
 namespace App\Domain\CRM\Services;
 
+use App\Domain\CRM\Exceptions\BitrixPermanentException;
+use App\Domain\CRM\Exceptions\BitrixTransientException;
+use App\Domain\Sync\Models\SyncDiff;
 use App\Foundation\Integration\Services\IntegrationLogger;
+use Bitrix24\SDK\Core\Exceptions\BaseException;
+use Bitrix24\SDK\Core\Exceptions\TransportException;
+use Bitrix24\SDK\Services\CRM\Duplicates\Service\EntityType as DuplicateEntityType;
 use Bitrix24\SDK\Services\ServiceBuilder;
 use Bitrix24\SDK\Services\ServiceBuilderFactory;
+use Closure;
 use Illuminate\Support\Facades\Context;
-use LogicException;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
 /**
  * SDK-agnostic wrapper around bitrix24/b24phpsdk ^1.10.
  *
- * Plan 04-01 ships:
- *   - all 18 method signatures (so downstream plans can type-hint against the contract)
- *   - REAL bodies for the 4 userfield CRUD methods that `bitrix:bootstrap` needs today:
- *       dealUserfieldList / dealUserfieldAdd / contactUserfieldList / contactUserfieldAdd
- *   - LogicException throws for the 14 non-bootstrap methods (Plan 04-02 replaces).
+ * Plan 04-02 responsibilities (on top of Plan 04-01 skeleton):
+ *   - Bodies for the 14 remaining methods (deal/contact/company Add/Update/Get/List/FieldsGet + duplicateFindByComm).
+ *   - Shadow-mode gate: every *Add / *Update checks `services.bitrix.write_enabled`
+ *     FIRST; when false, writes a row to `sync_diffs` (provider='bitrix') and
+ *     returns a sentinel `SHADOW-{uuid}`. Read paths always hit the SDK.
+ *   - Exception classification (D-11 retry semantics): SDK TransportException
+ *     (network + 5xx + 429) → BitrixTransientException; any other SDK throwable
+ *     (4xx validation, auth, not-found) → BitrixPermanentException.
+ *   - ~2 req/sec throttle inside withSdk() — the SDK 1.10.x ServiceBuilderFactory
+ *     does NOT accept a custom HTTP client, so we enforce the ceiling at the
+ *     wrapper layer via usleep. BitrixRateLimitMiddleware stays shipped + tested
+ *     for a future SDK version that exposes HTTP-client injection.
+ *   - T-04-02-01 mitigation: webhook URL is NEVER logged. The SDK's exception
+ *     message can echo the URL; we redact before persisting + rethrowing.
  *
- * Plan 04-02 ships:
- *   - the 14 remaining bodies (dealAdd/Update/Get/List, contactAdd/Update/List, etc.)
- *   - shadow-mode gate (CRM_WRITE_ENABLED=false → sync_diffs(provider='bitrix'))
- *   - BitrixTransientException / BitrixPermanentException classification (D-11 retry policy)
- *   - 429 Retry-After handling (Bitrix ~2 req/sec ceiling)
- *
- * T-04-01-01 mitigation: never log the full webhook URL. IntegrationLogger
- * records the endpoint method name only (`crm.deal.userfield.list`).
- *
- * Plan 04-02 will bind this as a singleton in AppServiceProvider; Plan 04-01
- * binds it as transient so the bootstrap command gets a fresh instance.
+ * Not marked final — Phase 2 WooClient precedent: open for Mockery mocks in
+ * tests. Real subclasses never ship outside the test suite.
  */
 class BitrixClient
 {
-    // Not marked final — Phase 2 P02 precedent: keeping this open allows
-    // tests to fake the client via Mockery::mock(BitrixClient::class) and
-    // enables Plan 04-02's rate-limit subclass test seam without a
-    // separate interface. Real subclasses never ship outside tests.
+    /**
+     * Minimum gap (microseconds) between consecutive SDK calls within the SAME
+     * PHP process — 500ms guarantees the 2 req/sec ceiling. Aggregate across
+     * multiple Horizon workers is accepted per T-04-02-04 (documented).
+     */
+    private const SDK_THROTTLE_USEC = 500_000;
+
+    /** microtime(true) of the last SDK call this instance made. */
+    private float $lastCallAt = 0.0;
+
     /** Lazy-built SDK service builder — constructed on first write/read. */
     private ?ServiceBuilder $sdk = null;
 
@@ -53,27 +66,70 @@ class BitrixClient
 
     public function dealAdd(array $fields, ?string $correlationId = null): string
     {
-        throw new LogicException(static::class.'::dealAdd — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.deal.add', $fields['UF_CRM_WOO_ORDER_ID'] ?? null, $fields, $correlationId);
+        if ($shadow !== null) {
+            return $shadow;
+        }
+
+        return (string) $this->withSdk(
+            'crm.deal.add',
+            ['fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->deal()->add($fields)->getId(),
+            $correlationId,
+        );
     }
 
     public function dealUpdate(string $bitrixId, array $fields, ?string $correlationId = null): void
     {
-        throw new LogicException(static::class.'::dealUpdate — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.deal.update', null, ['id' => $bitrixId, 'fields' => $fields], $correlationId);
+        if ($shadow !== null) {
+            return;
+        }
+
+        $this->withSdk(
+            'crm.deal.update',
+            ['id' => $bitrixId, 'fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->deal()->update((int) $bitrixId, $fields)->isSuccess(),
+            $correlationId,
+        );
     }
 
     public function dealGet(string $bitrixId, ?string $correlationId = null): ?array
     {
-        throw new LogicException(static::class.'::dealGet — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return $this->withSdk(
+            'crm.deal.get',
+            ['id' => $bitrixId],
+            function () use ($bitrixId): ?array {
+                $result = $this->sdk()->getCRMScope()->deal()->get((int) $bitrixId);
+
+                return $this->dealItemToArray($result);
+            },
+            $correlationId,
+        );
     }
 
     public function dealList(array $filter = [], array $select = ['*'], int $start = 0, ?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::dealList — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.deal.list',
+            ['filter' => $filter, 'select' => $select, 'start' => $start],
+            function () use ($filter, $select, $start): array {
+                $result = $this->sdk()->getCRMScope()->deal()->list([], $filter, $select, $start);
+
+                return $this->dealsToArray($result);
+            },
+            $correlationId,
+        );
     }
 
     public function dealFieldsGet(?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::dealFieldsGet — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.deal.fields',
+            [],
+            fn () => $this->sdk()->getCRMScope()->deal()->fields()->getFieldsDescription(),
+            $correlationId,
+        );
     }
 
     /**
@@ -89,8 +145,6 @@ class BitrixClient
             request: ['fields' => $fields],
             callable: function () use ($fields): string {
                 $sdk = $this->sdk();
-                // The SDK's userfield service exposes dealUserfield() for Deal-scoped UF CRUD.
-                // Plan 04-02's smoke-test output informs the concrete chain; we dispatch defensively.
                 $result = $sdk->getCRMScope()->dealUserfield()->add($fields);
 
                 return $this->extractIdFromUserfieldResult($result);
@@ -101,7 +155,7 @@ class BitrixClient
     /**
      * List Deal custom fields. Real body — bitrix:bootstrap consumes this.
      *
-     * @return array<int, array<string, mixed>>  Rows shaped {FIELD_NAME, USER_TYPE_ID, ...}
+     * @return array<int, array<string, mixed>>
      */
     public function dealUserfieldList(array $filter = [], ?string $correlationId = null): array
     {
@@ -124,22 +178,56 @@ class BitrixClient
 
     public function contactAdd(array $fields, ?string $correlationId = null): string
     {
-        throw new LogicException(static::class.'::contactAdd — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.contact.add', $fields['UF_CRM_WOO_CUSTOMER_ID'] ?? null, $fields, $correlationId);
+        if ($shadow !== null) {
+            return $shadow;
+        }
+
+        return (string) $this->withSdk(
+            'crm.contact.add',
+            ['fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->contact()->add($fields)->getId(),
+            $correlationId,
+        );
     }
 
     public function contactUpdate(string $bitrixId, array $fields, ?string $correlationId = null): void
     {
-        throw new LogicException(static::class.'::contactUpdate — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.contact.update', null, ['id' => $bitrixId, 'fields' => $fields], $correlationId);
+        if ($shadow !== null) {
+            return;
+        }
+
+        $this->withSdk(
+            'crm.contact.update',
+            ['id' => $bitrixId, 'fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->contact()->update((int) $bitrixId, $fields)->isSuccess(),
+            $correlationId,
+        );
     }
 
     public function contactList(array $filter = [], array $select = ['ID', 'EMAIL'], int $start = 0, ?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::contactList — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.contact.list',
+            ['filter' => $filter, 'select' => $select, 'start' => $start],
+            function () use ($filter, $select, $start): array {
+                $result = $this->sdk()->getCRMScope()->contact()->list([], $filter, $select, $start);
+
+                return $this->contactsToArray($result);
+            },
+            $correlationId,
+        );
     }
 
     public function contactFieldsGet(?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::contactFieldsGet — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.contact.fields',
+            [],
+            fn () => $this->sdk()->getCRMScope()->contact()->fields()->getFieldsDescription(),
+            $correlationId,
+        );
     }
 
     /** Real body — bitrix:bootstrap consumes this. */
@@ -180,22 +268,56 @@ class BitrixClient
 
     public function companyAdd(array $fields, ?string $correlationId = null): string
     {
-        throw new LogicException(static::class.'::companyAdd — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.company.add', null, $fields, $correlationId);
+        if ($shadow !== null) {
+            return $shadow;
+        }
+
+        return (string) $this->withSdk(
+            'crm.company.add',
+            ['fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->company()->add($fields)->getId(),
+            $correlationId,
+        );
     }
 
     public function companyUpdate(string $bitrixId, array $fields, ?string $correlationId = null): void
     {
-        throw new LogicException(static::class.'::companyUpdate — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        $shadow = $this->shadowIfDisabled('crm.company.update', null, ['id' => $bitrixId, 'fields' => $fields], $correlationId);
+        if ($shadow !== null) {
+            return;
+        }
+
+        $this->withSdk(
+            'crm.company.update',
+            ['id' => $bitrixId, 'fields' => $fields],
+            fn () => $this->sdk()->getCRMScope()->company()->update((int) $bitrixId, $fields)->isSuccess(),
+            $correlationId,
+        );
     }
 
     public function companyList(array $filter = [], array $select = ['ID', 'TITLE'], int $start = 0, ?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::companyList — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.company.list',
+            ['filter' => $filter, 'select' => $select, 'start' => $start],
+            function () use ($filter, $select, $start): array {
+                $result = $this->sdk()->getCRMScope()->company()->list([], $filter, $select, $start);
+
+                return $this->companiesToArray($result);
+            },
+            $correlationId,
+        );
     }
 
     public function companyFieldsGet(?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::companyFieldsGet — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.company.fields',
+            [],
+            fn () => $this->sdk()->getCRMScope()->company()->fields()->getFieldsDescription(),
+            $correlationId,
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -205,14 +327,386 @@ class BitrixClient
     /**
      * @param  string  $type  'EMAIL' | 'PHONE' | 'IM'
      * @param  string  $entityType  'CONTACT' | 'COMPANY'
+     * @param  array<int,string>  $values
+     * @return array{CONTACT?: array<int,string>, COMPANY?: array<int,string>, LEAD?: array<int,string>}
      */
     public function duplicateFindByComm(string $type, string $entityType, array $values, ?string $correlationId = null): array
     {
-        throw new LogicException(static::class.'::duplicateFindByComm — signature shipped Plan 04-01; body shipped Plan 04-02.');
+        return (array) $this->withSdk(
+            'crm.duplicate.findbycomm',
+            ['type' => $type, 'entity_type' => $entityType, 'values' => $values],
+            function () use ($type, $entityType, $values): array {
+                $sdk = $this->sdk();
+                $duplicateService = $sdk->getCRMScope()->duplicate();
+                $entityEnum = $this->resolveDuplicateEntityType($entityType);
+
+                // SDK splits by comm-type: findByEmail / findByPhone with a shared underlying
+                // crm.duplicate.findbycomm REST call. For anything else (IM) we fall through
+                // to findByPhone-style — Bitrix accepts any comm type via the 'type' param.
+                $result = strtoupper($type) === 'EMAIL'
+                    ? $duplicateService->findByEmail($values, $entityEnum)
+                    : $duplicateService->findByPhone($values, $entityEnum);
+
+                return $this->duplicateResultToArray($result);
+            },
+            $correlationId,
+        );
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // Private helpers
+    // Shadow-mode + withSdk plumbing
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * When CRM_WRITE_ENABLED=false, diverts write-path calls to sync_diffs +
+     * returns a shadow sentinel. Returns null when live writes should proceed.
+     */
+    private function shadowIfDisabled(string $method, ?int $wooId, array $payload, ?string $correlationId): ?string
+    {
+        if ((bool) config('services.bitrix.write_enabled', false)) {
+            return null;
+        }
+
+        $correlationId ??= (string) Context::get('correlation_id');
+        $shadowId = 'SHADOW-'.Str::uuid()->toString();
+
+        SyncDiff::create([
+            'provider' => 'bitrix',
+            'channel' => 'bitrix',
+            'method' => 'POST',
+            'endpoint' => $method,
+            'woo_id' => $wooId === null ? null : (string) $wooId,
+            'payload' => array_merge($payload, ['__shadow_id' => $shadowId]),
+            'correlation_id' => $correlationId,
+            'created_at' => now(),
+            'status' => 'pending',
+        ]);
+
+        $this->logger->log([
+            'channel' => 'bitrix',
+            'direction' => 'outbound',
+            'method' => 'POST',
+            'operation' => $method,
+            'endpoint' => $method,
+            'request_body' => $payload,
+            'response_body' => ['shadow_id' => $shadowId, 'reason' => 'CRM_WRITE_ENABLED=false'],
+            'http_status' => 0,
+            'correlation_id' => $correlationId,
+            'status' => 'success',
+        ]);
+
+        return $shadowId;
+    }
+
+    /**
+     * Core SDK-call wrapper: applies the 2 req/sec throttle, logs the call,
+     * classifies thrown exceptions into transient vs permanent.
+     */
+    private function withSdk(string $method, array $requestPayload, Closure $callable, ?string $correlationId): mixed
+    {
+        $correlationId ??= (string) Context::get('correlation_id');
+        $this->applyThrottle();
+        $start = microtime(true);
+
+        try {
+            $result = $callable();
+            $this->lastCallAt = microtime(true);
+
+            $this->logger->log([
+                'channel' => 'bitrix',
+                'direction' => 'outbound',
+                'method' => 'POST',
+                'operation' => $method,
+                'endpoint' => $method,
+                'request_body' => $requestPayload,
+                'response_body' => $this->summariseResult($result),
+                'http_status' => 200,
+                'latency_ms' => (int) ((microtime(true) - $start) * 1000),
+                'correlation_id' => $correlationId,
+                'status' => 'success',
+            ]);
+
+            return $result;
+        } catch (TransportException $e) {
+            $this->lastCallAt = microtime(true);
+            $sanitisedMessage = $this->sanitiseErrorMessage($e->getMessage());
+
+            $this->logger->log([
+                'channel' => 'bitrix',
+                'direction' => 'outbound',
+                'method' => 'POST',
+                'operation' => $method,
+                'endpoint' => $method,
+                'request_body' => $requestPayload,
+                'response_body' => ['error' => $sanitisedMessage],
+                'http_status' => 503,
+                'latency_ms' => (int) ((microtime(true) - $start) * 1000),
+                'correlation_id' => $correlationId,
+                'status' => 'failed',
+                'error_message' => $sanitisedMessage,
+            ]);
+
+            throw new BitrixTransientException(
+                sprintf('BitrixClient: transport failure on %s — %s', $method, $sanitisedMessage),
+                0,
+                $e,
+            );
+        } catch (Throwable $e) {
+            $this->lastCallAt = microtime(true);
+            $sanitisedMessage = $this->sanitiseErrorMessage($e->getMessage());
+            $status = $this->extractHttpStatus($e);
+
+            $this->logger->log([
+                'channel' => 'bitrix',
+                'direction' => 'outbound',
+                'method' => 'POST',
+                'operation' => $method,
+                'endpoint' => $method,
+                'request_body' => $requestPayload,
+                'response_body' => ['error' => $sanitisedMessage],
+                'http_status' => $status,
+                'latency_ms' => (int) ((microtime(true) - $start) * 1000),
+                'correlation_id' => $correlationId,
+                'status' => 'failed',
+                'error_message' => $sanitisedMessage,
+            ]);
+
+            throw new BitrixPermanentException(
+                sprintf('BitrixClient: validation/auth failure on %s — %s', $method, $sanitisedMessage),
+                0,
+                $e,
+            );
+        }
+    }
+
+    /** Ensures ≥500ms between SDK calls within the same PHP process. */
+    private function applyThrottle(): void
+    {
+        if ($this->lastCallAt === 0.0) {
+            return;
+        }
+        $elapsedUsec = (int) ((microtime(true) - $this->lastCallAt) * 1_000_000);
+        $needed = self::SDK_THROTTLE_USEC - $elapsedUsec;
+        if ($needed > 0) {
+            usleep($needed);
+        }
+    }
+
+    /** Replace the webhook URL in error messages with a redaction marker (T-04-02-01). */
+    private function sanitiseErrorMessage(string $message): string
+    {
+        $webhookUrl = (string) config('services.bitrix.webhook_url');
+        if ($webhookUrl !== '') {
+            $message = str_replace($webhookUrl, '***REDACTED_URL***', $message);
+            // Redact even partial leaks (trailing slash, trimmed).
+            $message = str_replace(rtrim($webhookUrl, '/'), '***REDACTED_URL***', $message);
+        }
+
+        return $message;
+    }
+
+    /** Best-effort HTTP status extraction for permanent-error logging. */
+    private function extractHttpStatus(Throwable $e): int
+    {
+        $code = $e->getCode();
+        if (is_int($code) && $code >= 400 && $code < 600) {
+            return $code;
+        }
+
+        return 400;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SDK result normalisation
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Summary row written into integration_events.response_body (keeps payloads short). */
+    private function summariseResult(mixed $result): array
+    {
+        if (is_array($result)) {
+            return ['count' => count($result)];
+        }
+        if (is_scalar($result)) {
+            return ['id' => (string) $result];
+        }
+        if ($result === null) {
+            return ['result' => null];
+        }
+        if (is_object($result)) {
+            return ['class' => $result::class];
+        }
+
+        return [];
+    }
+
+    private function dealItemToArray(mixed $result): ?array
+    {
+        if ($result === null) {
+            return null;
+        }
+        if (is_array($result)) {
+            return $result;
+        }
+        if (is_object($result) && method_exists($result, 'deal')) {
+            $deal = $result->deal();
+            if (is_object($deal) && method_exists($deal, 'getResult')) {
+                $data = $deal->getResult();
+
+                return is_array($data) ? $data : null;
+            }
+        }
+        if (is_object($result) && method_exists($result, 'getCoreResponse')) {
+            $core = $result->getCoreResponse();
+            if (is_object($core) && method_exists($core, 'getResponseData')) {
+                $data = $core->getResponseData()->getResult();
+
+                return is_array($data) ? $data : null;
+            }
+        }
+
+        return null;
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function dealsToArray(mixed $result): array
+    {
+        if (is_array($result)) {
+            return $result;
+        }
+
+        if (is_object($result) && method_exists($result, 'getDeals')) {
+            $rows = [];
+            foreach ($result->getDeals() as $item) {
+                $rows[] = is_object($item) && method_exists($item, 'getResult')
+                    ? (array) $item->getResult()
+                    : (array) $item;
+            }
+
+            return $rows;
+        }
+
+        return $this->extractResultArray($result);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function contactsToArray(mixed $result): array
+    {
+        if (is_array($result)) {
+            return $result;
+        }
+
+        if (is_object($result) && method_exists($result, 'getContacts')) {
+            $rows = [];
+            foreach ($result->getContacts() as $item) {
+                $rows[] = is_object($item) && method_exists($item, 'getResult')
+                    ? (array) $item->getResult()
+                    : (array) $item;
+            }
+
+            return $rows;
+        }
+
+        return $this->extractResultArray($result);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function companiesToArray(mixed $result): array
+    {
+        if (is_array($result)) {
+            return $result;
+        }
+
+        if (is_object($result) && method_exists($result, 'getCompanies')) {
+            $rows = [];
+            foreach ($result->getCompanies() as $item) {
+                $rows[] = is_object($item) && method_exists($item, 'getResult')
+                    ? (array) $item->getResult()
+                    : (array) $item;
+            }
+
+            return $rows;
+        }
+
+        return $this->extractResultArray($result);
+    }
+
+    /** @return array{CONTACT?: array<int,string>, COMPANY?: array<int,string>, LEAD?: array<int,string>} */
+    private function duplicateResultToArray(mixed $result): array
+    {
+        if (is_array($result)) {
+            // Already shaped as the Bitrix REST response.
+            return $result;
+        }
+
+        if (is_object($result) && method_exists($result, 'getCoreResponse')) {
+            try {
+                $data = $result->getCoreResponse()->getResponseData()->getResult();
+                if (is_array($data)) {
+                    // The REST shape is ['CONTACT' => ['123', '456'], 'COMPANY' => []].
+                    return $data;
+                }
+            } catch (Throwable) {
+                // Fall through to empty.
+            }
+        }
+
+        // SDK DuplicateResult only exposes getContactsId() — wrap for caller parity.
+        if (is_object($result) && method_exists($result, 'getContactsId')) {
+            try {
+                $ids = $result->getContactsId();
+
+                return ['CONTACT' => array_map(static fn ($id) => (string) $id, $ids)];
+            } catch (Throwable) {
+                return [];
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * Fallback for any AbstractResult-shape SDK object: pull the raw result array.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function extractResultArray(mixed $result): array
+    {
+        if (! is_object($result)) {
+            return [];
+        }
+        if (! method_exists($result, 'getCoreResponse')) {
+            return [];
+        }
+        try {
+            $data = $result->getCoreResponse()->getResponseData()->getResult();
+        } catch (Throwable) {
+            return [];
+        }
+
+        if (! is_array($data)) {
+            return [];
+        }
+
+        // Normalise to list-of-rows.
+        if (array_is_list($data)) {
+            return $data;
+        }
+
+        return [$data];
+    }
+
+    private function resolveDuplicateEntityType(string $entityType): ?DuplicateEntityType
+    {
+        return match (strtoupper($entityType)) {
+            'CONTACT' => DuplicateEntityType::Contact,
+            'COMPANY' => DuplicateEntityType::Company,
+            'LEAD' => DuplicateEntityType::Lead,
+            default => null,
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Legacy read/write helpers (used by Plan 04-01 userfield methods only)
     // ══════════════════════════════════════════════════════════════════════
 
     /** Lazy-builds the SDK service builder. Fails hard if webhook URL missing. */
@@ -230,7 +724,8 @@ class BitrixClient
     }
 
     /**
-     * Executes a read-shaped SDK call + logs an integration_event row.
+     * Plan 04-01 userfield path — retained alongside withSdk because the
+     * bootstrap command + tests already depend on its exact log shape.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -267,13 +762,12 @@ class BitrixClient
                 'latency_ms' => (int) ((microtime(true) - $start) * 1000),
                 'request_body' => $request,
                 'status' => 'failed',
-                'error_message' => $e->getMessage(),
+                'error_message' => $this->sanitiseErrorMessage($e->getMessage()),
             ]);
             throw $e;
         }
     }
 
-    /** Executes a write-shaped SDK call + logs. Returns the SDK's result identifier. */
     private function executeWrite(string $endpoint, ?string $correlationId, array $request, callable $callable): string
     {
         $correlationId ??= (string) Context::get('correlation_id');
@@ -308,17 +802,13 @@ class BitrixClient
                 'latency_ms' => (int) ((microtime(true) - $start) * 1000),
                 'request_body' => $request,
                 'status' => 'failed',
-                'error_message' => $e->getMessage(),
+                'error_message' => $this->sanitiseErrorMessage($e->getMessage()),
             ]);
             throw $e;
         }
     }
 
-    /**
-     * Best-effort conversion of the SDK's userfield `add` return to a scalar ID.
-     * Plan 04-02's smoke-test output lets us narrow this — for now we handle
-     * the common shapes: scalar, object with getId(), or array with 'ID'.
-     */
+    /** @see Plan 04-01 — supports scalar / ->getId() / ['ID' => ...] shapes. */
     private function extractIdFromUserfieldResult(mixed $result): string
     {
         if (is_scalar($result)) {
@@ -331,23 +821,17 @@ class BitrixClient
             return (string) $result['ID'];
         }
 
-        // Fall back to an empty marker — caller logs via IntegrationLogger so
-        // ops can correlate. Plan 04-02 tightens this after sandbox validation.
         return '';
     }
 
     /**
-     * Normalise the SDK's userfield `list` return to a plain array of rows.
-     * Every row is an associative array keyed by the Bitrix field name.
-     *
      * @return array<int, array<string, mixed>>
      */
     private function normaliseUserfieldList(mixed $result): array
     {
         if (is_array($result)) {
-            // Detect single-row associative vs list of rows.
             if ($result === [] || array_is_list($result)) {
-                return array_map(fn ($r) => is_array($r) ? $r : ['value' => $r], $result);
+                return array_map(static fn ($r) => is_array($r) ? $r : ['value' => $r], $result);
             }
 
             return [$result];

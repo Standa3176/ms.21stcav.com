@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-04a-filament-resources-and-rbac-PLAN.md
-last_updated: "2026-04-19T21:45:42.410Z"
+stopped_at: Completed 05-04b-filament-pages-stale-feed-PLAN.md
+last_updated: "2026-04-19T22:53:23.433Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 26
-  completed_plans: 24
-  percent: 92
+  completed_plans: 25
+  percent: 96
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 05 (Competitor Analysis) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -72,6 +72,7 @@ Progress: [████░░░░░░] 40%
 | Phase 05-competitor-analysis P02 | ~30min | 2 tasks | 32 files |
 | Phase 05-competitor-analysis P03 | 41m | 3 tasks | 28 files |
 | Phase 05 P04a | 35m | 2 tasks | 17 files |
+| Phase 05-competitor-analysis P04b | ~2h | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,10 @@ Recent decisions affecting current work:
 - [Phase 05-competitor-analysis]: Plan 05-03: MarginChangeApplier fires PricingRuleChanged via the observer chain (NOT direct dispatch) — single source of truth for margin_basis_points changed semantics; future listeners on PricingRuleChanged don't need to know about this applier. THIRD real producer on Suggestions seam after CrmPushRetryApplier + NewProductOpportunityApplier.
 - [Phase 05]: RolePermissionSeeder explicit whitelist (NOT LIKE) for Phase 5 resources with mixed grants — MySQL _ single-char wildcard bug caught pricing_manager accidentally getting create/delete on csv_parse_error
 - [Phase 05]: P5-F shield:generate restoration protocol 4th execution: 13 policies restored from HEAD + IntegrationEventPolicy stub removed; process is now stable across Phases 1/2/4/5
+- [Phase 05-competitor-analysis]: Plan 05-04b: Notification::send(collection, NotificationInstance) chosen over AlertDistribution — stale-feed body needs model context (competitor + hoursStale); AlertDistribution is for uniform failure broadcasts.
+- [Phase 05-competitor-analysis]: Plan 05-04b: Cache::add 24h dedup keyed on YYYY-MM-DD (first-miss-of-day wins semantics) — simpler than rolling-24h per-competitor timestamps; auto-rolls at midnight.
+- [Phase 05-competitor-analysis]: Plan 05-04b: Deptrac Competitor → Alerting layer edge landed in-plan (NOT deferred to 05-05 as the original comment suggested). Rule: deptrac.yaml updates ship in the plan introducing the dependency — avoids CI-red interim state.
+- [Phase 05-competitor-analysis]: Plan 05-04b: Idempotent demo seeder pattern — firstOrCreate keyed on natural unique columns + CSV file written only if absent + DatabaseSeeder gated by app()->environment(['local', 'testing']) (T-05-04b-05 prod-leak mitigation). Pattern for future demo-heavy plans.
 
 ### Pending Todos
 
@@ -162,6 +167,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T21:45:42.397Z
-Stopped at: Completed 05-04a-filament-resources-and-rbac-PLAN.md
-Resume file: None
+Last session: 2026-04-19T22:53:23.417Z
+Stopped at: Completed 05-04b-filament-pages-stale-feed-PLAN.md
+Resume file: .planning/phases/05-competitor-analysis/05-04b-SUMMARY.md

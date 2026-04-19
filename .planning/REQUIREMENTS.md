@@ -79,8 +79,8 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **COMP-07**: Every competitor price row is persisted to `competitor_prices` — history is never truncated
 - [x] **COMP-08**: `MarginAnalyser` computes our-margin-at-competitor-price and suggests a new margin when delta ≥ threshold (default 8%) with noise suppression (≥3 consecutive scrapes AND ≥N sales/90d)
 - [x] **COMP-09**: Margin-change suggestions write to the `suggestions` table; approval triggers a `PricingRule` update and audit-log entry
-- [ ] **COMP-10**: A Filament "Competitor Analysis" page shows price trend charts, biggest deltas, and a per-competitor view
-- [ ] **COMP-11**: Stale-feed detection warns the admin when a competitor hasn't reported in > 48h
+- [x] **COMP-10**: A Filament "Competitor Analysis" page shows price trend charts, biggest deltas, and a per-competitor view
+- [x] **COMP-11**: Stale-feed detection warns the admin when a competitor hasn't reported in > 48h
 - [ ] **COMP-12**: Competitor CSV source files are pruned after 90 days (configurable)
 
 ### Product auto-create (AUTO) — Module D
@@ -240,8 +240,8 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | COMP-07 | Phase 5 | Complete |
 | COMP-08 | Phase 5 | Complete |
 | COMP-09 | Phase 5 | Complete |
-| COMP-10 | Phase 5 | Pending |
-| COMP-11 | Phase 5 | Pending |
+| COMP-10 | Phase 5 | Complete |
+| COMP-11 | Phase 5 | Complete |
 | COMP-12 | Phase 5 | Pending |
 | AUTO-01 | Phase 6 | Pending |
 | AUTO-02 | Phase 6 | Pending |

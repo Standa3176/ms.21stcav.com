@@ -57,7 +57,7 @@ parameters:
           regex: '^Illuminate\\Support\\Facades\\DB$'
   ruleset:
     Products:     [Foundation]
-    Pricing:      [Foundation, Products]  # Plan 03-01: ProductOverride BelongsTo(Product); RuleResolver in Plan 02 reads product buy_price + brand_id/category_id. Read-only — Pricing never writes products.
+    Pricing:      [Foundation, Products, Sync]  # Plan 03-01: ProductOverride BelongsTo(Product); RuleResolver in Plan 02 reads product buy_price + brand_id/category_id. Plan 03-02: RecomputePriceListener subscribes to Sync\Events\SupplierPriceChanged and logs Sync\Models\ImportIssue on zero-price (D-10). Read-only consumer of Sync — Pricing never writes sync_runs/sync_errors/etc.
     Competitor:   [Foundation]
     Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
     Webhooks:     [Foundation]

@@ -18,15 +18,16 @@ use Illuminate\Support\Facades\Gate;
 |      regression ONCE post-`shield:generate`; the grep catches it in
 |      ~1ms on every CI run.
 |
-|   2. Positive control: at least 7 Policy files exist across the scanned
+|   2. Positive control: at least 9 Policy files exist across the scanned
 |      directories. Prevents a false-green from a glob that matches nothing
 |      (e.g., if someone renamed the Policy folder and the grep found no
-|      files to scan).
+|      files to scan). Floor raised Phase 3 Plan 03 (7 → 9) for
+|      PricingRulePolicy + ProductOverridePolicy coverage.
 |
-|   3. Gate::policy bindings for the 4 Phase-2 + 2 Phase-1 models resolve
-|      to Domain\* / app\Policies\* implementations — NOT to Shield-generated
-|      placeholder stubs. A stub has `return true` on every method; a real
-|      policy references hasRole / hasPermissionTo.
+|   3. Gate::policy bindings for the 4 Phase-2 + 3 Phase-1 + 2 Phase-3 models
+|      resolve to Domain\* / app\Policies\* implementations — NOT to
+|      Shield-generated placeholder stubs. A stub has `return true` on every
+|      method; a real policy references hasRole / hasPermissionTo.
 |
 | Shield 3.9.10 regenerates the 6 Filament-discoverable Policies on every
 | `shield:generate --all` run. Plan 02-04 Task 2b documented the restore
@@ -64,7 +65,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
     expect($leaks)->toBe([], 'Shield placeholder literal leaked into: '.implode(', ', $leaks));
 });
 
-it('has at least 7 Policy files under the scanned roots (positive control)', function (): void {
+it('has at least 9 Policy files under the scanned roots (positive control)', function (): void {
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),

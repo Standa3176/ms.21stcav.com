@@ -154,6 +154,14 @@ class AppServiceProvider extends ServiceProvider
                 // under app/Domain/Pricing/Console/Commands/ so explicit
                 // registration is required (same pattern as Phase 2).
                 \App\Domain\Pricing\Console\Commands\PricingRecomputeCommand::class,
+                // Phase 4 Plan 01 — Bitrix CRM Sync commands.
+                // bitrix:bootstrap creates UF_CRM_WOO_ORDER_ID + 13 UTM/customer
+                // custom fields in Bitrix (idempotent, safe on every deploy).
+                // bitrix:smoke-test probes the SDK's API surface before Plan 04-02
+                // locks the BitrixClient wrapper interface (two-layer gate —
+                // BITRIX_SMOKE_TEST_ALLOWED + BITRIX_WEBHOOK_URL).
+                \App\Domain\CRM\Console\Commands\BitrixBootstrapCommand::class,
+                \App\Domain\CRM\Console\Commands\BitrixSmokeTestCommand::class,
             ]);
         }
     }

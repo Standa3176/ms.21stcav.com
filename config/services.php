@@ -62,4 +62,18 @@ return [
         'password' => env('SUPPLIER_API_PASSWORD'),
     ],
 
+    // Phase 4 Plan 01 — Bitrix24 one-way CRM sync.
+    // BITRIX_WEBHOOK_URL: inbound-webhook URL from Bitrix admin → Developer resources → Other → Inbound webhook.
+    //   Contains USER_ID + SECRET path segments — NEVER log the full URL (T-04-01-01 mitigation).
+    // CRM_WRITE_ENABLED: Phase 1 D-08 shadow-mode parallel. MUST default to false; Phase 7 cutover flips.
+    // BITRIX_SMOKE_TEST_ALLOWED: gate on `php artisan bitrix:smoke-test` — creates/reads real Bitrix records.
+    //   MUST default to false so the command is never run accidentally against production.
+    'bitrix' => [
+        'webhook_url' => env('BITRIX_WEBHOOK_URL'),
+        'write_enabled' => env('CRM_WRITE_ENABLED', false),
+        'smoke_test_allowed' => env('BITRIX_SMOKE_TEST_ALLOWED', false),
+        'cache_ttl_hours' => (int) env('BITRIX_CACHE_TTL_HOURS', 24),
+        'push_retry_attempts' => (int) env('BITRIX_PUSH_RETRY_ATTEMPTS', 3),
+    ],
+
 ];

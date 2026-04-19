@@ -31,6 +31,7 @@ final class ProductVariant extends Model
 
     protected $fillable = [
         'product_id', 'woo_variation_id', 'sku', 'name',
+        'brand_id', 'category_id',
         'buy_price', 'sell_price', 'old_buy_price', 'old_sell_price',
         'stock_quantity', 'old_stock_quantity',
         'status', 'attributes', 'last_synced_at',
@@ -54,9 +55,44 @@ final class ProductVariant extends Model
     {
         return LogOptions::defaults()
             ->logOnly([
-                'sku', 'buy_price', 'sell_price', 'stock_quantity', 'status',
+                'sku', 'brand_id', 'category_id',
+                'buy_price', 'sell_price', 'stock_quantity', 'status',
             ])
             ->logOnlyDirty();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Phase 3 Plan 02 — pricing-key accessors (fall back to parent Product)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Return this variant's brand_id, falling back to the parent Product's
+     * brand_id when the variation does not carry its own override. RuleResolver
+     * calls this instead of reading $product->brand_id directly so a future
+     * per-variant override is a config-only change.
+     */
+    public function getPricingBrandId(): ?int
+    {
+        if ($this->brand_id !== null) {
+            return (int) $this->brand_id;
+        }
+
+        return $this->product?->getPricingBrandId();
+    }
+
+    /**
+     * Return this variant's category_id, falling back to the parent Product's
+     * category_id. Mirrors getPricingBrandId() semantics — parent inheritance
+     * keeps the common case (most variants have no per-variant override)
+     * working without any variant-level write.
+     */
+    public function getPricingCategoryId(): ?int
+    {
+        if ($this->category_id !== null) {
+            return (int) $this->category_id;
+        }
+
+        return $this->product?->getPricingCategoryId();
     }
 
     protected static function newFactory(): ProductVariantFactory

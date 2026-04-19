@@ -219,7 +219,10 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
     // RefreshDatabase has already brought us to a fully-migrated state.
-    // Step=9 rolls back (newest first):
+    // Step=11 rolls back (newest first):
+    //   Phase 3 Plan 02 (2 additive columns on products + product_variants):
+    //     2026_04_19_090300_add_pricing_keys_to_product_variants
+    //     2026_04_19_090200_add_pricing_keys_to_products
     //   Phase 3 Plan 01:
     //     2026_04_19_090100_create_product_overrides_table
     //     2026_04_19_090000_create_pricing_rules_table
@@ -232,8 +235,8 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     //     2026_04_18_200200_create_sync_runs_table
     //     2026_04_18_200100_create_product_variants_table
     //     2026_04_18_200000_create_products_table
-    // Step = 2 (Phase 3) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 9.
-    $this->artisan('migrate:rollback', ['--step' => 9])->assertExitCode(0);
+    // Step = 2 (Phase 3 Plan 02) + 2 (Phase 3 Plan 01) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 11.
+    $this->artisan('migrate:rollback', ['--step' => 11])->assertExitCode(0);
 
     expect(Schema::hasTable('product_overrides'))->toBeFalse();
     expect(Schema::hasTable('pricing_rules'))->toBeFalse();

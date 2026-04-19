@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-04-19T18:30:57.892Z"
+stopped_at: Completed Plan 05-01-data-model-admin-crud
+last_updated: "2026-04-19T19:53:10.558Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 20
-  percent: 100
+  total_plans: 26
+  completed_plans: 21
+  percent: 81
 ---
 
 # Project State
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 04 — Bitrix24 CRM Sync
+**Current focus:** Phase 05 — Competitor Analysis
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
+Phase: 05 (Competitor Analysis) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -68,6 +68,7 @@ Progress: [████░░░░░░] 40%
 | Phase 04 P02 | 60min | 3 tasks | 10 files |
 | Phase 04 P03 | 34min | 3 tasks | 32 files |
 | Phase 04 P05 | 40min | 3 tasks | 27 files |
+| Phase 05 P01 | ~17 min | 2 tasks | 34 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,9 @@ Recent decisions affecting current work:
 - [Phase 04]: Plan 04-05: GDPR scrubs 18 Contact PII fields (NAME, LAST_NAME, SECOND_NAME, PHONE, EMAIL, WEB, IM, ADDRESS, ADDRESS_2, ADDRESS_CITY, ADDRESS_POSTAL_CODE, ADDRESS_REGION, ADDRESS_PROVINCE, POST, BIRTHDATE, COMMENTS, SOURCE_DESCRIPTION, PHOTO) + 4 Deal PII fields preserving HMRC-required OPPORTUNITY/STAGE_ID/UF_CRM_WOO_ORDER_ID/CATEGORY_ID/BEGINDATE/CLOSEDATE/CURRENCY_ID/COMPANY_ID/CONTACT_ID
 - [Phase 04]: Plan 04-05: gdpr_erasure_log has indefinite retention — separate from activity_log 365-day cap; GdprErasureRetentionTest plants 5-year-old row + runs ALL prune commands + asserts row survives
 - [Phase 04]: Plan 04-05: Filament ERASE confirmation uses 'in:ERASE' rule + validationMessages (custom Closure rules trip Filament DI-resolver); rule() second arg is Closure|bool NOT string
+- [Phase 05]: Plan 05-01: config/competitor.php uses basis points (margin_delta_threshold_bps=800 for 8%) matching Phase 3 PricingRule.margin_basis_points convention — downstream analyser reads one integer type across pipeline
+- [Phase 05]: Plan 05-01: policies registered in AppServiceProvider::boot (NOT AuthServiceProvider — project does not have AuthServiceProvider); all Gate::policy bindings follow Phase 1-4 precedent
+- [Phase 05]: Plan 05-01: CompetitorPriceFactory does NOT use ->unique() on sku — trend-chart / multi-date fixtures need same-SKU rows; (competitor_id, sku, recorded_at) DB unique index is the actual COMP-07 guarantee
 
 ### Pending Todos
 
@@ -147,6 +151,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T18:30:57.875Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-competitor-analysis/05-CONTEXT.md
+Last session: 2026-04-19T19:53:10.545Z
+Stopped at: Completed Plan 05-01-data-model-admin-crud
+Resume file: None

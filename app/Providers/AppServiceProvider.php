@@ -39,6 +39,12 @@ class AppServiceProvider extends ServiceProvider
         // job and admin action resolves the SAME registry instance (not a fresh, empty copy).
         $this->app->singleton(SuggestionApplierResolver::class);
 
+        // Phase 3 Plan 04 Task 1 — PriceRecomputer is the shared "recompute a
+        // SKU's price" core used by BOTH the event-driven RecomputePriceListener
+        // AND the bulk RecomputePriceJob. Stateless but singleton-bound to avoid
+        // repeat DI resolution cost during a 15k-SKU bulk batch.
+        $this->app->singleton(\App\Domain\Pricing\Services\PriceRecomputer::class);
+
         // ── Phase 2 Plan 02: Woo REST + Supplier API clients ─────────────
         // Automattic's WooCommerce SDK binding — single shared instance per request
         // (cURL handle + consumer key/secret are stable across calls).

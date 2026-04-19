@@ -52,6 +52,9 @@ class AdminPanelProvider extends PanelProvider
             ->discoverPages(in: app_path('Domain/CRM/Filament/Pages'), for: 'App\\Domain\\CRM\\Filament\\Pages')
             // Phase 5 Plan 04a — Competitor Intelligence Resources (price / ingest-run / csv-parse-error).
             ->discoverResources(in: app_path('Domain/Competitor/Filament/Resources'), for: 'App\\Domain\\Competitor\\Filament\\Resources')
+            // Phase 5 Plan 04b — Competitor Intelligence Pages (analysis + csv-ingest-issues) + Widgets (trend chart, biggest deltas, stale-feed traffic light).
+            ->discoverPages(in: app_path('Domain/Competitor/Filament/Pages'), for: 'App\\Domain\\Competitor\\Filament\\Pages')
+            ->discoverWidgets(in: app_path('Domain/Competitor/Filament/Widgets'), for: 'App\\Domain\\Competitor\\Filament\\Widgets')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

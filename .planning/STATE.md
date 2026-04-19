@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-01 data-model-bootstrap; Plan 04-02 unblocked (BitrixClient skeleton ships 14 LogicException-throwing methods ready for bodies)
-last_updated: "2026-04-19T12:47:32.359Z"
+stopped_at: Completed 04-02 bitrix-client-wrapper; Plan 04-03 unblocked (BitrixClient 18 methods live; EntityDeduper + BitrixSchemaCache ready for push jobs)
+last_updated: "2026-04-19T13:13:17.384Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 20
-  completed_plans: 16
-  percent: 80
+  completed_plans: 17
+  percent: 85
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 04 (Bitrix24 CRM Sync) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -64,6 +64,7 @@ Progress: [████░░░░░░] 40%
 | Phase 02-supplier-sync P04-reporting-ui | ~30 min | 3 tasks | 24 files |
 | Phase 02-supplier-sync P05-guardrails | ~12 min | 2 tasks | 11 files |
 | Phase 04 P01 | 95min | 3 tasks | 30 files |
+| Phase 04 P02 | 60min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,10 @@ Recent decisions affecting current work:
 - [Phase 04]: Plan 04-01: smoke-test probe-runner container binding (PROBE_RUNNER_KEY) — test seam for artisan commands that want to exercise the command loop WITHOUT mocking an injected service
 - [Phase 04]: Plan 04-01: integration_events.operation + .status are NOT-NULL (Phase 1 schema) — every CRM log call fills operation=<endpoint>, status='success'|'failed'
 - [Phase 04]: Plan 04-01: Shadow-Mode Option A locked — sync_diffs.provider column (default 'woo', indexed) reuses Phase 1 shadow table; Phase 7 divergence-scan filter is cheap
+- [Phase 04]: Plan 04-02: SDK 1.10.x ServiceBuilderFactory doesn't accept Guzzle HandlerStack — 2 req/sec throttle enforced via usleep inside withSdk; BitrixRateLimitMiddleware shipped standalone + tested for future SDK version
+- [Phase 04]: Plan 04-02: Shadow-mode gate is first-statement check on every write method (6 total); read methods always hit SDK so Filament schema discovery works in shadow mode
+- [Phase 04]: Plan 04-02: webhook URL sanitisation (T-04-02-01) runs on both rethrown exception message + integration_events.error_message — close leak on both caller paths
+- [Phase 04]: Plan 04-02: EntityDeduper adopts LOWEST Bitrix ID on multi-match (legacy plugin parity; oldest record wins); multi-match writes bitrix.deal.duplicate_detected audit row so ops can merge
 
 ### Pending Todos
 
@@ -133,6 +138,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T12:47:32.347Z
-Stopped at: Completed 04-01 data-model-bootstrap; Plan 04-02 unblocked (BitrixClient skeleton ships 14 LogicException-throwing methods ready for bodies)
+Last session: 2026-04-19T13:13:04.157Z
+Stopped at: Completed 04-02 bitrix-client-wrapper; Plan 04-03 unblocked (BitrixClient 18 methods live; EntityDeduper + BitrixSchemaCache ready for push jobs)
 Resume file: None

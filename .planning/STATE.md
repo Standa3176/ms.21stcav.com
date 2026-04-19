@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed Plan 05-01-data-model-admin-crud
-last_updated: "2026-04-19T19:53:10.558Z"
+stopped_at: Completed 05-02-csv-ingest-pipeline-PLAN.md
+last_updated: "2026-04-19T20:30:49.258Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 26
-  completed_plans: 21
-  percent: 81
+  completed_plans: 22
+  percent: 85
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 05 (Competitor Analysis) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -69,6 +69,7 @@ Progress: [████░░░░░░] 40%
 | Phase 04 P03 | 34min | 3 tasks | 32 files |
 | Phase 04 P05 | 40min | 3 tasks | 27 files |
 | Phase 05 P01 | ~17 min | 2 tasks | 34 files |
+| Phase 05-competitor-analysis P02 | ~30min | 2 tasks | 32 files |
 
 ## Accumulated Context
 
@@ -133,6 +134,9 @@ Recent decisions affecting current work:
 - [Phase 05]: Plan 05-01: config/competitor.php uses basis points (margin_delta_threshold_bps=800 for 8%) matching Phase 3 PricingRule.margin_basis_points convention — downstream analyser reads one integer type across pipeline
 - [Phase 05]: Plan 05-01: policies registered in AppServiceProvider::boot (NOT AuthServiceProvider — project does not have AuthServiceProvider); all Gate::policy bindings follow Phase 1-4 precedent
 - [Phase 05]: Plan 05-01: CompetitorPriceFactory does NOT use ->unique() on sku — trend-chart / multi-date fixtures need same-SKU rows; (competitor_id, sku, recorded_at) DB unique index is the actual COMP-07 guarantee
+- [Phase 05]: Plan 05-02: Bus::batch with ->then()/->catch() chosen over chain-terminal for atomic archive/quarantine semantics; chunk size = 100 rows (config locked)
+- [Phase 05]: Plan 05-02: PHP 8.4 trait-collision — queue name set via onQueue() in constructor NOT public $queue property (Queueable trait incompatibility)
+- [Phase 05]: Plan 05-02: Deptrac config canonical file is deptrac.yaml (not depfile.yaml — both kept in sync; Plan 05-05 to consolidate)
 
 ### Pending Todos
 
@@ -151,6 +155,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T19:53:10.545Z
-Stopped at: Completed Plan 05-01-data-model-admin-crud
+Last session: 2026-04-19T20:30:36.964Z
+Stopped at: Completed 05-02-csv-ingest-pipeline-PLAN.md
 Resume file: None

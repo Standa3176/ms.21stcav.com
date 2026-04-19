@@ -70,12 +70,12 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Competitor analysis (COMP) — Module C
 
-- [ ] **COMP-01**: CSVs dropped into `storage/app/competitors/` by n8n are picked up, parsed, and ingested by a scheduled watcher
-- [ ] **COMP-02**: Column auto-detection finds `sku`/`mpn` + `price` columns even when headers vary across competitors
-- [ ] **COMP-03**: Ingest handles UTF-8 BOM, Windows-1252, and European decimal formats without silent failure
-- [ ] **COMP-04**: Atomic `.tmp → rename` convention with an mtime > 30s gate prevents mid-write files being ingested
-- [ ] **COMP-05**: Per-row parse errors are logged to `csv_parse_errors` and surfaced in a Filament page — never discarded
-- [ ] **COMP-06**: Currency symbols are stripped and prices divided by 1.2 to remove UK VAT before storage
+- [x] **COMP-01**: CSVs dropped into `storage/app/competitors/` by n8n are picked up, parsed, and ingested by a scheduled watcher
+- [x] **COMP-02**: Column auto-detection finds `sku`/`mpn` + `price` columns even when headers vary across competitors
+- [x] **COMP-03**: Ingest handles UTF-8 BOM, Windows-1252, and European decimal formats without silent failure
+- [x] **COMP-04**: Atomic `.tmp → rename` convention with an mtime > 30s gate prevents mid-write files being ingested
+- [x] **COMP-05**: Per-row parse errors are logged to `csv_parse_errors` and surfaced in a Filament page — never discarded
+- [x] **COMP-06**: Currency symbols are stripped and prices divided by 1.2 to remove UK VAT before storage
 - [x] **COMP-07**: Every competitor price row is persisted to `competitor_prices` — history is never truncated
 - [ ] **COMP-08**: `MarginAnalyser` computes our-margin-at-competitor-price and suggests a new margin when delta ≥ threshold (default 8%) with noise suppression (≥3 consecutive scrapes AND ≥N sales/90d)
 - [ ] **COMP-09**: Margin-change suggestions write to the `suggestions` table; approval triggers a `PricingRule` update and audit-log entry
@@ -231,12 +231,12 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | CRM-11 | Phase 4 | Pending |
 | CRM-12 | Phase 4 | Complete |
 | CRM-13 | Phase 4 | Complete |
-| COMP-01 | Phase 5 | Pending |
-| COMP-02 | Phase 5 | Pending |
-| COMP-03 | Phase 5 | Pending |
-| COMP-04 | Phase 5 | Pending |
-| COMP-05 | Phase 5 | Pending |
-| COMP-06 | Phase 5 | Pending |
+| COMP-01 | Phase 5 | Complete |
+| COMP-02 | Phase 5 | Complete |
+| COMP-03 | Phase 5 | Complete |
+| COMP-04 | Phase 5 | Complete |
+| COMP-05 | Phase 5 | Complete |
+| COMP-06 | Phase 5 | Complete |
 | COMP-07 | Phase 5 | Complete |
 | COMP-08 | Phase 5 | Pending |
 | COMP-09 | Phase 5 | Pending |

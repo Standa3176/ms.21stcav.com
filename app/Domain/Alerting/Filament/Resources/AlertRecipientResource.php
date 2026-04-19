@@ -74,6 +74,14 @@ class AlertRecipientResource extends Resource
                 ->label('Receives CRM alerts')
                 ->helperText('Email this recipient when a Bitrix push exhausts retries (crm_push_failed).')
                 ->default(false),
+            // Phase 5 Plan 04a — competitor alert opt-in (Plan 05-01 column).
+            // Covers stale-feed warnings (CompetitorCheckStaleCommand, Plan 05-05)
+            // + CSV ingest failure notifications. Default FALSE; seeded fallback
+            // row is force-promoted TRUE by the migration + DatabaseSeeder UPDATE.
+            Toggle::make('receives_competitor_alerts')
+                ->label('Receives Competitor Alerts')
+                ->helperText('Email this recipient for competitor stale-feed warnings + CSV ingest failure notifications.')
+                ->default(false),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -94,6 +102,10 @@ class AlertRecipientResource extends Resource
                 IconColumn::make('receives_crm_alerts')
                     ->boolean()
                     ->label('CRM alerts?'),
+                // Phase 5 Plan 04a — competitor alert opt-in status at a glance.
+                IconColumn::make('receives_competitor_alerts')
+                    ->boolean()
+                    ->label('Comp alerts?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

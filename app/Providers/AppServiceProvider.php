@@ -189,6 +189,10 @@ class AppServiceProvider extends ServiceProvider
                 // BITRIX_SMOKE_TEST_ALLOWED + BITRIX_WEBHOOK_URL).
                 \App\Domain\CRM\Console\Commands\BitrixBootstrapCommand::class,
                 \App\Domain\CRM\Console\Commands\BitrixSmokeTestCommand::class,
+                // Phase 4 Plan 02 — CRM-02 field-schema cache refresh.
+                // Invalidates the 24h cache + refetches deal/contact/company
+                // schemas. Admin-triggered after Bitrix UF_CRM_* edits.
+                \App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand::class,
             ]);
         }
     }

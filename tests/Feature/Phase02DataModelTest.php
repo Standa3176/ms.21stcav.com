@@ -219,11 +219,24 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
     // RefreshDatabase has already brought us to a fully-migrated state.
-    // Step=7 — rolls back the 6 Phase-2 tables PLUS Plan 02-04's additive
-    // `add_receives_sync_reports_to_alert_recipients` column migration that
-    // sits at 2026_04_18_200600 (immediately after the 6 table creates).
-    $this->artisan('migrate:rollback', ['--step' => 7])->assertExitCode(0);
+    // Step=9 rolls back (newest first):
+    //   Phase 3 Plan 01:
+    //     2026_04_19_090100_create_product_overrides_table
+    //     2026_04_19_090000_create_pricing_rules_table
+    //   Phase 2 Plan 04 (additive column):
+    //     2026_04_18_200600_add_receives_sync_reports_to_alert_recipients
+    //   Phase 2 Plan 01 (6 table creates):
+    //     2026_04_18_200500_create_sync_run_items_table
+    //     2026_04_18_200400_create_import_issues_table
+    //     2026_04_18_200300_create_sync_errors_table
+    //     2026_04_18_200200_create_sync_runs_table
+    //     2026_04_18_200100_create_product_variants_table
+    //     2026_04_18_200000_create_products_table
+    // Step = 2 (Phase 3) + 1 (receives_sync_reports) + 6 (Phase 2 tables) = 9.
+    $this->artisan('migrate:rollback', ['--step' => 9])->assertExitCode(0);
 
+    expect(Schema::hasTable('product_overrides'))->toBeFalse();
+    expect(Schema::hasTable('pricing_rules'))->toBeFalse();
     expect(Schema::hasTable('sync_run_items'))->toBeFalse();
     expect(Schema::hasTable('import_issues'))->toBeFalse();
     expect(Schema::hasTable('sync_errors'))->toBeFalse();
@@ -239,6 +252,8 @@ it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', fun
     expect(Schema::hasTable('sync_errors'))->toBeTrue();
     expect(Schema::hasTable('import_issues'))->toBeTrue();
     expect(Schema::hasTable('sync_run_items'))->toBeTrue();
+    expect(Schema::hasTable('pricing_rules'))->toBeTrue();
+    expect(Schema::hasTable('product_overrides'))->toBeTrue();
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             RolePermissionSeeder::class,
             TestSuggestionSeeder::class,
             AlertRecipientSeeder::class,
+            \Database\Seeders\Phase3\DefaultPricingTierSeeder::class,
         ]);
 
         $admin = User::firstOrCreate(

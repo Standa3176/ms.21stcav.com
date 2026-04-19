@@ -87,7 +87,7 @@ it('action URL filters by competitor_id on /admin/competitor-ingest-runs', funct
     ]);
 
     $mail = $notification->toMail($recipient);
-    $rendered = json_encode($mail->toArray());
-    expect($rendered)->toContain('/admin/competitor-ingest-runs');
-    expect($rendered)->toContain((string) $competitor->id);
+    $arr = $mail->toArray();
+    expect($arr['actionUrl'] ?? '')->toContain('/admin/competitor-ingest-runs');
+    expect($arr['actionUrl'] ?? '')->toContain((string) $competitor->id);
 });

@@ -56,16 +56,16 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 - [x] **CRM-01**: `php artisan bitrix:bootstrap` creates the `UF_CRM_WOO_ORDER_ID` integer custom field on Deal before any push code runs
 - [x] **CRM-02**: Bitrix field schemas are cached for 24h with a manual "Refresh from Bitrix" button, and push-time validation reports stale mappings
-- [ ] **CRM-03**: On Woo order creation a Deal + Contact + Company is pushed to Bitrix24 via the official SDK
+- [x] **CRM-03**: On Woo order creation a Deal + Contact + Company is pushed to Bitrix24 via the official SDK
 - [x] **CRM-04**: On Woo customer registration a Contact is upserted (find-or-create by email, never a duplicate insert)
 - [x] **CRM-05**: Deals are found by `UF_CRM_WOO_ORDER_ID` before create so retries never produce duplicates
 - [ ] **CRM-06**: Admins map Woo order/customer fields to Bitrix Deal/Contact/Company fields via a Filament UI — no code edits
 - [ ] **CRM-07**: Multiple Bitrix deal pipelines are supported; pipeline routing rules are admin-configurable
-- [ ] **CRM-08**: Order notes are synced into the Deal's comments
-- [ ] **CRM-09**: UTM parameters and GA Client ID captured on checkout are pushed to configured Bitrix custom fields
+- [x] **CRM-08**: Order notes are synced into the Deal's comments
+- [x] **CRM-09**: UTM parameters and GA Client ID captured on checkout are pushed to configured Bitrix custom fields
 - [ ] **CRM-10**: `php artisan bitrix:backfill-orders --since={date} --dry-run` replays historical orders idempotently via `BitrixEntityMap`
 - [ ] **CRM-11**: Every CRM push attempt (request, response, latency, retry count) is persisted to a CRM push log with a Filament replay action
-- [ ] **CRM-12**: Failed CRM pushes after N retries land in a dead-letter queue and surface as `suggestions('crm_push_failed')` for human review
+- [x] **CRM-12**: Failed CRM pushes after N retries land in a dead-letter queue and surface as `suggestions('crm_push_failed')` for human review
 - [ ] **CRM-13**: A GDPR right-to-erasure command scrubs a customer's Bitrix Contact + related Deal PII on request
 
 ### Competitor analysis (COMP) — Module C
@@ -220,16 +220,16 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | PRCE-10 | Phase 3 | Pending |
 | CRM-01 | Phase 4 | Complete |
 | CRM-02 | Phase 4 | Complete |
-| CRM-03 | Phase 4 | Pending |
+| CRM-03 | Phase 4 | Complete |
 | CRM-04 | Phase 4 | Complete |
 | CRM-05 | Phase 4 | Complete |
 | CRM-06 | Phase 4 | Pending |
 | CRM-07 | Phase 4 | Pending |
-| CRM-08 | Phase 4 | Pending |
-| CRM-09 | Phase 4 | Pending |
+| CRM-08 | Phase 4 | Complete |
+| CRM-09 | Phase 4 | Complete |
 | CRM-10 | Phase 4 | Pending |
 | CRM-11 | Phase 4 | Pending |
-| CRM-12 | Phase 4 | Pending |
+| CRM-12 | Phase 4 | Complete |
 | CRM-13 | Phase 4 | Pending |
 | COMP-01 | Phase 5 | Pending |
 | COMP-02 | Phase 5 | Pending |

@@ -54,8 +54,8 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Bitrix24 CRM sync (CRM) — Module E (moved to Phase 4)
 
-- [ ] **CRM-01**: `php artisan bitrix:bootstrap` creates the `UF_CRM_WOO_ORDER_ID` integer custom field on Deal before any push code runs
-- [ ] **CRM-02**: Bitrix field schemas are cached for 24h with a manual "Refresh from Bitrix" button, and push-time validation reports stale mappings
+- [x] **CRM-01**: `php artisan bitrix:bootstrap` creates the `UF_CRM_WOO_ORDER_ID` integer custom field on Deal before any push code runs
+- [x] **CRM-02**: Bitrix field schemas are cached for 24h with a manual "Refresh from Bitrix" button, and push-time validation reports stale mappings
 - [ ] **CRM-03**: On Woo order creation a Deal + Contact + Company is pushed to Bitrix24 via the official SDK
 - [ ] **CRM-04**: On Woo customer registration a Contact is upserted (find-or-create by email, never a duplicate insert)
 - [ ] **CRM-05**: Deals are found by `UF_CRM_WOO_ORDER_ID` before create so retries never produce duplicates
@@ -218,8 +218,8 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | PRCE-08 | Phase 3 | Pending |
 | PRCE-09 | Phase 3 | Pending |
 | PRCE-10 | Phase 3 | Pending |
-| CRM-01 | Phase 4 | Pending |
-| CRM-02 | Phase 4 | Pending |
+| CRM-01 | Phase 4 | Complete |
+| CRM-02 | Phase 4 | Complete |
 | CRM-03 | Phase 4 | Pending |
 | CRM-04 | Phase 4 | Pending |
 | CRM-05 | Phase 4 | Pending |

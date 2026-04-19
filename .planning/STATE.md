@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Phase 4 context gathered
-last_updated: "2026-04-19T11:07:44.019Z"
+stopped_at: Completed 04-01 data-model-bootstrap; Plan 04-02 unblocked (BitrixClient skeleton ships 14 LogicException-throwing methods ready for bodies)
+last_updated: "2026-04-19T12:47:32.359Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_plans: 20
+  completed_plans: 16
+  percent: 80
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 3 — Pricing Engine
+**Current focus:** Phase 04 — Bitrix24 CRM Sync
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Executing Phase 3
+Phase: 04 (Bitrix24 CRM Sync) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-04-19
 
 Progress: [████░░░░░░] 40%
@@ -63,6 +63,7 @@ Progress: [████░░░░░░] 40%
 | Phase 02-supplier-sync P03-orchestration | 25m | 3 tasks | 26 files |
 | Phase 02-supplier-sync P04-reporting-ui | ~30 min | 3 tasks | 24 files |
 | Phase 02-supplier-sync P05-guardrails | ~12 min | 2 tasks | 11 files |
+| Phase 04 P01 | 95min | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,11 @@ Recent decisions affecting current work:
 - [Phase 02-supplier-sync]: Plan 02-05: PolicyTemplateIntegrityTest promoted from tests/Feature to tests/Architecture; extended from 1 to 3 tests (literal grep + positive control count + Gate::policy binding resolution). Feature version deleted in same commit — no duplication.
 - [Phase 02-supplier-sync]: Plan 02-05: PruneSyncErrorsCommand extends Illuminate\Console\Command (Phase 1 Prune* pattern), not BaseCommand — consistency with the 3 existing prunes outweighed the correlation-id hop BaseCommand would add; --days=0 is a graceful no-op safety guard.
 - [Phase 02-supplier-sync]: Plan 02-05: Deptrac negative-test assertion is exit-code-only (not stdout-grep) — deptrac-shim phar output is unreliable via Symfony\Process on Windows PHP; exit code is the CI-authoritative signal.
+- [Phase 04]: Plan 04-01: bitrix24/b24phpsdk ^1.10.0 resolved to 1.10.0 (only 1.10.x patch on Packagist as of 2026-04-19); constraint widened from ^1.10 to ^1.10.0 after composer 'too strict' warning
+- [Phase 04]: Plan 04-01: BitrixClient un-finalled (Phase 2 WooClient precedent) — Mockery-parity test seam without interface extraction
+- [Phase 04]: Plan 04-01: smoke-test probe-runner container binding (PROBE_RUNNER_KEY) — test seam for artisan commands that want to exercise the command loop WITHOUT mocking an injected service
+- [Phase 04]: Plan 04-01: integration_events.operation + .status are NOT-NULL (Phase 1 schema) — every CRM log call fills operation=<endpoint>, status='success'|'failed'
+- [Phase 04]: Plan 04-01: Shadow-Mode Option A locked — sync_diffs.provider column (default 'woo', indexed) reuses Phase 1 shadow table; Phase 7 divergence-scan filter is cheap
 
 ### Pending Todos
 
@@ -127,6 +133,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T11:07:44.006Z
-Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-bitrix24-crm-sync/04-CONTEXT.md
+Last session: 2026-04-19T12:47:32.347Z
+Stopped at: Completed 04-01 data-model-bootstrap; Plan 04-02 unblocked (BitrixClient skeleton ships 14 LogicException-throwing methods ready for bodies)
+Resume file: None

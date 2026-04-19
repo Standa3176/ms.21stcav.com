@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-03-webhook-listeners-push-jobs-PLAN.md
-last_updated: "2026-04-19T13:55:01.553Z"
+stopped_at: Completed 04-05-backfill-gdpr-guardrails-PLAN.md — Phase 4 COMPLETE (ship verdict PASS)
+last_updated: "2026-04-19T17:49:50.483Z"
 last_activity: 2026-04-19
 progress:
   total_phases: 7
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 20
-  completed_plans: 18
-  percent: 90
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 04 (Bitrix24 CRM Sync) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-04-19
 
@@ -66,6 +66,7 @@ Progress: [████░░░░░░] 40%
 | Phase 04 P01 | 95min | 3 tasks | 30 files |
 | Phase 04 P02 | 60min | 3 tasks | 10 files |
 | Phase 04 P03 | 34min | 3 tasks | 32 files |
+| Phase 04 P05 | 40min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -123,6 +124,10 @@ Recent decisions affecting current work:
 - [Phase 04]: Plan 04-02: EntityDeduper adopts LOWEST Bitrix ID on multi-match (legacy plugin parity; oldest record wins); multi-match writes bitrix.deal.duplicate_detected audit row so ops can merge
 - [Phase 04]: Plan 04-03 self-dispatch-with-delay pattern replaces InteractsWithQueue::release() for D-10 race guard — testable under Queue::fake
 - [Phase 04]: Plan 04-03 AlertDistribution extended with onlyReceiving constructor option — backwards-compatible single-class scope filter
+- [Phase 04]: Plan 04-05: BackfillOrdersChunkJob uses config override for dry-run mode (scoped to worker process) instead of per-job  param — preserves PushOrderToBitrixJob signature
+- [Phase 04]: Plan 04-05: GDPR scrubs 18 Contact PII fields (NAME, LAST_NAME, SECOND_NAME, PHONE, EMAIL, WEB, IM, ADDRESS, ADDRESS_2, ADDRESS_CITY, ADDRESS_POSTAL_CODE, ADDRESS_REGION, ADDRESS_PROVINCE, POST, BIRTHDATE, COMMENTS, SOURCE_DESCRIPTION, PHOTO) + 4 Deal PII fields preserving HMRC-required OPPORTUNITY/STAGE_ID/UF_CRM_WOO_ORDER_ID/CATEGORY_ID/BEGINDATE/CLOSEDATE/CURRENCY_ID/COMPANY_ID/CONTACT_ID
+- [Phase 04]: Plan 04-05: gdpr_erasure_log has indefinite retention — separate from activity_log 365-day cap; GdprErasureRetentionTest plants 5-year-old row + runs ALL prune commands + asserts row survives
+- [Phase 04]: Plan 04-05: Filament ERASE confirmation uses 'in:ERASE' rule + validationMessages (custom Closure rules trip Filament DI-resolver); rule() second arg is Closure|bool NOT string
 
 ### Pending Todos
 
@@ -141,6 +146,6 @@ None yet. Open items flagged for per-phase planning (from research/SUMMARY.md "G
 
 ## Session Continuity
 
-Last session: 2026-04-19T13:55:01.540Z
-Stopped at: Completed 04-03-webhook-listeners-push-jobs-PLAN.md
+Last session: 2026-04-19T17:49:50.471Z
+Stopped at: Completed 04-05-backfill-gdpr-guardrails-PLAN.md — Phase 4 COMPLETE (ship verdict PASS)
 Resume file: None

@@ -63,10 +63,10 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [ ] **CRM-07**: Multiple Bitrix deal pipelines are supported; pipeline routing rules are admin-configurable
 - [x] **CRM-08**: Order notes are synced into the Deal's comments
 - [x] **CRM-09**: UTM parameters and GA Client ID captured on checkout are pushed to configured Bitrix custom fields
-- [ ] **CRM-10**: `php artisan bitrix:backfill-orders --since={date} --dry-run` replays historical orders idempotently via `BitrixEntityMap`
+- [x] **CRM-10**: `php artisan bitrix:backfill-orders --since={date} --dry-run` replays historical orders idempotently via `BitrixEntityMap`
 - [ ] **CRM-11**: Every CRM push attempt (request, response, latency, retry count) is persisted to a CRM push log with a Filament replay action
 - [x] **CRM-12**: Failed CRM pushes after N retries land in a dead-letter queue and surface as `suggestions('crm_push_failed')` for human review
-- [ ] **CRM-13**: A GDPR right-to-erasure command scrubs a customer's Bitrix Contact + related Deal PII on request
+- [x] **CRM-13**: A GDPR right-to-erasure command scrubs a customer's Bitrix Contact + related Deal PII on request
 
 ### Competitor analysis (COMP) — Module C
 
@@ -227,10 +227,10 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | CRM-07 | Phase 4 | Pending |
 | CRM-08 | Phase 4 | Complete |
 | CRM-09 | Phase 4 | Complete |
-| CRM-10 | Phase 4 | Pending |
+| CRM-10 | Phase 4 | Complete |
 | CRM-11 | Phase 4 | Pending |
 | CRM-12 | Phase 4 | Complete |
-| CRM-13 | Phase 4 | Pending |
+| CRM-13 | Phase 4 | Complete |
 | COMP-01 | Phase 5 | Pending |
 | COMP-02 | Phase 5 | Pending |
 | COMP-03 | Phase 5 | Pending |

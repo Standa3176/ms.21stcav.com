@@ -94,14 +94,45 @@ class RolePermissionSeeder extends Seeder
                     ->orWhere('name', 'like', '%product::override');     // Shield :: style (Phase 3 forward-compat)
             })
             ->orWhere(function ($q) {
-                // View-only on competitor_price + sync_run (both separator styles).
+                // Explicit whitelist (NOT LIKE) for Phase 5 resources with
+                // action-level scope. D-04 + Plan 05-04a: pricing_manager gets
+                // view + update on csv_parse_error and competitor_csv_mapping
+                // — NOT create / delete / force_delete / restore / replicate /
+                // reorder. `%_csv_parse_error` LIKE would catch every action
+                // because MySQL `_` is a single-char wildcard, so we enumerate.
+                //
+                // View-only on competitor_price + competitor_ingest_run + sync_run
+                // (trend + margin intel; "did the CSV arrive?" operational insight).
                 $q->whereIn('name', [
+                    // --- Competitor CSV mapping (D-04) — view + update only ---
+                    'view_competitor_csv_mapping',
+                    'view_any_competitor_csv_mapping',
+                    'update_competitor_csv_mapping',
+                    'view_competitor::csv::mapping',
+                    'view_any_competitor::csv::mapping',
+                    'update_competitor::csv::mapping',
+                    // --- CSV parse error — view + update (mark resolved) only ---
+                    'view_csv_parse_error',
+                    'view_any_csv_parse_error',
+                    'update_csv_parse_error',
+                    'view_csv::parse::error',
+                    'view_any_csv::parse::error',
+                    'update_csv::parse::error',
+                    // --- Competitor price — view only (Phase 5) ---
                     'view_competitor_price',
                     'view_any_competitor_price',
-                    'view_sync_run',         // underscore style (forward-compat)
-                    'view_any_sync_run',     // underscore style (forward-compat)
-                    'view_sync::run',        // Shield :: style (Phase 2 observed)
-                    'view_any_sync::run',    // Shield :: style (Phase 2 observed)
+                    'view_competitor::price',
+                    'view_any_competitor::price',
+                    // --- Competitor ingest run — view only (Phase 5) ---
+                    'view_competitor_ingest_run',
+                    'view_any_competitor_ingest_run',
+                    'view_competitor::ingest::run',
+                    'view_any_competitor::ingest::run',
+                    // --- Sync run — view only (Phase 2) ---
+                    'view_sync_run',
+                    'view_any_sync_run',
+                    'view_sync::run',
+                    'view_any_sync::run',
                 ]);
             })
             ->pluck('name')
@@ -109,14 +140,32 @@ class RolePermissionSeeder extends Seeder
 
         $pricingManager->syncPermissions($pricingManagerPermissions);
 
-        // 6. sales → view-only on crm_push_log (D-02; Resource shipped in Phase 4 Plan 04)
+        // 6. sales → view-only on crm_push_log (Phase 4) + competitor_price +
+        //    competitor_ingest_run (Phase 5 Plan 04a — sales team uses competitor
+        //    intel when building quotes, COMP-10 trend charts visibility; NO
+        //    access to csv_parse_error or competitor_csv_mapping — those are
+        //    pricing_manager + admin triage surfaces).
         $salesPermissions = Permission::query()
             ->where(function ($q) {
-                // BOTH underscore + :: separator styles — forward-compat.
-                $q->where('name', 'like', '%_crm_push_log')
-                    ->orWhere('name', 'like', '%crm_push::log')
-                    ->orWhere('name', 'like', '%crm::push_log')
-                    ->orWhere('name', 'like', '%crm::push::log');
+                $q->where(function ($inner) {
+                    // CRM push log (Phase 4) — all separator variants.
+                    $inner->where('name', 'like', '%_crm_push_log')
+                        ->orWhere('name', 'like', '%crm_push::log')
+                        ->orWhere('name', 'like', '%crm::push_log')
+                        ->orWhere('name', 'like', '%crm::push::log');
+                })
+                    ->orWhereIn('name', [
+                        // Phase 5 — competitor price visibility for quote-building.
+                        'view_competitor_price',
+                        'view_any_competitor_price',
+                        'view_competitor::price',
+                        'view_any_competitor::price',
+                        // Phase 5 — ingest-run visibility ("is today's data in?").
+                        'view_competitor_ingest_run',
+                        'view_any_competitor_ingest_run',
+                        'view_competitor::ingest::run',
+                        'view_any_competitor::ingest::run',
+                    ]);
             })
             ->where(function ($q) {
                 // Read-only: view + view_any only.

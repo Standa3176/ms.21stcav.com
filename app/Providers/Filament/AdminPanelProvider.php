@@ -50,6 +50,8 @@ class AdminPanelProvider extends PanelProvider
             // Phase 4 Plan 04 — CRM Resources + Pages (CrmPipelineSettingsPage is a singleton Page).
             ->discoverResources(in: app_path('Domain/CRM/Filament/Resources'), for: 'App\\Domain\\CRM\\Filament\\Resources')
             ->discoverPages(in: app_path('Domain/CRM/Filament/Pages'), for: 'App\\Domain\\CRM\\Filament\\Pages')
+            // Phase 5 Plan 04a — Competitor Intelligence Resources (price / ingest-run / csv-parse-error).
+            ->discoverResources(in: app_path('Domain/Competitor/Filament/Resources'), for: 'App\\Domain\\Competitor\\Filament\\Resources')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

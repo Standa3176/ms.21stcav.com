@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
+use App\Domain\Alerting\Models\AlertRecipient;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -32,6 +33,14 @@ class DatabaseSeeder extends Seeder
             // the legacy itgalaxy plugin's CrmFields.php. Idempotent firstOrCreate.
             \Database\Seeders\Phase4\CrmFieldMappingSeeder::class,
         ]);
+
+        // Phase 5 Plan 04a — belt-and-braces promotion of the Pitfall M fallback
+        // recipient to receive competitor alerts. The AlertRecipientSeeder sets
+        // this on firstOrCreate, but if the row existed pre-Phase-5 (common on
+        // long-lived dev DBs) the flag stays FALSE. This UPDATE force-promotes.
+        // Idempotent: running twice has the same effect as running once.
+        AlertRecipient::where('email', 'ops@meetingstore.co.uk')
+            ->update(['receives_competitor_alerts' => true]);
 
         $admin = User::firstOrCreate(
             ['email' => 'admin@meetingstore.co.uk'],

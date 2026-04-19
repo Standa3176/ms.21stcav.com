@@ -149,6 +149,11 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \App\Domain\Sync\Commands\SyncSupplierCommand::class,
+                // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
+                // recompute. Default dry-run, --live opt-in (D-12). Lives
+                // under app/Domain/Pricing/Console/Commands/ so explicit
+                // registration is required (same pattern as Phase 2).
+                \App\Domain\Pricing\Console\Commands\PricingRecomputeCommand::class,
             ]);
         }
     }

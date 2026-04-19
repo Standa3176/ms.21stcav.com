@@ -45,7 +45,7 @@ use Illuminate\Support\Facades\Log;
  * Registered as a singleton in AppServiceProvider for resolution-cost
  * savings during a 15k-SKU bulk batch.
  */
-final class PriceRecomputer
+class PriceRecomputer
 {
     public function __construct(
         private readonly RuleResolver $resolver,

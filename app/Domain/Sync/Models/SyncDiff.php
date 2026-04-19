@@ -19,6 +19,7 @@ class SyncDiff extends Model
     public $timestamps = false; // created_at set explicitly; no updated_at
 
     protected $fillable = [
+        'provider',           // Phase 4 Plan 01 — 'woo' (default, existing rows) or 'bitrix' (CRM shadow-mode)
         'channel',
         'method',
         'endpoint',

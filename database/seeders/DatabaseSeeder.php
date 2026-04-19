@@ -25,6 +25,9 @@ class DatabaseSeeder extends Seeder
             TestSuggestionSeeder::class,
             AlertRecipientSeeder::class,
             \Database\Seeders\Phase3\DefaultPricingTierSeeder::class,
+            // Phase 4 Plan 01 — 7 Woo-status rows with placeholder Bitrix stage labels.
+            // Admin replaces labels with real STAGE_IDs via Plan 04-04 Filament UI.
+            \Database\Seeders\Phase4\CrmStatusMappingSeeder::class,
         ]);
 
         $admin = User::firstOrCreate(

@@ -139,6 +139,17 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(PricingRule::class, PricingRulePolicy::class);
         Gate::policy(ProductOverride::class, ProductOverridePolicy::class);
 
+        // ── Phase 4 Plan 01: CRM domain policies ─────────────────────────
+        // Admin-only gates on all 5 CRM models. Hardcoded hasRole('admin')
+        // per Pitfall K + P2-H — do NOT regenerate via shield:generate.
+        // PolicyTemplateIntegrityTest (tests/Architecture) catches Shield
+        // {{ Placeholder }} leaks on every CI run.
+        Gate::policy(\App\Domain\CRM\Models\BitrixEntityMap::class,    \App\Domain\CRM\Policies\BitrixEntityMapPolicy::class);
+        Gate::policy(\App\Domain\CRM\Models\CrmFieldMapping::class,    \App\Domain\CRM\Policies\CrmFieldMappingPolicy::class);
+        Gate::policy(\App\Domain\CRM\Models\CrmStatusMapping::class,   \App\Domain\CRM\Policies\CrmStatusMappingPolicy::class);
+        Gate::policy(\App\Domain\CRM\Models\CrmPipelineSetting::class, \App\Domain\CRM\Policies\CrmPipelineSettingPolicy::class);
+        Gate::policy(\App\Domain\CRM\Models\BitrixBackfillRun::class,  \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class);
+
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.
         // Our command lives under app/Domain/Sync/Commands/, so we register it

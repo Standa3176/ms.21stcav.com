@@ -170,6 +170,13 @@ it('handles missing archive directory gracefully (exit 0, no exception)', functi
     @rmdir($this->archivePath);
 
     $this->artisan('competitor:csv-prune --days=30')->assertSuccessful();
+
+    // Restore archive/.gitkeep sentinel for repo hygiene — this test
+    // intentionally wipes the tree to exercise the missing-dir branch.
+    if (! is_dir($this->archivePath)) {
+        mkdir($this->archivePath, 0o775, true);
+    }
+    file_put_contents($this->archivePath.DIRECTORY_SEPARATOR.'.gitkeep', '');
 });
 
 it('is registered as an artisan command', function (): void {

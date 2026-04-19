@@ -81,7 +81,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **COMP-09**: Margin-change suggestions write to the `suggestions` table; approval triggers a `PricingRule` update and audit-log entry
 - [x] **COMP-10**: A Filament "Competitor Analysis" page shows price trend charts, biggest deltas, and a per-competitor view
 - [x] **COMP-11**: Stale-feed detection warns the admin when a competitor hasn't reported in > 48h
-- [ ] **COMP-12**: Competitor CSV source files are pruned after 90 days (configurable)
+- [x] **COMP-12**: Competitor CSV source files are pruned after 90 days (configurable)
 
 ### Product auto-create (AUTO) — Module D
 
@@ -242,7 +242,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | COMP-09 | Phase 5 | Complete |
 | COMP-10 | Phase 5 | Complete |
 | COMP-11 | Phase 5 | Complete |
-| COMP-12 | Phase 5 | Pending |
+| COMP-12 | Phase 5 | Complete |
 | AUTO-01 | Phase 6 | Pending |
 | AUTO-02 | Phase 6 | Pending |
 | AUTO-03 | Phase 6 | Pending |

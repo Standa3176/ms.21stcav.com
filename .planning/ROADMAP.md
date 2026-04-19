@@ -112,13 +112,14 @@ Plans:
   3. When a competitor's margin delta exceeds the 8% threshold AND is corroborated by ≥3 consecutive scrapes AND ≥N sales in the last 90 days, a `margin_change` suggestion is created; approving it updates the matching `PricingRule`, fires `PricingRuleChanged`, and writes an audit-log entry with the full evidence trail
   4. The Filament "Competitor Analysis" page shows price trend charts per SKU, biggest margin deltas across the catalogue, and a per-competitor view; a stale-feed warning fires when a competitor hasn't reported in >48 hours
   5. Competitor CSV source files older than 90 days (configurable) are pruned by a scheduled command, with the prune action logged
-**Plans:** 5 plans
+**Plans:** 6 plans
 Plans:
-- [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
-- [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
-- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
-- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
-- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
+- [ ] 05-01-data-model-admin-crud-PLAN.md — 7 migrations (competitors, competitor_csv_mappings, competitor_ingest_runs, competitor_prices, csv_parse_errors, +receives_competitor_alerts, +products.last_sales_count_90d) + 5 Eloquent models + 5 policies + 5 factories + config/competitor.php (COMP-07 schema)
+- [ ] 05-02-csv-ingest-pipeline-PLAN.md — CompetitorWatchCommand + IngestCompetitorCsvJob + CompetitorCsvChunkJob + EncodingDetector + DecimalFormatDetector + ColumnHeuristicDetector + PriceParser + OrphanDetector (D-09 dedup) + NewProductOpportunityApplier stub + CompetitorPriceRecorded event + docs/n8n-integration/README.md (COMP-01..COMP-07)
+- [ ] 05-03-margin-analyser-suggestion-producers-PLAN.md — PricingRuleChanged event (A1 backport) + PricingRule observer + SalesCounterService + IncrementSkuSalesCount listener + MarginAnalyser (P5-E min-margin-floor guard) + DispatchMarginAnalyserJob (24h Cache::add debounce) + ComputeMarginSuggestionJob + MarginChangeApplier + CompetitorSalesRecacheCommand (COMP-08, COMP-09)
+- [ ] 05-04a-filament-resources-and-rbac-PLAN.md — 3 read-only Filament Resources (CompetitorPrice + CompetitorIngestRun + CsvParseError) + SuggestionResource kind-specific Approve actions (margin_change + new_product_opportunity) + AlertRecipientResource receives_competitor_alerts toggle + shield:generate restoration protocol (P5-F) + RolePermissionSeeder LIKE-pattern extension + PolicyTemplateIntegrityTest floor bump (COMP-05, COMP-09)
+- [ ] 05-04b-filament-pages-stale-feed-PLAN.md — CompetitorAnalysisPage (SkuPriceTrendChart + BiggestMarginDeltasTable with W4 null-safety + StaleFeedTrafficLight + per-competitor tabs) + CsvIngestIssuesPage (4-tab with Quarantine resolve) + CompetitorCheckStaleCommand hourly + StaleFeedNotification + CompetitorDemoSeeder + human-verify checkpoint (COMP-10, COMP-11)
+- [ ] 05-05-retention-guardrails-verification-PLAN.md — CompetitorCsvPruneCommand (90d archive retention, NEVER touches competitor_prices) + Deptrac Competitor layer [Foundation, Pricing, Products, Suggestions, Alerting] + DeptracCompetitorLayerTest + CompetitorPricesNeverPrunedTest + 05-VERIFICATION.md ship verdict (COMP-12)
 **UI hint**: yes
 
 ### Phase 6: Product Auto-Create

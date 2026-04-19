@@ -686,27 +686,27 @@ Phase 5's stack is all Phase 1–4 assets reused — no library version bumps, n
 
 **If this table is empty:** Not applicable — five genuine assumptions surfaced above.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does `PricingRuleChanged` event already exist?**
    - What we know: Phase 3 Plan 02 SUMMARY explicitly ships `ProductPriceChanged`; no mention of `PricingRuleChanged`. Phase 3 CONTEXT D-13 talks about the `ProductPriceChanged` emission on penny-diff. The `RecomputePriceListener` subscribes to `SupplierPriceChanged`, not `PricingRuleChanged`.
    - What's unclear: When a user edits a `PricingRule` in Filament, does recompute fire? If so, through what mechanism?
-   - Recommendation: Plan 3 opens with a file-system grep for `PricingRuleChanged` under `app/Domain/Pricing/Events/`. If absent, ship it in Plan 3 (class + observer on `PricingRule::updated` + Phase 3 `RecomputePriceListener` subscription). This is a minor back-port — Phase 3 should arguably have shipped this, but its success criterion 4 is only about `SupplierPriceChanged` → `ProductPriceChanged`.
+   - RESOLVED: Event does NOT exist in app/Domain/Pricing/Events/ (verified via directory listing). Plan 05-03 Task 1 ships the event class + PricingRule observer firing on saved+isDirty('margin_basis_points') + EventServiceProvider wire-up as the A1 back-port.
 
 2. **Does a `SalesCounterService` 90d window already exist anywhere?**
    - What we know: Phase 2 Plan 01 ships `Product` model with pricing fields; no sales-count column seen. Phase 2 `OrderReceived` event fires from the Woo webhook.
    - What's unclear: Whether any Phase 2 or Phase 4 code already aggregates per-SKU sales counts.
-   - Recommendation: Phase 5 Plan 3 ships `RecacheSalesCountsJob` that does one bulk Woo REST query (`/orders?after=<90d_ago>&per_page=100&page=N`) with pagination; aggregates into `products.last_sales_count_90d`. If Woo REST can't scope by SKU, aggregate in PHP. Alternative: subscribe `RecordSaleCountListener` to `OrderReceived` events — cheap in-process update. **Preferred: BOTH.** Event-driven real-time increment + nightly recache reconciliation.
+   - RESOLVED: No existing service. Plan 05-03 ships hybrid strategy — event-driven increment via UpdateSalesCountListener on OrderReceived (real-time) + nightly RecacheSalesCountsJob on sync-bulk queue for drift correction. 'last_sales_count_90d' column persisted on products with sales_count_computed_at timestamp.
 
 3. **Is the seeded empty `competitors` table acceptable day-one UX, or should an admin-visible "empty state" hint exist?**
    - What we know: D-02 locks "seeded empty"; D-01 auto-creates `status=pending` rows on first-ingest file.
    - What's unclear: Whether admin sees an empty Filament `CompetitorResource` day one and thinks the feature is broken.
-   - Recommendation: Plan 4 Filament Resource shows an empty-state card: "Drop a CSV in `storage/app/competitors/incoming/` to auto-discover a competitor" — non-blocking but improves day-one UX.
+   - RESOLVED: Empty seed is acceptable per CONTEXT D-02 — first CSV ingest auto-creates competitor row as status=pending via D-01 filename-prefix discovery. CsvIngestIssuesPage surfaces pending competitors for admin to fill in details.
 
 4. **Retention: when the archive is pruned, does the run-log (`competitor_ingest_runs`) survive?**
    - What we know: COMP-07 says competitor_prices never truncated; COMP-12 says CSV source files pruned at 90d.
    - What's unclear: `competitor_ingest_runs` retention — does it stay forever too? Or follow the Phase 1 D-05 `integration_events` 90d policy?
-   - Recommendation: `competitor_ingest_runs` kept indefinitely (like sync_runs from Phase 2 — no prune scheduled). `csv_parse_errors` follow Phase 1 D-05 90d pattern since they reference deleted archive files after 90d.
+   - RESOLVED: Indefinite retention, mirroring Phase 2 sync_runs pattern (Phase 1 D-05/D-09). Only raw CSV source files under storage/app/competitors/archive/ prune at 90d (COMP-12). competitor_prices NEVER prune (COMP-07). csv_parse_errors prune at 90d per Phase 1 D-05.
 
 ## Validation Architecture
 

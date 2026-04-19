@@ -74,11 +74,11 @@ Plans:
   5. `php artisan pricing:recompute --all` dispatches a queued batch that recomputes every product's final price and surfaces progress in Horizon
 **Plans:** 5 plans
 Plans:
-- [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
-- [x] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
-- [x] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
-- [x] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
-- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
+- [ ] 03-01-data-model-calculator-PLAN.md — config/pricing.php + PriceCalculator (integer-pennies, HALF_UP, pure) + 50-triple golden fixtures + pricing_rules/product_overrides migrations + policies + factories + DefaultPricingTierSeeder (PRCE-01/03/04/05/06, D-01..D-09)
+- [ ] 03-02-resolver-listener-event-PLAN.md — RuleResolver (most-specific-wins, priority+id tiebreak, purity-tested) + brand_id/category_id columns on products + ProductPriceChanged event + RecomputePriceListener (default queue, D-13 penny-diff gate, D-10 zero-price ImportIssue) + EventServiceProvider wiring (PRCE-02, PRCE-07)
+- [ ] 03-03-filament-rule-explorer-PLAN.md — PricingRuleResource + ProductOverrideResource (role-gated) + Rule Explorer page (SKU → effective price + chain) + Simulated Impact page (transactional dry-run projection) + SimulatedImpactCalculator + seeder LIKE patterns + PolicyTemplateIntegrityTest extended (PRCE-08, PRCE-09)
+- [ ] 03-04-bulk-recompute-command-PLAN.md — PriceRecomputer shared core (listener + bulk both delegate) + RecomputePriceJob (ShouldQueue+ShouldBeUnique, sync-bulk queue) + pricing:recompute command (dry-run default D-12, --live opt-in, --only/--brand/--category scopes) (PRCE-10)
+- [ ] 03-05-guardrails-verification-PLAN.md — Deptrac Pricing layer (Foundation+Products+Sync allow-list) + DeptracPricingLayerTest + PricingRuleExclusiveSetTest + PriceCalculatorPurityTest + 03-VERIFICATION.md ship verdict
 **UI hint**: yes
 
 ### Phase 4: Bitrix24 CRM Sync

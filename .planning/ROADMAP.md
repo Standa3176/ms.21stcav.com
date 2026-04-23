@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
  (completed 2026-04-19)
 - [ ] **Phase 4: Bitrix24 CRM Sync** — One-way Woo→Bitrix push of Deal + Contact + Company on order/customer events, dynamic field mapping, UTM/GA capture, backfill command, and GDPR erasure
 - [ ] **Phase 5: Competitor Analysis** — CSV watcher with BOM-safe ingest, full-history `competitor_prices`, margin-delta analyser producing Suggestions, trend/deltas dashboards
-- [ ] **Phase 6: Product Auto-Create** — New-SKU detection, SEO-templated draft Woo products, image pipeline + placeholder flow, review inbox with completeness scoring, and `ProductOverride` pin UI
+- [x] **Phase 6: Product Auto-Create** — New-SKU detection, SEO-templated draft Woo products, image pipeline + placeholder flow, review inbox with completeness scoring, and `ProductOverride` pin UI (completed 2026-04-23)
 - [ ] **Phase 7: Dashboard Polish + Cutover** — Home health tiles, notification centre, global search, weekly reports, shadow-mode divergence scan, legacy-plugin crons deregistered, rollback drill, ops handover
 
 ## Phase Details
@@ -132,14 +132,14 @@ Plans:
   3. The Filament auto-create review inbox shows each draft with a completeness score, supports bulk approve/edit, and records rejection reasons when rejected; draft-first is the v1 default and immediate-publish is gated by an admin config flag
   4. On the product edit page, an admin can toggle per-field pins (title, description, image) via `ProductOverride`, and the next supplier sync leaves pinned fields untouched — observable via a regression test that runs a sync after pinning and asserts unchanged content
   5. Every `CreateWooProductJob` attempt writes to `integration_events` with request/response/latency, and a failed attempt retries per Horizon policy before surfacing in the notification centre
-**Plans:** 3/6 plans executed
+**Plans:** 6/6 plans complete
 Plans:
 - [x] 06-01-PLAN.md — Supplier probe (Q1) + 5 migrations (auto_create_skip_rules, auto_create_rejections, products.auto_create_status+completeness, product_overrides.pin_*, alert_recipients.receives_auto_create_alerts) + 4 pure services (ProductContentBuilder, ProductSlugGenerator, ProductMatcher, CompletenessScorer) + SEO Blade template + placeholder asset + AutoCreateSkipRuleSeeder (AUTO-02 partial, AUTO-08, AUTO-09)
 - [x] 06-02-PLAN.md — intervention/image ^3.11 + spatie/image-optimizer install + ProductImageFetcher (HEAD-first fallback chain + P6-A guards) + ProductImageProcessor (v3 scaleDown+toWebp+strip) + ImagePayloadBuilder + ProcessAutoCreateImageJob on sync-bulk + Woo URL-pass-through sandbox validation (Q5) (AUTO-03, AUTO-04)
 - [x] 06-03-PLAN.md — 4 DomainEvents (AutoCreateAttempted/Succeeded/Failed/ProductPublished) + CreateWooProductJob orchestrator + PublishProductJob + HandleNewSupplierSku listener (replaces Phase 2 stub) + TaxonomyResolver + ProductOverrideGuard + ProductCompletenessObserver + NewProductOpportunityApplier MOVE (Q4) + AutoCreateRetryApplier + Deptrac ProductAutoCreate layer (dual-file) (AUTO-01, AUTO-02, AUTO-05)
 - [x] 06-04-PLAN.md — AutoCreateReviewResource (filters + bulk actions + completeness badge + rejection modal) + AutoCreateSkipRuleResource + AutoCreateSettingsPage singleton + ProductResource Field Pins tab (D-10 8 toggles) + SuggestionResource kind-specific actions + AlertRecipientResource toggle + Shield regen + P5-F restoration + RolePermissionSeeder whereIn (AUTO-06, AUTO-07, AUTO-11)
 - [x] 06-05-PLAN.md — ApplyPinsDuringSync listener (subscribes to SupplierPriceChanged/SupplierStockChanged/SupplierSkuMissing) + PinnedFieldsSurviveSyncTest architecture ship gate (D-13 byte-identical assertion) (AUTO-10)
-- [ ] 06-06-PLAN.md — DeptracProductAutoCreateLayerTest (4 it-blocks + dual-file allow-list grep) + AutoCreateRejectionRetentionTest (dynamic-all-prunes + static-scan) + 06-VERIFICATION.md ship verdict (per-REQ coverage + 5 ROADMAP criteria + Q1-Q7 resolutions + known limitations)
+- [x] 06-06-PLAN.md — DeptracProductAutoCreateLayerTest (4 it-blocks + dual-file allow-list grep) + AutoCreateRejectionRetentionTest (dynamic-all-prunes + static-scan) + 06-VERIFICATION.md ship verdict (per-REQ coverage + 5 ROADMAP criteria + Q1-Q7 resolutions + known limitations)
 **UI hint**: yes
 
 ### Phase 7: Dashboard Polish + Cutover
@@ -173,7 +173,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 3. Pricing Engine | 5/5 | Complete    | 2026-04-19 |
 | 4. Bitrix24 CRM Sync | 0/TBD | Not started | - |
 | 5. Competitor Analysis | 0/TBD | Not started | - |
-| 6. Product Auto-Create | 3/6 | In Progress|  |
+| 6. Product Auto-Create | 6/6 | Complete   | 2026-04-23 |
 | 7. Dashboard Polish + Cutover | 0/TBD | Not started | - |
 
 ## Research Flags

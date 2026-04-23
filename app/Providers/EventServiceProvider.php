@@ -11,6 +11,7 @@ use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
+use App\Domain\ProductAutoCreate\Listeners\ApplyPinsDuringSync;
 use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
 use App\Domain\ProductAutoCreate\Listeners\RecomputeCompletenessOnSupplierChange;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
@@ -58,15 +59,25 @@ class EventServiceProvider extends ServiceProvider
         // forceFill + saveQuietly path suppresses both saving + saved events.
         // RecomputeCompletenessOnSupplierChange subscribes to all 3 supplier
         // events via named handler methods.
+        //
+        // Phase 6 Plan 05 (D-11 pin enforcement) — ApplyPinsDuringSync subscribes
+        // to the SAME 3 events to issue revert PUTs for any pinned field whose
+        // value would otherwise be overwritten by Phase 2's supplier-sync write.
+        // Runs AFTER the Phase 2 SyncChunkJob has already written to Woo (events
+        // are ShouldDispatchAfterCommit); revert window is milliseconds. Phase 2
+        // `SyncChunkJob` is NEVER modified (D-11 mandate).
         SupplierPriceChanged::class => [
             RecomputePriceListener::class,
             RecomputeCompletenessOnSupplierChange::class.'@handlePriceChanged',
+            ApplyPinsDuringSync::class.'@handlePriceChanged',
         ],
         SupplierStockChanged::class => [
             RecomputeCompletenessOnSupplierChange::class.'@handleStockChanged',
+            ApplyPinsDuringSync::class.'@handleStockChanged',
         ],
         SupplierSkuMissing::class => [
             RecomputeCompletenessOnSupplierChange::class.'@handleSkuMissing',
+            ApplyPinsDuringSync::class.'@handleSkuMissing',
         ],
 
         // Phase 4 Plan 03 D-08 — first real listeners on the Phase 1

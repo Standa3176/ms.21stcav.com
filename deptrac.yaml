@@ -62,7 +62,18 @@ parameters:
         - type: classLike
           regex: '^Illuminate\\Support\\Facades\\DB$'
   ruleset:
-    Products:     [Foundation]
+    # Phase 6 Plan 04 extension (Rule 3 — blocking): Products allow-list
+    # extended with ProductAutoCreate because ProductResource ships a
+    # 'Field Pins' tab (AUTO-10, AUTO-11 D-10) that delegates pin read/write
+    # to App\Domain\ProductAutoCreate\Services\FieldPinManager (the service
+    # owning the pin concept + ProductOverride access). This keeps Products
+    # from taking a direct dependency on Pricing (ProductOverride) — the
+    # service-layer indirection preserves the one-way arrow.
+    # (Pricing depends on Products. Products depending on ProductAutoCreate
+    # is safe because ProductAutoCreate has Products in its allow-list, not
+    # the reverse — the arrow points from Products UI → ProductAutoCreate
+    # service → Pricing model, all one-way.)
+    Products:     [Foundation, ProductAutoCreate]
     # Phase 3 (Plans 03-01..03-05): Pricing layer cross-domain allow-list.
     #   - Foundation: DomainEvent, Auditor, IntegrationLogger, BaseCommand (all Pricing services extend these)
     #   - Products: Product + ProductVariant (RuleResolver + PriceRecomputer read buy_price / brand_id / category_id)

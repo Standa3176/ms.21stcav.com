@@ -82,6 +82,15 @@ class AlertRecipientResource extends Resource
                 ->label('Receives Competitor Alerts')
                 ->helperText('Email this recipient for competitor stale-feed warnings + CSV ingest failure notifications.')
                 ->default(false),
+            // Phase 6 Plan 04 — auto-create DLQ alert opt-in (Plan 06-01 column).
+            // Covers CreateWooProductJob / ProcessAutoCreateImageJob retry
+            // exhaustion notifications. Default FALSE; seeded fallback row
+            // (ops@meetingstore.co.uk) is force-promoted TRUE by the
+            // Plan 06-01 migration + DatabaseSeeder UPDATE.
+            Toggle::make('receives_auto_create_alerts')
+                ->label('Receives Auto-Create Alerts')
+                ->helperText('Email this recipient when CreateWooProductJob / ProcessAutoCreateImageJob exhausts retries (auto_create_failed).')
+                ->default(false),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -106,6 +115,10 @@ class AlertRecipientResource extends Resource
                 IconColumn::make('receives_competitor_alerts')
                     ->boolean()
                     ->label('Comp alerts?'),
+                // Phase 6 Plan 04 — auto-create alert opt-in status at a glance.
+                IconColumn::make('receives_auto_create_alerts')
+                    ->boolean()
+                    ->label('Auto-create alerts?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

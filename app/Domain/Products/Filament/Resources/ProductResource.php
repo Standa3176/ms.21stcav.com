@@ -4,20 +4,23 @@ declare(strict_types=1);
 
 namespace App\Domain\Products\Filament\Resources;
 
+use App\Domain\ProductAutoCreate\Services\FieldPinManager;
 use App\Domain\Products\Filament\Resources\ProductResource\Pages;
 use App\Domain\Products\Filament\Resources\ProductResource\RelationManagers\VariantsRelationManager;
 use App\Domain\Products\Models\Product;
-use Filament\Forms\Components\IconEntry;
+use Filament\Forms\Components\Grid;
+use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Tabs;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
-use Filament\Resources\Resource;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Filament\Resources\Resource;
 
 /**
  * Phase 2 Plan 02-04 — D-01 expansion Product Resource.
@@ -46,31 +49,94 @@ class ProductResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            TextInput::make('woo_product_id')->disabled()->label('Woo product id'),
-            TextInput::make('sku')->disabled(),
-            TextInput::make('name')->disabled(),
-            Select::make('type')
-                ->disabled()
-                ->options([
-                    'simple' => 'Simple',
-                    'variable' => 'Variable',
-                    'grouped' => 'Grouped',
-                    'external' => 'External',
-                ]),
-            Select::make('status')
-                ->options([
-                    'publish' => 'Publish',
-                    'pending' => 'Pending',
-                    'draft' => 'Draft',
-                    'private' => 'Private',
-                ]),
-            TextInput::make('stock_status'),
-            TextInput::make('buy_price')->numeric()->step('0.0001'),
-            TextInput::make('sell_price')->numeric()->step('0.0001'),
-            TextInput::make('cost_price')->numeric()->step('0.0001'),
-            Toggle::make('is_custom_ms')->label('Custom-MS')->disabled(),
-            Toggle::make('exclude_from_auto_update')->label('Exclude from auto-update'),
+            Tabs::make('product_tabs')
+                ->tabs([
+                    // ── Main tab: core Woo-sourced fields + pricing (Phase 2 shape) ───
+                    Tabs\Tab::make('Details')
+                        ->icon('heroicon-o-cube')
+                        ->schema([
+                            TextInput::make('woo_product_id')->disabled()->label('Woo product id'),
+                            TextInput::make('sku')->disabled(),
+                            TextInput::make('name')->disabled(),
+                            Select::make('type')
+                                ->disabled()
+                                ->options([
+                                    'simple' => 'Simple',
+                                    'variable' => 'Variable',
+                                    'grouped' => 'Grouped',
+                                    'external' => 'External',
+                                ]),
+                            Select::make('status')
+                                ->options([
+                                    'publish' => 'Publish',
+                                    'pending' => 'Pending',
+                                    'draft' => 'Draft',
+                                    'private' => 'Private',
+                                ]),
+                            TextInput::make('stock_status'),
+                            TextInput::make('buy_price')->numeric()->step('0.0001'),
+                            TextInput::make('sell_price')->numeric()->step('0.0001'),
+                            TextInput::make('cost_price')->numeric()->step('0.0001'),
+                            Toggle::make('is_custom_ms')->label('Custom-MS')->disabled(),
+                            Toggle::make('exclude_from_auto_update')->label('Exclude from auto-update'),
+                        ]),
+
+                    // ── Field Pins tab (Phase 6 Plan 04 — AUTO-10, AUTO-11) ─────────
+                    // 8 per-field pin booleans on the product's ProductOverride row.
+                    // Pinned fields SURVIVE the next supplier sync — changes made in
+                    // Woo admin won't be overwritten. Applied via ProductOverrideGuard
+                    // (Plan 06-03) from the ApplyPinsDuringSync listener (Plan 06-05).
+                    //
+                    // Visibility: admin + pricing_manager (ProductOverridePolicy).
+                    // Save hook: dehydrateStateUsing captures the toggles + upserts
+                    // the ProductOverride row in the afterSave() hook via the
+                    // EditProduct custom save path below.
+                    //
+                    // LogsActivity on ProductOverride (Plan 06-01 D-12) captures
+                    // the audit trail via the model's LogOptions + $fillable coverage.
+                    Tabs\Tab::make('Field Pins')
+                        ->icon('heroicon-o-lock-closed')
+                        ->visible(fn (?Product $record) => $record !== null
+                            && (auth()->user()?->hasAnyRole(['admin', 'pricing_manager']) ?? false))
+                        ->schema([
+                            Section::make('Pin fields against supplier sync')
+                                ->description('Pinned fields survive the next supplier sync — changes made here or in Woo admin will not be overwritten. Audit trail via activity_log.')
+                                ->schema([
+                                    Grid::make(2)->schema([
+                                        Toggle::make('override_pins.pin_title')->label('Pin title'),
+                                        Toggle::make('override_pins.pin_short_description')->label('Pin short description'),
+                                        Toggle::make('override_pins.pin_long_description')->label('Pin long description'),
+                                        Toggle::make('override_pins.pin_meta_description')->label('Pin meta description'),
+                                        Toggle::make('override_pins.pin_image')->label('Pin image'),
+                                        Toggle::make('override_pins.pin_slug')->label('Pin slug'),
+                                        Toggle::make('override_pins.pin_brand')->label('Pin brand'),
+                                        Toggle::make('override_pins.pin_category')->label('Pin category'),
+                                    ]),
+                                ])
+                                ->afterStateHydrated(function ($component, ?Product $record): void {
+                                    if ($record === null) {
+                                        return;
+                                    }
+                                    // FieldPinManager lives in ProductAutoCreate; it owns the
+                                    // pin_* concept and isolates ProductOverride access.
+                                    $component->state([
+                                        'override_pins' => app(FieldPinManager::class)->loadPinsFor($record),
+                                    ]);
+                                }),
+                        ]),
+                ])
+                ->columnSpanFull(),
         ]);
+    }
+
+    /**
+     * Called by EditProduct after the main Product save. Delegates to the
+     * FieldPinManager service in ProductAutoCreate which owns the pin concept
+     * and handles authorisation + upsert + audit trail (LogsActivity).
+     */
+    public static function saveFieldPins(Product $product, array $pins): bool
+    {
+        return app(FieldPinManager::class)->savePins($product, $pins);
     }
 
     public static function table(Table $table): Table

@@ -93,10 +93,10 @@ class SuggestionResource extends Resource
                     // Warning 9 — defence-in-depth: ->authorize() enforces at the POST level even if
                     // a crafted request bypasses ->visible(). Sales/read_only/pricing_manager get 403.
                     ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
-                    // Phase 5 Plan 04a — generic approve now EXCLUDES margin_change + new_product_opportunity
-                    // (they have kind-specific approve actions below with richer modals + evidence rendering).
+                    // Phase 5 Plan 04a / Phase 6 Plan 04 — generic approve EXCLUDES kinds with
+                    // their own kind-specific approve actions below (richer modals + evidence rendering).
                     ->visible(fn (Suggestion $r) => $r->status === Suggestion::STATUS_PENDING
-                        && ! in_array($r->kind, ['margin_change', 'new_product_opportunity', 'crm_push_failed'], true))
+                        && ! in_array($r->kind, ['margin_change', 'new_product_opportunity', 'crm_push_failed', 'auto_create_failed'], true))
                     ->action(function (Suggestion $record): void {
                         $record->update([
                             'status' => Suggestion::STATUS_APPROVED,
@@ -142,12 +142,14 @@ class SuggestionResource extends Resource
                         ]);
                         ApplySuggestionJob::dispatch($record->id);
                     }),
-                // Phase 5 Plan 04a — new_product_opportunity kind approve.
-                // Phase 5 applier is a no-op stub (Plan 05-02 D-08); Phase 6 will
-                // wire the real supplier-request-list integration. Evidence carries
-                // supporting_competitors count + competitor_sightings array (D-09 dedup).
+                // Phase 5 Plan 04a / Phase 6 Plan 04 — new_product_opportunity kind approve.
+                // Phase 6 Plan 03 REPLACED the Phase 5 no-op stub applier with
+                // a real NewProductOpportunityApplier that dispatches
+                // CreateWooProductJob. This action now triggers the full
+                // auto-create pipeline via ApplySuggestionJob → Applier →
+                // CreateWooProductJob.
                 Action::make('approve_new_product_opportunity')
-                    ->label('Approve new product')
+                    ->label('Approve — create product')
                     ->icon('heroicon-o-plus-circle')
                     ->color('primary')
                     ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
@@ -159,7 +161,7 @@ class SuggestionResource extends Resource
                         $sku = (string) data_get($record->evidence, 'sku', '?');
 
                         return sprintf(
-                            'SKU %s tracked by %d competitor(s). Phase 5 applier is a stub; Phase 6 wires supplier-request-list integration.',
+                            'SKU %s tracked by %d competitor(s). Dispatches CreateWooProductJob via the real Phase 6 NewProductOpportunityApplier — draft will appear in the Auto-Create Review inbox.',
                             $sku,
                             $supporting,
                         );
@@ -171,6 +173,35 @@ class SuggestionResource extends Resource
                             'resolved_at' => now(),
                         ]);
                         ApplySuggestionJob::dispatch($record->id);
+                    }),
+
+                // Phase 6 Plan 04 — auto_create_failed DLQ replay action.
+                // CreateWooProductJob::failed() writes the Suggestion row when
+                // the retry chain exhausts. Replay dispatches ApplySuggestionJob
+                // → AutoCreateRetryApplier → fresh CreateWooProductJob (mirrors
+                // the Phase 4 crm_push_failed Replay precedent above).
+                Action::make('replay_auto_create')
+                    ->label('Replay auto-create')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('warning')
+                    ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
+                    ->visible(fn (Suggestion $r) => $r->kind === 'auto_create_failed' && $r->status === Suggestion::STATUS_PENDING)
+                    ->requiresConfirmation()
+                    ->modalHeading(fn (Suggestion $r) => 'Replay auto-create for '.(string) data_get($r->evidence, 'sku', '?'))
+                    ->modalDescription('Dispatches ApplySuggestionJob which routes to AutoCreateRetryApplier and re-fires CreateWooProductJob with a fresh attempts counter. Check Horizon + the Auto-Create Review inbox after a few seconds.')
+                    ->action(function (Suggestion $record): void {
+                        $record->update([
+                            'status' => Suggestion::STATUS_APPROVED,
+                            'resolved_by_user_id' => auth()->id(),
+                            'resolved_at' => now(),
+                        ]);
+                        ApplySuggestionJob::dispatch($record->id);
+
+                        \Filament\Notifications\Notification::make()
+                            ->success()
+                            ->title('Auto-create replay dispatched')
+                            ->body('Check the Auto-Create Review inbox after a few seconds.')
+                            ->send();
                     }),
                 Action::make('reject')
                     ->icon('heroicon-o-x-circle')

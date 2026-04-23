@@ -96,6 +96,14 @@ class AppServiceProvider extends ServiceProvider
         // one resolver per request and warm-up results short-circuit after the
         // first fieldsFor() call in a chain.
         $this->app->singleton(\App\Domain\CRM\Services\BitrixSchemaCache::class);
+
+        // ── Phase 6 Plan 02: Intervention ImageManager DI binding ────────
+        // intervention/image-laravel's ServiceProvider binds the manager to the
+        // string key 'image' (Facades\Image::BINDING) — NOT to the class name.
+        // Our ProductImageProcessor takes ImageManager via constructor typehint,
+        // so the container can't auto-resolve the required $driver primitive.
+        // Alias ImageManager::class to the pre-built facade binding so DI works.
+        $this->app->bind(\Intervention\Image\ImageManager::class, fn ($app) => $app->make('image'));
     }
 
     /**

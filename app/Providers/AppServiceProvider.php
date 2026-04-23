@@ -140,9 +140,23 @@ class AppServiceProvider extends ServiceProvider
             function (SuggestionApplierResolver $resolver): void {
                 $resolver->register('test', StubApplier::class);
                 $resolver->register('crm_push_failed', \App\Domain\CRM\Appliers\CrmPushRetryApplier::class);
-                // Phase 5 Plan 02 D-08 — SECOND real producer on the Suggestions seam.
-                // No-op stub until Phase 6 ships the real supplier-request-list wiring.
-                $resolver->register('new_product_opportunity', \App\Domain\Competitor\Appliers\NewProductOpportunityApplier::class);
+                // Phase 6 Plan 03 — REAL applier (RESEARCH Q4 resolution): file
+                // moved from app/Domain/Competitor/Appliers/ into
+                // app/Domain/ProductAutoCreate/Appliers/. Body replaced with
+                // CreateWooProductJob::dispatch(). Old FQCN deleted.
+                $resolver->register(
+                    'new_product_opportunity',
+                    \App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier::class,
+                );
+                // Phase 6 Plan 03 — DLQ replay applier for kind='auto_create_failed'.
+                // CreateWooProductJob::failed() writes the Suggestion row; the
+                // Plan 04 Filament Replay action dispatches ApplySuggestionJob →
+                // this applier → fresh CreateWooProductJob (mirrors Phase 4
+                // CrmPushRetryApplier precedent).
+                $resolver->register(
+                    'auto_create_failed',
+                    \App\Domain\ProductAutoCreate\Appliers\AutoCreateRetryApplier::class,
+                );
                 // Phase 5 Plan 03 Task 3 — THIRD real producer (and the first
                 // PRODUCTIVE one beyond the CRM retry seam). Approving a
                 // margin_change Suggestion updates PricingRule via Eloquent →

@@ -87,8 +87,8 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 - [ ] **AUTO-01**: A supplier SKU not matched to any Woo product triggers a `NewSupplierSkuDetected` event
 - [x] **AUTO-02**: A draft Woo product is created via REST with title, slug, meta description, long description, brand + category taxonomy applied from an SEO template
-- [ ] **AUTO-03**: Images are sourced from the supplier DB when available; otherwise a placeholder is used and the product is flagged for manual image review
-- [ ] **AUTO-04**: Images are resized, converted to WebP, and EXIF-stripped via `intervention/image` before upload
+- [x] **AUTO-03**: Images are sourced from the supplier DB when available; otherwise a placeholder is used and the product is flagged for manual image review
+- [x] **AUTO-04**: Images are resized, converted to WebP, and EXIF-stripped via `intervention/image` before upload
 - [ ] **AUTO-05**: `CreateWooProductJob` is queued, retried on failure, and every attempt writes to `integration_events`
 - [ ] **AUTO-06**: Auto-created products land in a Filament review inbox with completeness score, bulk approve/edit, and a rejection-reason field
 - [ ] **AUTO-07**: Draft-first review is the v1 default; immediate-publish is gated by an admin config flag
@@ -245,8 +245,8 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | COMP-12 | Phase 5 | Complete |
 | AUTO-01 | Phase 6 | Pending |
 | AUTO-02 | Phase 6 | Complete |
-| AUTO-03 | Phase 6 | Pending |
-| AUTO-04 | Phase 6 | Pending |
+| AUTO-03 | Phase 6 | Complete |
+| AUTO-04 | Phase 6 | Complete |
 | AUTO-05 | Phase 6 | Pending |
 | AUTO-06 | Phase 6 | Pending |
 | AUTO-07 | Phase 6 | Pending |

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-04-23T19:09:19.138Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-04-23T19:38:58.676Z"
 last_activity: 2026-04-23
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 32
-  completed_plans: 27
-  percent: 84
+  completed_plans: 28
+  percent: 88
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 06 (Product Auto-Create) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-04-23
 
@@ -76,6 +76,7 @@ Progress: [████░░░░░░] 40%
 | Phase 05-competitor-analysis P04b | ~2h | 3 tasks | 21 files |
 | Phase 05-competitor-analysis P05-retention-guardrails-verification | 40m | 3 tasks | 8 files |
 | Phase 06 P01 | 24m | 2 tasks | 41 files |
+| Phase 06 P02 | 20 | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Plan 06-01: products.auto_create_status enum DEFAULT 'manual' + belt-and-braces UPDATE backfill in migration (Pitfall P6-D) — same pattern applied to product_overrides.pin_* columns
 - [Phase 06]: Plan 06-01 A3 finding: Laravel 12 saveQuietly suppresses both saving + saved events — Plan 06-03 MUST wire CompletenessScorer via listener on domain events (ProductPriceChanged + SupplierStockChanged + SupplierSkuMissing), NOT via Product::saved observer. Phase 2 code stays untouched.
 - [Phase 06]: Plan 06-01 Q1 probe synthesized — live supplier credentials absent in execution env; storage/app/research/supplier-probe.json carries __synthesized=true header + __re_probe_instructions. Operator MUST re-run supplier:probe-single-sku during Phase 7 cutover prep before Plan 06-02 image pipeline locks.
+- [Phase 06]: Plan 06-02: intervention/image v3 pinned ^3.11 (NOT v4 — PHP 8.3+ floor incompatible with project 8.2 floor). ImageManager::class DI alias added in AppServiceProvider::register because image-laravel 1.5 binds only to string key 'image'
+- [Phase 06]: Plan 06-02: Woo URL pass-through contract locked via WooUrlPassthroughSmokeTest — Plan 03 dispatches ProcessAutoCreateImageJob which merges ImagePayloadBuilder output into PUT /products/{wooId}. Auto-approved Task 1 checkpoint; operator MUST re-validate live Woo sandbox during Phase 7 cutover prep before flipping product_auto_create.mode to immediate
+- [Phase 06]: Plan 06-02: ProcessAutoCreateImageJob on sync-bulk queue (Phase 1 FOUND-09) via $this->onQueue() in constructor — NEVER public string $queue (PHP 8.4 trait collision). 3 retries + [30s, 5m, 30m] backoff + failed() writes kind='auto_create_failed' Suggestion for Plan 04 Replay action
 
 ### Pending Todos
 
@@ -179,6 +183,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-23T19:09:04.470Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-04-23T19:38:58.662Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None

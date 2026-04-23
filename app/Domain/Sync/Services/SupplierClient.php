@@ -78,6 +78,90 @@ final class SupplierClient
     }
 
     /**
+     * Phase 6 Plan 01 — fetch the FULL decoded supplier record for a single SKU.
+     *
+     * Unlike fetchAllProducts() which aggressively narrows each row to
+     * {price, stock}, this method returns the raw decoded first-row payload
+     * so Plan 06-02 / 06-03 can see every field the supplier exposes
+     * (image_url, brand, category, description, name, specs, etc).
+     *
+     * Routes through the same authed() JWT-refresh + IntegrationLogger path
+     * as fetchPage() — so 401 → single retry → JwtRefreshFailedException on
+     * the second 401 (D-06c). Every call lands in integration_events.
+     *
+     * @return array<string, mixed> Raw first-row of response.data (empty if none).
+     *
+     * @throws JwtRefreshFailedException If authentication fails irrecoverably.
+     */
+    public function fetchSingleProduct(string $sku): array
+    {
+        $response = $this->authed(fn () => $this->fetchSingle($sku));
+
+        $data = $response->json('data') ?? [];
+
+        // API returns `data: []` on miss — return empty array to caller.
+        return $data[0] ?? [];
+    }
+
+    /**
+     * Phase 6 Plan 01 — single-SKU lookup against /api/index.php.
+     *
+     * Called via authed() so 401 triggers a one-shot token refresh (same
+     * pattern as fetchPage). NEVER filters the response row — callers see
+     * every supplier field.
+     *
+     * @throws RequestException  On 401 (caught + retried by authed()).
+     * @throws \RuntimeException On non-401 HTTP error.
+     */
+    private function fetchSingle(string $sku): Response
+    {
+        $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
+        $start = microtime(true);
+
+        $response = Http::baseUrl((string) config('services.supplier.url'))
+            ->withToken($this->getToken())
+            ->timeout(self::DEFAULT_HTTP_TIMEOUT)
+            ->retry(
+                times: 2,
+                sleepMilliseconds: 500,
+                when: fn (\Throwable $e) => $e instanceof ConnectionException,
+            )
+            ->get(self::DATA_ENDPOINT, [
+                'endpoint' => 'products',
+                'sku' => $sku,
+                'per_page' => 1,
+            ]);
+
+        $latencyMs = (int) round((microtime(true) - $start) * 1000);
+
+        $this->logger->log([
+            'channel' => 'supplier',
+            'operation' => 'GET /api/index.php?sku='.$sku,
+            'method' => 'GET',
+            'endpoint' => self::DATA_ENDPOINT,
+            'request_body' => ['endpoint' => 'products', 'sku' => $sku, 'per_page' => 1],
+            'request_headers' => ['authorization' => ['***REDACTED***']],
+            'response_body' => $response->json() ?? [],
+            'http_status' => $response->status(),
+            'latency_ms' => $latencyMs,
+            'status' => $response->successful() ? 'success' : 'failed',
+            'correlation_id' => $correlationId,
+        ]);
+
+        if ($response->status() === 401) {
+            $response->throw();
+        }
+
+        if (! $response->successful()) {
+            throw new \RuntimeException(
+                "Supplier API returned HTTP {$response->status()} for single-sku fetch {$sku}"
+            );
+        }
+
+        return $response;
+    }
+
+    /**
      * Single paginated fetch. Called via authed() so 401 triggers a one-shot token refresh.
      *
      * @throws RequestException  On 401 (caught + retried by authed()).

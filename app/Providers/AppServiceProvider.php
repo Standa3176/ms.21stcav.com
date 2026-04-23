@@ -253,6 +253,11 @@ class AppServiceProvider extends ServiceProvider
                 // to config('competitor.csv_retention_days', 90). NEVER touches
                 // competitor_prices rows (COMP-07 mandate, permanent regression test).
                 \App\Domain\Competitor\Console\Commands\CompetitorCsvPruneCommand::class,
+                // Phase 6 Plan 01 Task 1 — Q1 supplier-API probe (RESEARCH.md Open Question Q1).
+                // Dumps full supplier row for a single SKU to storage/app/research/supplier-probe.json
+                // so Plan 06-02 ProductImageFetcher / ProductContentBuilder can see the real
+                // image_url / brand / category / description field shape. Manual-run only.
+                \App\Console\Commands\SupplierProbeSingleSkuCommand::class,
             ]);
         }
     }

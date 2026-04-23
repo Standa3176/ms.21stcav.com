@@ -228,6 +228,12 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule::class,  \App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy::class);
         Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class, \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class);
 
+        // ── Phase 6 Plan 04: AutoCreateSetting policy ──────────────────
+        // Admin-only gate on the singleton settings model (governs draft-vs-
+        // immediate-publish — load-bearing AUTO-07 decision). Both the Page
+        // canAccess() gate + the save() abort_unless consult this binding.
+        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSetting::class,   \App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy::class);
+
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);

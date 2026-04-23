@@ -55,6 +55,9 @@ class AdminPanelProvider extends PanelProvider
             // Phase 5 Plan 04b — Competitor Intelligence Pages (analysis + csv-ingest-issues) + Widgets (trend chart, biggest deltas, stale-feed traffic light).
             ->discoverPages(in: app_path('Domain/Competitor/Filament/Pages'), for: 'App\\Domain\\Competitor\\Filament\\Pages')
             ->discoverWidgets(in: app_path('Domain/Competitor/Filament/Widgets'), for: 'App\\Domain\\Competitor\\Filament\\Widgets')
+            // Phase 6 Plan 04 — ProductAutoCreate Resources (Review inbox + Skip Rules) + AutoCreateSettingsPage singleton.
+            ->discoverResources(in: app_path('Domain/ProductAutoCreate/Filament/Resources'), for: 'App\\Domain\\ProductAutoCreate\\Filament\\Resources')
+            ->discoverPages(in: app_path('Domain/ProductAutoCreate/Filament/Pages'), for: 'App\\Domain\\ProductAutoCreate\\Filament\\Pages')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

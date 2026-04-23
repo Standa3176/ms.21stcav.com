@@ -101,9 +101,11 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     //      CompetitorIngestRun / CsvParseError).
     // 23 = above + 2 ProductAutoCreate policies (Phase 6 Plan 01:
     //      AutoCreateSkipRulePolicy + AutoCreateRejectionPolicy).
-    //      Floor bumped 21 → 23.
+    // 24 = above + AutoCreateSettingsPolicy (Phase 6 Plan 04 — admin-only
+    //      gate on the settings singleton Page).
+    //      Floor bumped 23 → 24.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(23, 'Expected ≥ 23 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(24, 'Expected ≥ 24 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -137,6 +139,8 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         // Phase 6 Plan 01 — 2 ProductAutoCreate policies (D-04 + D-06).
         \App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule::class  => \App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy::class,
         \App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class => \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class,
+        // Phase 6 Plan 04 — singleton AutoCreateSetting Page gate (admin-only).
+        \App\Domain\ProductAutoCreate\Models\AutoCreateSetting::class   => \App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

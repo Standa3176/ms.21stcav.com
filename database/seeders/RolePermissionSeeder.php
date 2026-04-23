@@ -133,6 +133,38 @@ class RolePermissionSeeder extends Seeder
                     'view_any_sync_run',
                     'view_sync::run',
                     'view_any_sync::run',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 6 Plan 04 — ProductAutoCreate (EXPLICIT whereIn — NOT
+                    // LIKE; Phase 5 Plan 04a MySQL `_` wildcard bug lesson).
+                    // ═══════════════════════════════════════════════════════════
+                    // --- Auto-create review — view + update (no create/delete) ---
+                    //     (backing model is Product; these perms appear only if the
+                    //     team chooses to Shield-generate the Review Resource as a
+                    //     distinct model. Currently the Resource reuses the
+                    //     existing Product permissions + AutoCreateReviewPolicy
+                    //     scoping — forward-compat whitelist in case Shield emits
+                    //     standalone perms in a future generation.)
+                    'view_auto_create_review',
+                    'view_any_auto_create_review',
+                    'update_auto_create_review',
+                    'view_auto::create::review',
+                    'view_any_auto::create::review',
+                    'update_auto::create::review',
+                    // --- Auto-create skip rule — view only for pricing_manager ---
+                    //     (rule catalogue is triage intel; CRUD is admin-only).
+                    'view_auto_create_skip_rule',
+                    'view_any_auto_create_skip_rule',
+                    'view_auto::create::skip::rule',
+                    'view_any_auto::create::skip::rule',
+                    // --- Auto-create rejection — view + create (reject action writes) ---
+                    'view_auto_create_rejection',
+                    'view_any_auto_create_rejection',
+                    'create_auto_create_rejection',
+                    'view_auto::create::rejection',
+                    'view_any_auto::create::rejection',
+                    'create_auto::create::rejection',
+                    // NOTE: NO Settings page perm for pricing_manager — draft vs
+                    // immediate-publish governance stays admin-only (AUTO-07).
                 ]);
             })
             ->pluck('name')

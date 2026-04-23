@@ -2,18 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Events\SupplierPriceChanged;
 use App\Domain\Sync\Events\SupplierSkuMissing;
 use App\Domain\Sync\Events\SupplierStockChanged;
-use App\Domain\Sync\Listeners\StubNewSupplierSkuListener;
 use App\Foundation\Events\DomainEvent;
 use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Str;
 
 uses(RefreshDatabase::class);
 
@@ -120,39 +119,23 @@ test('E5: all 4 Phase 2 events extend DomainEvent and inherit ShouldDispatchAfte
 });
 
 // -----------------------------------------------------------------------------
-// Test E6 — NewSupplierSkuDetected invokes StubNewSupplierSkuListener exactly once
+// Test E6 — NewSupplierSkuDetected is bound to the Phase 6 HandleNewSupplierSku listener
 // -----------------------------------------------------------------------------
-test('E6: dispatching NewSupplierSkuDetected invokes StubNewSupplierSkuListener', function () {
+test('E6: dispatching NewSupplierSkuDetected is bound to HandleNewSupplierSku (Phase 6)', function () {
     Event::fake([NewSupplierSkuDetected::class]);
 
     event(new NewSupplierSkuDetected(
-        sku: 'STUB-TEST-6',
+        sku: 'PHASE6-TEST-6',
         supplierPrice: '9.99',
         supplierStock: 42,
     ));
 
+    // Phase 6 Plan 03 replaces the Phase 2 StubNewSupplierSkuListener with
+    // HandleNewSupplierSku (skip-rule gate + CreateWooProductJob dispatch).
     Event::assertListening(
         NewSupplierSkuDetected::class,
-        StubNewSupplierSkuListener::class,
+        HandleNewSupplierSku::class,
     );
 
     Event::assertDispatched(NewSupplierSkuDetected::class, 1);
-});
-
-// -----------------------------------------------------------------------------
-// Test E7 — StubNewSupplierSkuListener handle() is invokable and no-op-safe
-// -----------------------------------------------------------------------------
-test('E7: StubNewSupplierSkuListener logs receipt and returns without side effects', function () {
-    Log::spy();
-
-    $listener = new StubNewSupplierSkuListener();
-    $event = new NewSupplierSkuDetected(
-        sku: 'LOGGED-7',
-        supplierPrice: '15.00',
-        supplierStock: 7,
-    );
-
-    $listener->handle($event);
-
-    Log::shouldHaveReceived('info')->once();
 });

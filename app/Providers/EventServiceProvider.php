@@ -11,9 +11,9 @@ use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
+use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Events\SupplierPriceChanged;
-use App\Domain\Sync\Listeners\StubNewSupplierSkuListener;
 use App\Domain\Webhooks\Events\CustomerRegistered;
 use App\Domain\Webhooks\Events\OrderReceived;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -38,10 +38,11 @@ class EventServiceProvider extends ServiceProvider
             ThrottledFailedJobNotifier::class,
         ],
 
-        // Phase 2 Plan 03 (D-09 stub) — Phase 6 wires the real CreateWooProductJob listener.
-        // Present here so the event doesn't pile up in failed_jobs waiting for a handler.
+        // Phase 6 Plan 03 — real AUTO-01 listener (replaces Phase 2
+        // StubNewSupplierSkuListener). Skip-rule gate (D-04) + dispatches
+        // CreateWooProductJob on every unfiltered event.
         NewSupplierSkuDetected::class => [
-            StubNewSupplierSkuListener::class,
+            HandleNewSupplierSku::class,
         ],
 
         // Phase 3 Plan 02 — Phase 2's supplier-side price diff triggers the

@@ -101,16 +101,21 @@ parameters:
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]
-    # Phase 6 Plan 01 — ProductAutoCreate layer cross-domain allow-list.
-    # Plan 06-01 uses ONLY: Foundation (LogsActivity / BaseCommand) + Products
-    # (Product model for slug/existence checks + ProductOverride extension
-    # touches).
-    # Plans 06-02..06-06 expand to: + Pricing (RuleResolver/PriceCalculator for
-    # initial price), + Sync (NewSupplierSkuDetected event + SupplierClient),
-    # + Suggestions (NewProductOpportunityApplier + AutoCreateRetryApplier),
-    # + Alerting (AlertRecipient for receives_auto_create_alerts), + Webhooks
-    # (WebhookReceipt if needed). Explicitly NOT allowed: CRM, Competitor,
-    # Feeds (Phase 6 never imports from these).
+    # Phase 6 Plan 03 — ProductAutoCreate layer cross-domain allow-list.
+    #   - Foundation: DomainEvent base, IntegrationLogger, BaseCommand, Context
+    #   - Products: Product model + ProductVariant (orchestrator reads/writes)
+    #   - Pricing: RuleResolver + PriceCalculator + ProductOverride (pin enforcement
+    #     uses ProductOverride; initial price uses Phase 3 pricing engine)
+    #   - Sync: WooClient + SupplierClient + NewSupplierSkuDetected +
+    #     SupplierPriceChanged/SupplierStockChanged/SupplierSkuMissing events
+    #     (Plan 05 pin-enforcement listener subscribes to these)
+    #   - Suggestions: SuggestionApplier contract + Suggestion model (applier
+    #     producers + CreateWooProductJob::failed() DLQ writes)
+    #   - Alerting: AlertRecipient (receives_auto_create_alerts scope)
+    #   - Webhooks: forward-compat for Plan 05+ pin-enforcement / audit hooks
+    # Explicitly NOT allowed: CRM, Competitor, Feeds. NewProductOpportunityApplier
+    # MOVED to ProductAutoCreate in Plan 06-03 (RESEARCH Q4 option b) so
+    # Competitor is no longer in the allow-list — one-way arrow preserved.
     ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks]
     Foundation:   []
     Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate]

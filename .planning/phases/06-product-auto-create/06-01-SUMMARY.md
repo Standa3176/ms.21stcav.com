@@ -216,10 +216,12 @@ All files listed under `key-files.created` verified to exist via direct path ins
 - `tests/Feature/ProductAutoCreate/*.php` — 8 test files present.
 - `tests/Architecture/PolicyTemplateIntegrityTest.php` — updated with new paths + 2 Gate bindings + floor bump.
 
-Both commits verified via `git log --oneline`:
+Four commits verified via `git log --oneline`:
 
-- `5c33e85` — Task 1 (supplier probe + command + synthesis).
-- `87a7a7e` — Task 2 (migrations + models + services + policies + config + Blade + placeholder + seeder + tests + Deptrac).
+- `5c33e85` — Task 1 (supplier probe command + SupplierClient::fetchSingleProduct + synthesis JSON + command registration).
+- `87a7a7e` — Task 2 (5 migrations + 2 models + 2 policies + 4 services + config + Blade + placeholder + seeder + 8 tests + Deptrac layer).
+- `c5aedf2` — Final metadata (SUMMARY.md + STATE.md + ROADMAP.md + REQUIREMENTS.md).
+- `9548622` — Restored `storage/app/research/supplier-probe.json` (self-check uncovered the file was cleared by SupplierProbeSingleSkuCommandTest afterEach — refreshed from the same synthesized content; file now committed and tracked).
 
 Deptrac analysis on both config files returns 0 violations (`php vendor/bin/deptrac analyse --config-file=deptrac.yaml --no-progress` + same for depfile.yaml).
 

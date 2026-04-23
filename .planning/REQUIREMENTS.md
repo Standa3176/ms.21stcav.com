@@ -90,12 +90,12 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **AUTO-03**: Images are sourced from the supplier DB when available; otherwise a placeholder is used and the product is flagged for manual image review
 - [x] **AUTO-04**: Images are resized, converted to WebP, and EXIF-stripped via `intervention/image` before upload
 - [x] **AUTO-05**: `CreateWooProductJob` is queued, retried on failure, and every attempt writes to `integration_events`
-- [ ] **AUTO-06**: Auto-created products land in a Filament review inbox with completeness score, bulk approve/edit, and a rejection-reason field
-- [ ] **AUTO-07**: Draft-first review is the v1 default; immediate-publish is gated by an admin config flag
+- [x] **AUTO-06**: Auto-created products land in a Filament review inbox with completeness score, bulk approve/edit, and a rejection-reason field
+- [x] **AUTO-07**: Draft-first review is the v1 default; immediate-publish is gated by an admin config flag
 - [x] **AUTO-08**: Duplicate detection rejects a SKU that differs only in casing or trailing whitespace from an existing Woo product
 - [x] **AUTO-09**: Slug generation guarantees uniqueness and handles collisions deterministically
 - [ ] **AUTO-10**: A `ProductOverride` model lets admins pin individual fields (title, description, image) so the next sync won't overwrite a human edit
-- [ ] **AUTO-11**: A Filament pin UI on the product edit page lets admins toggle pins per field with an audit trail
+- [x] **AUTO-11**: A Filament pin UI on the product edit page lets admins toggle pins per field with an audit trail
 
 ### Dashboard (DASH) — Module F
 
@@ -248,12 +248,12 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | AUTO-03 | Phase 6 | Complete |
 | AUTO-04 | Phase 6 | Complete |
 | AUTO-05 | Phase 6 | Complete |
-| AUTO-06 | Phase 6 | Pending |
-| AUTO-07 | Phase 6 | Pending |
+| AUTO-06 | Phase 6 | Complete |
+| AUTO-07 | Phase 6 | Complete |
 | AUTO-08 | Phase 6 | Complete |
 | AUTO-09 | Phase 6 | Complete |
 | AUTO-10 | Phase 6 | Pending |
-| AUTO-11 | Phase 6 | Pending |
+| AUTO-11 | Phase 6 | Complete |
 | DASH-01 | Phase 7 | Pending |
 | DASH-02 | Phase 7 | Pending |
 | DASH-03 | Phase 7 | Pending |

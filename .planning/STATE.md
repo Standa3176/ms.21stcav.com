@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-03-PLAN.md
-last_updated: "2026-04-23T20:03:01.041Z"
+stopped_at: Completed 06-04-PLAN.md
+last_updated: "2026-04-23T20:29:46.864Z"
 last_activity: 2026-04-23
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 32
-  completed_plans: 29
-  percent: 91
+  completed_plans: 30
+  percent: 94
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 06 (Product Auto-Create) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-04-23
 
@@ -78,6 +78,7 @@ Progress: [████░░░░░░] 40%
 | Phase 06 P01 | 24m | 2 tasks | 41 files |
 | Phase 06 P02 | 20 | 3 tasks | 15 files |
 | Phase 06 P03 | 18m | 3 tasks | 21 files |
+| Phase 06 P04 | 18m | 3 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -168,6 +169,10 @@ Recent decisions affecting current work:
 - [Phase 06]: Observer → listener pivot (A3 FINDING) — RecomputeCompletenessOnSupplierChange subscribes to Supplier* events because Laravel 12 saveQuietly suppresses observers
 - [Phase 06]: Applier MOVE (RESEARCH Q4 option b) — NewProductOpportunityApplier relocated from Competitor to ProductAutoCreate to preserve one-way Deptrac arrow
 - [Phase 06]: SupplierPriceUnusableException downgrades sell_price=null instead of retry — supplier-returned 0 is a data-state issue, not transient
+- [Phase 06]: Plan 06-04: FieldPinManager service-layer indirection preserves Deptrac one-way arrow (Products UI → ProductAutoCreate service → Pricing model) instead of direct ProductResource→ProductOverride import
+- [Phase 06]: Plan 06-04: Deptrac Products allow-list extended [Foundation] → [Foundation, ProductAutoCreate] in BOTH deptrac.yaml + depfile.yaml (dual-config-sync; Phase 5 Plan 05-05 lesson)
+- [Phase 06]: Plan 06-04: AutoCreateSetting = singleton Eloquent model + migration (mirrors Phase 4 CrmPipelineSetting pattern) — chosen over spatie/laravel-settings for typed-column Filament binding + LogsActivity audit
+- [Phase 06]: Plan 06-04: P5-F Shield restoration (5th execution) — AlertRecipientPolicy restored from HEAD + spurious Foundation IntegrationEventPolicy stub deleted + 0 `{{ Placeholder }}` leaks confirmed
 
 ### Pending Todos
 
@@ -187,6 +192,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-23T20:02:51.209Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-04-23T20:29:46.851Z
+Stopped at: Completed 06-04-PLAN.md
 Resume file: None

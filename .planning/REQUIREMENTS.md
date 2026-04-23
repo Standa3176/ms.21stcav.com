@@ -86,14 +86,14 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 ### Product auto-create (AUTO) — Module D
 
 - [ ] **AUTO-01**: A supplier SKU not matched to any Woo product triggers a `NewSupplierSkuDetected` event
-- [ ] **AUTO-02**: A draft Woo product is created via REST with title, slug, meta description, long description, brand + category taxonomy applied from an SEO template
+- [x] **AUTO-02**: A draft Woo product is created via REST with title, slug, meta description, long description, brand + category taxonomy applied from an SEO template
 - [ ] **AUTO-03**: Images are sourced from the supplier DB when available; otherwise a placeholder is used and the product is flagged for manual image review
 - [ ] **AUTO-04**: Images are resized, converted to WebP, and EXIF-stripped via `intervention/image` before upload
 - [ ] **AUTO-05**: `CreateWooProductJob` is queued, retried on failure, and every attempt writes to `integration_events`
 - [ ] **AUTO-06**: Auto-created products land in a Filament review inbox with completeness score, bulk approve/edit, and a rejection-reason field
 - [ ] **AUTO-07**: Draft-first review is the v1 default; immediate-publish is gated by an admin config flag
-- [ ] **AUTO-08**: Duplicate detection rejects a SKU that differs only in casing or trailing whitespace from an existing Woo product
-- [ ] **AUTO-09**: Slug generation guarantees uniqueness and handles collisions deterministically
+- [x] **AUTO-08**: Duplicate detection rejects a SKU that differs only in casing or trailing whitespace from an existing Woo product
+- [x] **AUTO-09**: Slug generation guarantees uniqueness and handles collisions deterministically
 - [ ] **AUTO-10**: A `ProductOverride` model lets admins pin individual fields (title, description, image) so the next sync won't overwrite a human edit
 - [ ] **AUTO-11**: A Filament pin UI on the product edit page lets admins toggle pins per field with an audit trail
 
@@ -244,14 +244,14 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | COMP-11 | Phase 5 | Complete |
 | COMP-12 | Phase 5 | Complete |
 | AUTO-01 | Phase 6 | Pending |
-| AUTO-02 | Phase 6 | Pending |
+| AUTO-02 | Phase 6 | Complete |
 | AUTO-03 | Phase 6 | Pending |
 | AUTO-04 | Phase 6 | Pending |
 | AUTO-05 | Phase 6 | Pending |
 | AUTO-06 | Phase 6 | Pending |
 | AUTO-07 | Phase 6 | Pending |
-| AUTO-08 | Phase 6 | Pending |
-| AUTO-09 | Phase 6 | Pending |
+| AUTO-08 | Phase 6 | Complete |
+| AUTO-09 | Phase 6 | Complete |
 | AUTO-10 | Phase 6 | Pending |
 | AUTO-11 | Phase 6 | Pending |
 | DASH-01 | Phase 7 | Pending |

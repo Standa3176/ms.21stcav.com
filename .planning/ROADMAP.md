@@ -132,13 +132,14 @@ Plans:
   3. The Filament auto-create review inbox shows each draft with a completeness score, supports bulk approve/edit, and records rejection reasons when rejected; draft-first is the v1 default and immediate-publish is gated by an admin config flag
   4. On the product edit page, an admin can toggle per-field pins (title, description, image) via `ProductOverride`, and the next supplier sync leaves pinned fields untouched — observable via a regression test that runs a sync after pinning and asserts unchanged content
   5. Every `CreateWooProductJob` attempt writes to `integration_events` with request/response/latency, and a failed attempt retries per Horizon policy before surfacing in the notification centre
-**Plans:** 5 plans
+**Plans:** 6 plans
 Plans:
-- [x] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
-- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
-- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
-- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
-- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
+- [x] 06-01-PLAN.md — Supplier probe (Q1) + 5 migrations (auto_create_skip_rules, auto_create_rejections, products.auto_create_status+completeness, product_overrides.pin_*, alert_recipients.receives_auto_create_alerts) + 4 pure services (ProductContentBuilder, ProductSlugGenerator, ProductMatcher, CompletenessScorer) + SEO Blade template + placeholder asset + AutoCreateSkipRuleSeeder (AUTO-02 partial, AUTO-08, AUTO-09)
+- [ ] 06-02-PLAN.md — intervention/image ^3.11 + spatie/image-optimizer install + ProductImageFetcher (HEAD-first fallback chain + P6-A guards) + ProductImageProcessor (v3 scaleDown+toWebp+strip) + ImagePayloadBuilder + ProcessAutoCreateImageJob on sync-bulk + Woo URL-pass-through sandbox validation (Q5) (AUTO-03, AUTO-04)
+- [ ] 06-03-PLAN.md — 4 DomainEvents (AutoCreateAttempted/Succeeded/Failed/ProductPublished) + CreateWooProductJob orchestrator + PublishProductJob + HandleNewSupplierSku listener (replaces Phase 2 stub) + TaxonomyResolver + ProductOverrideGuard + ProductCompletenessObserver + NewProductOpportunityApplier MOVE (Q4) + AutoCreateRetryApplier + Deptrac ProductAutoCreate layer (dual-file) (AUTO-01, AUTO-02, AUTO-05)
+- [ ] 06-04-PLAN.md — AutoCreateReviewResource (filters + bulk actions + completeness badge + rejection modal) + AutoCreateSkipRuleResource + AutoCreateSettingsPage singleton + ProductResource Field Pins tab (D-10 8 toggles) + SuggestionResource kind-specific actions + AlertRecipientResource toggle + Shield regen + P5-F restoration + RolePermissionSeeder whereIn (AUTO-06, AUTO-07, AUTO-11)
+- [ ] 06-05-PLAN.md — ApplyPinsDuringSync listener (subscribes to SupplierPriceChanged/SupplierStockChanged/SupplierSkuMissing) + PinnedFieldsSurviveSyncTest architecture ship gate (D-13 byte-identical assertion) (AUTO-10)
+- [ ] 06-06-PLAN.md — DeptracProductAutoCreateLayerTest (4 it-blocks + dual-file allow-list grep) + AutoCreateRejectionRetentionTest (dynamic-all-prunes + static-scan) + 06-VERIFICATION.md ship verdict (per-REQ coverage + 5 ROADMAP criteria + Q1-Q7 resolutions + known limitations)
 **UI hint**: yes
 
 ### Phase 7: Dashboard Polish + Cutover

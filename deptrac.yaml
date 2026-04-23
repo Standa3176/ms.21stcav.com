@@ -40,6 +40,12 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/Feeds/.*
+    # Phase 6 Plan 01 — ProductAutoCreate domain (models + services + policies
+    # + future jobs/listeners/appliers in Plans 06-02..06-06).
+    - name: ProductAutoCreate
+      collectors:
+        - type: directory
+          regex: app/Domain/ProductAutoCreate/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -95,5 +101,16 @@ parameters:
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]
+    # Phase 6 Plan 01 — ProductAutoCreate layer cross-domain allow-list.
+    # Plan 06-01 uses ONLY: Foundation (LogsActivity / BaseCommand) + Products
+    # (Product model for slug/existence checks + ProductOverride extension
+    # touches).
+    # Plans 06-02..06-06 expand to: + Pricing (RuleResolver/PriceCalculator for
+    # initial price), + Sync (NewSupplierSkuDetected event + SupplierClient),
+    # + Suggestions (NewProductOpportunityApplier + AutoCreateRetryApplier),
+    # + Alerting (AlertRecipient for receives_auto_create_alerts), + Webhooks
+    # (WebhookReceipt if needed). Explicitly NOT allowed: CRM, Competitor,
+    # Feeds (Phase 6 never imports from these).
+    ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate]

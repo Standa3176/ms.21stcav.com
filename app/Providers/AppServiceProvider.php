@@ -197,6 +197,15 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\Competitor\Models\CompetitorIngestRun::class,  \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class);
         Gate::policy(\App\Domain\Competitor\Models\CsvParseError::class,        \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class);
 
+        // ── Phase 6 Plan 01: ProductAutoCreate domain policies ──────────
+        // D-04 + T-06-01-04 role split: admin governs skip-rule CRUD (cost +
+        // brand-reputation impact). pricing_manager has view-only on rules +
+        // create/view on rejections (review-inbox triage). sales + read_only
+        // denied entirely.
+        // Pitfall P5-F — hand-written hasRole checks; do NOT shield:generate.
+        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule::class,  \App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy::class);
+        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class, \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class);
+
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);

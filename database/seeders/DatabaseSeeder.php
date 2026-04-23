@@ -32,6 +32,11 @@ class DatabaseSeeder extends Seeder
             // Phase 4 Plan 03 — 40 default Woo↔Bitrix field mappings ported from
             // the legacy itgalaxy plugin's CrmFields.php. Idempotent firstOrCreate.
             \Database\Seeders\Phase4\CrmFieldMappingSeeder::class,
+            // Phase 6 Plan 01 — 3 default auto-create skip rules (D-04).
+            // Idempotent firstOrCreate keyed on (scope, value). Re-runs always
+            // yield exactly 3 rows. Registered explicitly (NOT glob) per Phase 5
+            // 05-04a MySQL `_` LIKE wildcard lesson.
+            AutoCreateSkipRuleSeeder::class,
         ]);
 
         // Phase 5 Plan 04a — belt-and-braces promotion of the Pitfall M fallback

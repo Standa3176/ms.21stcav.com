@@ -38,12 +38,30 @@ final class ProductOverride extends Model
         'margin_basis_points',
         'reason',
         'created_by_user_id',
+        // Phase 6 Plan 01 — D-10 pin-per-field booleans (AUTO-10).
+        'pin_title',
+        'pin_short_description',
+        'pin_long_description',
+        'pin_meta_description',
+        'pin_image',
+        'pin_slug',
+        'pin_brand',
+        'pin_category',
     ];
 
     protected $casts = [
         'product_id' => 'integer',
         'margin_basis_points' => 'integer',
         'created_by_user_id' => 'integer',
+        // Phase 6 Plan 01 — pin casts.
+        'pin_title' => 'bool',
+        'pin_short_description' => 'bool',
+        'pin_long_description' => 'bool',
+        'pin_meta_description' => 'bool',
+        'pin_image' => 'bool',
+        'pin_slug' => 'bool',
+        'pin_brand' => 'bool',
+        'pin_category' => 'bool',
     ];
 
     public function product(): BelongsTo
@@ -54,7 +72,20 @@ final class ProductOverride extends Model
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['product_id', 'margin_basis_points', 'reason'])
+            ->logOnly([
+                'product_id',
+                'margin_basis_points',
+                'reason',
+                // Phase 6 Plan 01 D-12 — audit every pin toggle (AUTO-11 audit trail).
+                'pin_title',
+                'pin_short_description',
+                'pin_long_description',
+                'pin_meta_description',
+                'pin_image',
+                'pin_slug',
+                'pin_brand',
+                'pin_category',
+            ])
             ->logOnlyDirty();
     }
 

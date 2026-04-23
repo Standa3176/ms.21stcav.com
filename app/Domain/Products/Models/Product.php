@@ -37,6 +37,17 @@ final class Product extends Model
         'is_custom_ms', 'exclude_from_auto_update', 'tags',
         'last_synced_at', 'last_sync_run_id',
         'last_sales_count_90d', 'last_sales_count_computed_at',
+        // Phase 6 Plan 01 — auto-create + SEO + completeness columns.
+        'slug',
+        'short_description',
+        'long_description',
+        'meta_description',
+        'image_url',
+        'requires_manual_image_review',
+        'auto_create_status',
+        'completeness_score',
+        'completeness_computed_at',
+        'completeness_missing_fields',
     ];
 
     protected $casts = [
@@ -49,6 +60,11 @@ final class Product extends Model
         'cost_price' => 'decimal:4',
         'last_sales_count_90d' => 'int',
         'last_sales_count_computed_at' => 'datetime',
+        // Phase 6 Plan 01 — auto-create casts.
+        'requires_manual_image_review' => 'bool',
+        'completeness_score' => 'int',
+        'completeness_computed_at' => 'datetime',
+        'completeness_missing_fields' => 'array',
     ];
 
     public function variants(): HasMany

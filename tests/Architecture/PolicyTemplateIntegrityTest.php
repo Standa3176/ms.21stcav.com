@@ -39,9 +39,10 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
-        app_path('Domain/Competitor/Policies'),   // Phase 5 Plan 01 — 5 Competitor policies
-        app_path('Domain/CRM/Policies'),          // Phase 4 Plan 01 — 5 Bitrix CRM policies
+        app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
+        app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Pricing/Policies'),
+        app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
@@ -71,9 +72,10 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     $paths = [
         app_path('Policies'),
         app_path('Domain/Alerting/Policies'),
-        app_path('Domain/Competitor/Policies'),   // Phase 5 Plan 01 — 5 Competitor policies
-        app_path('Domain/CRM/Policies'),          // Phase 4 Plan 01 — 5 Bitrix CRM policies
+        app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
+        app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Pricing/Policies'),
+        app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
@@ -96,9 +98,12 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     //      + GdprErasureLogEntryPolicy (Plan 05).
     // 21 = above + 5 Competitor policies (Phase 5 Plan 01:
     //      Competitor / CompetitorPrice / CompetitorCsvMapping /
-    //      CompetitorIngestRun / CsvParseError). Floor bumped 16 → 21.
+    //      CompetitorIngestRun / CsvParseError).
+    // 23 = above + 2 ProductAutoCreate policies (Phase 6 Plan 01:
+    //      AutoCreateSkipRulePolicy + AutoCreateRejectionPolicy).
+    //      Floor bumped 21 → 23.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(21, 'Expected ≥ 21 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(23, 'Expected ≥ 23 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -129,6 +134,9 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\Competitor\Models\CompetitorCsvMapping::class => \App\Domain\Competitor\Policies\CompetitorCsvMappingPolicy::class,
         \App\Domain\Competitor\Models\CompetitorIngestRun::class  => \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class,
         \App\Domain\Competitor\Models\CsvParseError::class        => \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class,
+        // Phase 6 Plan 01 — 2 ProductAutoCreate policies (D-04 + D-06).
+        \App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule::class  => \App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy::class,
+        \App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class => \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

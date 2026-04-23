@@ -45,6 +45,7 @@ class AlertRecipient extends Model
         'receives_sync_reports',
         'receives_crm_alerts',
         'receives_competitor_alerts',
+        'receives_auto_create_alerts',
     ];
 
     protected $casts = [
@@ -52,6 +53,7 @@ class AlertRecipient extends Model
         'receives_sync_reports' => 'boolean',
         'receives_crm_alerts' => 'boolean',
         'receives_competitor_alerts' => 'boolean',
+        'receives_auto_create_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -76,5 +78,11 @@ class AlertRecipient extends Model
     public function scopeReceivesCompetitorAlerts(Builder $q): Builder
     {
         return $q->where('receives_competitor_alerts', true);
+    }
+
+    /** Scope: only rows opted-in to auto-create-failed alerts (Phase 6 Plan 01). */
+    public function scopeReceivesAutoCreateAlerts(Builder $q): Builder
+    {
+        return $q->where('receives_auto_create_alerts', true);
     }
 }

@@ -12,8 +12,11 @@ use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
 use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
+use App\Domain\ProductAutoCreate\Listeners\RecomputeCompletenessOnSupplierChange;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Events\SupplierPriceChanged;
+use App\Domain\Sync\Events\SupplierSkuMissing;
+use App\Domain\Sync\Events\SupplierStockChanged;
 use App\Domain\Webhooks\Events\CustomerRegistered;
 use App\Domain\Webhooks\Events\OrderReceived;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -49,8 +52,21 @@ class EventServiceProvider extends ServiceProvider
         // Phase 3 pricing recompute. Listener runs on the `default` queue
         // (not sync-woo-push — that queue is for the downstream Woo PUT
         // emitted by Phase 2 on ProductPriceChanged).
+        //
+        // Phase 6 Plan 03 (A3 FINDING mitigation) — the listener strategy
+        // replaces the Eloquent-observer approach because Phase 2's
+        // forceFill + saveQuietly path suppresses both saving + saved events.
+        // RecomputeCompletenessOnSupplierChange subscribes to all 3 supplier
+        // events via named handler methods.
         SupplierPriceChanged::class => [
             RecomputePriceListener::class,
+            RecomputeCompletenessOnSupplierChange::class.'@handlePriceChanged',
+        ],
+        SupplierStockChanged::class => [
+            RecomputeCompletenessOnSupplierChange::class.'@handleStockChanged',
+        ],
+        SupplierSkuMissing::class => [
+            RecomputeCompletenessOnSupplierChange::class.'@handleSkuMissing',
         ],
 
         // Phase 4 Plan 03 D-08 — first real listeners on the Phase 1

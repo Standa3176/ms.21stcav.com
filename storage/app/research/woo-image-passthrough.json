@@ -1,0 +1,84 @@
+{
+    "__synthesized": true,
+    "__approval_mode": "auto-mode-auto-approved",
+    "__plan": "06-02 Task 1 (checkpoint:human-verify)",
+    "__reason": "Live Woo sandbox credentials (WOO_BASE_URL / WOO_CONSUMER_KEY / WOO_CONSUMER_SECRET with WOO_WRITE_ENABLED=true) are NOT populated in the execution environment — only WOO_WRITE_ENABLED=false is set in .env. Per Plan 06-02 prompt instructions, the checkpoint is auto-approved and the expected request/response contract is synthesized from the Woo REST documentation + rudrastyh.com tutorial cited in 06-RESEARCH.md §4 + §Example 3.",
+    "__operator_validation_instructions": [
+        "1. Phase 7 cutover prep — operator MUST validate URL pass-through on the live Woo sandbox BEFORE enabling immediate-publish mode (config product_auto_create.mode=immediate) in production.",
+        "2. Populate .env: WOO_URL=<sandbox-url> / WOO_CONSUMER_KEY / WOO_CONSUMER_SECRET (ck_/cs_ prefix from Woo > Settings > Advanced > REST API).",
+        "3. Set WOO_WRITE_ENABLED=true — TEMPORARILY; revert immediately after.",
+        "4. Host a known-public test image at a URL Woo can reach — e.g. tests/Fixtures/ProductAutoCreate/sample.jpg uploaded to S3 or copied to public/images/.",
+        "5. Run via tinker: `app(App\\Domain\\Sync\\Services\\WooClient::class)->post('/products', ['name'=>'Passthrough Test','sku'=>'TEST-PT-'.time(),'type'=>'simple','status'=>'draft','regular_price'=>'0.00','images'=>[['src'=>'<public-sample-url>','name'=>'Test','alt'=>'Test alt']]])`",
+        "6. Expected: response carries `images[0].id` (Woo-assigned int) + `images[0].src` pointing to `.../wp-content/uploads/YYYY/MM/sample.jpg` (NOT the original URL).",
+        "7. If validated, record the actual Woo-returned id + uploads URL into this file (replace the synthesized values below) + flip __synthesized=false. If it DIVERGES (e.g. Woo auto-rejects the URL), raise a blocker before enabling immediate-publish mode.",
+        "8. Set WOO_WRITE_ENABLED=false again. Delete the test product via `app(WooClient::class)->delete('/products/<id>', ['force'=>true])`."
+    ],
+    "__inference_sources": [
+        "06-RESEARCH.md §Summary — Woo REST URL pass-through finding (images[*].src accepts a public URL, Woo downloads it)",
+        "06-RESEARCH.md §4 + §Example 3 — documented POST /wp-json/wc/v3/products payload",
+        "06-RESEARCH.md §Alternatives Considered — URL pass-through cited from rudrastyh.com/woocommerce/rest-api-create-product-with-images.html",
+        "Woo REST API docs (woocommerce-rest-api-docs/trunk/source/includes/v3/_products.md) — images[] array shape + response semantics"
+    ],
+    "expected_request": {
+        "method": "POST",
+        "endpoint": "/wp-json/wc/v3/products",
+        "headers_required": [
+            "Authorization: Basic <base64(CK:CS)>  (consumer key + consumer secret — existing Phase 2 WooClient auth)",
+            "Content-Type: application/json"
+        ],
+        "body": {
+            "name": "Test Product",
+            "sku": "TEST-PASSTHROUGH-01",
+            "type": "simple",
+            "status": "draft",
+            "regular_price": "0.00",
+            "images": [
+                {
+                    "src": "https://ops.meetingstore.co.uk/images/sample.jpg",
+                    "name": "Test",
+                    "alt": "Test alt"
+                }
+            ]
+        }
+    },
+    "expected_response": {
+        "http_status": 201,
+        "body": {
+            "id": 99001,
+            "name": "Test Product",
+            "slug": "test-product",
+            "status": "draft",
+            "type": "simple",
+            "regular_price": "0.00",
+            "images": [
+                {
+                    "id": 99,
+                    "src": "https://meetingstore.co.uk/wp-content/uploads/2026/04/sample.jpg",
+                    "name": "Test",
+                    "alt": "Test alt",
+                    "date_created": "2026-04-23T19:12:00",
+                    "date_created_gmt": "2026-04-23T19:12:00",
+                    "date_modified": "2026-04-23T19:12:00",
+                    "date_modified_gmt": "2026-04-23T19:12:00"
+                }
+            ],
+            "categories": [],
+            "tags": [],
+            "attributes": [],
+            "meta_data": []
+        }
+    },
+    "passthrough_signals": [
+        "Response images[0].id is a FRESH Woo-assigned media-library integer (not present in request).",
+        "Response images[0].src points to /wp-content/uploads/YYYY/MM/ — Woo's OWN hosting, NOT the URL we sent. This is the unambiguous URL-pass-through success marker.",
+        "The outbound URL we sent (request.body.images[0].src) MUST stay alive for several seconds post-POST because Woo's download is asynchronous (cron or background worker).",
+        "NO binary upload, NO multipart, NO base64 data URL, NO /wp-json/wp/v2/media hop — the entire contract uses only the existing WooClient::post('/products', $payload) surface."
+    ],
+    "plan_03_consumer_notes": [
+        "Plan 03's CreateWooProductJob merges ImagePayloadBuilder::build($product, $publicUrl) output into the top-level Woo product payload: $payload = array_merge($basePayload, $imagePayload); where $imagePayload is ['images' => [...]] or ['images' => []].",
+        "After the POST, Plan 03 may re-fetch GET /products/{id} if it needs to confirm Woo's async image download completed — but for v1 draft-first (AUTO-07), the POST response's images[0].id being non-null is sufficient evidence.",
+        "If Plan 03 later wants to PUT an image onto an existing Woo product (e.g. ProcessAutoCreateImageJob running AFTER CreateWooProductJob), the same images[] shape works: PUT /products/{id} with body {images: [{src: 'new-public-url', name: '...', alt: '...'}]}."
+    ],
+    "fixture_timestamp": "2026-04-23T19:14:00Z",
+    "synthesized_for_plan": "06-02 (Image pipeline + Woo URL pass-through validation)"
+}

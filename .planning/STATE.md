@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-02-PLAN.md
-last_updated: "2026-04-23T19:38:58.676Z"
+stopped_at: Completed 06-03-PLAN.md
+last_updated: "2026-04-23T20:03:01.041Z"
 last_activity: 2026-04-23
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 32
-  completed_plans: 28
-  percent: 88
+  completed_plans: 29
+  percent: 91
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 06 (Product Auto-Create) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-23
 
@@ -77,6 +77,7 @@ Progress: [████░░░░░░] 40%
 | Phase 05-competitor-analysis P05-retention-guardrails-verification | 40m | 3 tasks | 8 files |
 | Phase 06 P01 | 24m | 2 tasks | 41 files |
 | Phase 06 P02 | 20 | 3 tasks | 15 files |
+| Phase 06 P03 | 18m | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -164,6 +165,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Plan 06-02: intervention/image v3 pinned ^3.11 (NOT v4 — PHP 8.3+ floor incompatible with project 8.2 floor). ImageManager::class DI alias added in AppServiceProvider::register because image-laravel 1.5 binds only to string key 'image'
 - [Phase 06]: Plan 06-02: Woo URL pass-through contract locked via WooUrlPassthroughSmokeTest — Plan 03 dispatches ProcessAutoCreateImageJob which merges ImagePayloadBuilder output into PUT /products/{wooId}. Auto-approved Task 1 checkpoint; operator MUST re-validate live Woo sandbox during Phase 7 cutover prep before flipping product_auto_create.mode to immediate
 - [Phase 06]: Plan 06-02: ProcessAutoCreateImageJob on sync-bulk queue (Phase 1 FOUND-09) via $this->onQueue() in constructor — NEVER public string $queue (PHP 8.4 trait collision). 3 retries + [30s, 5m, 30m] backoff + failed() writes kind='auto_create_failed' Suggestion for Plan 04 Replay action
+- [Phase 06]: Observer → listener pivot (A3 FINDING) — RecomputeCompletenessOnSupplierChange subscribes to Supplier* events because Laravel 12 saveQuietly suppresses observers
+- [Phase 06]: Applier MOVE (RESEARCH Q4 option b) — NewProductOpportunityApplier relocated from Competitor to ProductAutoCreate to preserve one-way Deptrac arrow
+- [Phase 06]: SupplierPriceUnusableException downgrades sell_price=null instead of retry — supplier-returned 0 is a data-state issue, not transient
 
 ### Pending Todos
 
@@ -183,6 +187,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-23T19:38:58.662Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-04-23T20:02:51.209Z
+Stopped at: Completed 06-03-PLAN.md
 Resume file: None

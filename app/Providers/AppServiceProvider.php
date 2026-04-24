@@ -340,7 +340,7 @@ class AppServiceProvider extends ServiceProvider
                 \App\Console\Commands\Cutover\SnapshotWooDbCommand::class,
                 \App\Console\Commands\Cutover\DrillRollbackCommand::class,
                 \App\Console\Commands\Cutover\DisableLegacyPluginsCommand::class,
-                // Plan 07-05 Task 3 registers the final CutoverChecklistCommand.
+                \App\Console\Commands\Cutover\CutoverChecklistCommand::class,
             ]);
         }
     }

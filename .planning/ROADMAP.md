@@ -161,6 +161,18 @@ Plans:
 - [x] 07-06-handover-deptrac-verification-PLAN.md — docs/ops/cutover-handover.md (4 CUT-06 sections + 5 appendices: D-19 sequence / env var inventory / rollback runbook / troubleshooting FAQ / Horizon primer) + Deptrac Dashboard + Cutover layers (dual-file sync) + DeptracDashboardLayerTest + DeptracCutoverLayerTest + 07-VERIFICATION.md v1 milestone ship verdict (CUT-06)
 **UI hint**: yes
 
+### Phase 7.1: Milestone Closeout Polish (INSERTED — gap closure)
+**Goal**: Close the 3 non-blocking tech-debt items identified by `/gsd-audit-milestone v1.50.1` before archiving. Ensures REQUIREMENTS.md traceability reflects reality, clarifies the `PricingRuleChanged` admin UX so operators don't expect automatic downstream recompute, and locks the Cutover-layer Deptrac boundary so command files can't silently import forbidden domains.
+**Depends on**: Phase 7 (reads v1.50.1-MILESTONE-AUDIT.md)
+**Requirements**: No new REQ-IDs — tech-debt closure only
+**Success Criteria** (what must be TRUE):
+  1. REQUIREMENTS.md traceability table: all 85 v1 rows show `Complete` (zero `Pending` rows for PRCE/CRM/DASH)
+  2. `SuggestionResource.php` kind=`margin_change` Approve action's confirmation text tells admins to run `pricing:recompute --live` after approval; a "Run pricing:recompute now?" option dispatches the bulk-recompute job (wired to Phase 3 existing command)
+  3. Cutover commands either (a) relocated to `app/Domain/Cutover/Console/Commands/` OR (b) `DeptracCutoverLayerTest` extended to cover `app/Console/Commands/Cutover/` path so the one-way-arrow ban still enforces against the command files
+  4. `/gsd-audit-milestone v1.50.1` re-run after Phase 7.1 lands produces verdict `passed` (no tech_debt category remaining other than operator carry-forward gates which are out of dev scope)
+**Plans**: 1 plan (single-plan decimal phase per gsd-insert-phase convention)
+**UI hint**: no
+
 ## Progress
 
 **Execution Order:**

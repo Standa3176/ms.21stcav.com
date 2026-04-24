@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
  (completed 2026-04-19)
 - [ ] **Phase 4: Bitrix24 CRM Sync** — One-way Woo→Bitrix push of Deal + Contact + Company on order/customer events, dynamic field mapping, UTM/GA capture, backfill command, and GDPR erasure
 - [ ] **Phase 5: Competitor Analysis** — CSV watcher with BOM-safe ingest, full-history `competitor_prices`, margin-delta analyser producing Suggestions, trend/deltas dashboards
-- [x] **Phase 6: Product Auto-Create** — New-SKU detection, SEO-templated draft Woo products, image pipeline + placeholder flow, review inbox with completeness scoring, and `ProductOverride` pin UI (completed 2026-04-23)
+- [x] **Phase 6: Product Auto-Create** — New-SKU detection, SEO-templated draft Woo products, image pipeline + placeholder flow, review inbox with completeness scoring, and `ProductOverride` pin UI (completed 2026-04-23)
 - [ ] **Phase 7: Dashboard Polish + Cutover** — Home health tiles, notification centre, global search, weekly reports, shadow-mode divergence scan, legacy-plugin crons deregistered, rollback drill, ops handover
 
 ## Phase Details
@@ -80,7 +80,6 @@ Plans:
 - [x] 03-03-filament-rule-explorer-PLAN.md — PricingRuleResource + ProductOverrideResource (role-gated) + Rule Explorer page (SKU → effective price + chain) + Simulated Impact page (transactional dry-run projection) + SimulatedImpactCalculator + seeder LIKE patterns + PolicyTemplateIntegrityTest extended (PRCE-08, PRCE-09)
 - [x] 03-04-bulk-recompute-command-PLAN.md — PriceRecomputer shared core (listener + bulk both delegate) + RecomputePriceJob (ShouldQueue+ShouldBeUnique, sync-bulk queue) + pricing:recompute command (dry-run default D-12, --live opt-in, --only/--brand/--category scopes) (PRCE-10)
 - [x] 03-05-guardrails-verification-PLAN.md — Deptrac Pricing layer (Foundation+Products+Sync allow-list) + DeptracPricingLayerTest + PricingRuleExclusiveSetTest + PriceCalculatorPurityTest + 03-VERIFICATION.md ship verdict
-**UI hint**: yes
 
 ### Phase 4: Bitrix24 CRM Sync
 **Goal**: The sanctions-blocked itgalaxy plugin is replaced by a one-way Woo→Bitrix24 sync — orders and customer registrations create deduplicated Deal + Contact + Company records, admins map fields in the UI (no code edits), and historical orders can be backfilled idempotently.
@@ -152,13 +151,14 @@ Plans:
   3. The rollback drill is rehearsed end-to-end: flip `WOO_WRITE_ENABLED=false`, restore the Woo DB snapshot from a fresh dump, confirm the legacy plugin crons re-engage cleanly, and the runbook is updated with any gaps found during the drill
   4. The Stock Updater and itgalaxy Bitrix24 plugins are disabled in WordPress only after a monitored parallel-run window passes the parity threshold; the `wp_unschedule_event` commands have successfully removed the legacy crons before Laravel writes were enabled
   5. Laravel has run solo for 7 consecutive days without divergence alarms, the weekly scheduled report has landed in the admin distribution list, the ops handover docs cover resume-a-sync / replay-a-failed-CRM-push / refresh-Bitrix-schema / interpret-the-notification-centre, and a tabular view exports a filtered CSV successfully
-**Plans:** 5 plans
+**Plans:** 6 plans
 Plans:
-- [ ] 02-01-data-model-PLAN.md — Schema + Eloquent + 5 policies + factories for Product/ProductVariant/SyncRun/SyncError/SyncRunItem/ImportIssue (D-01 expansion, SYNC-03/05/06/09/12)
-- [ ] 02-02-external-clients-PLAN.md — Install automattic/woocommerce + spatie/simple-excel; extend WooClient with get() + writeLive() 429 backoff; ship SupplierClient with JWT Cache::remember + retry-once-on-401 (SYNC-01, SYNC-02, SYNC-04, SYNC-10)
-- [ ] 02-03-orchestration-PLAN.md — ShouldDispatchAfterCommit retrofit + 4 domain events + WooProductIterator + SkuMatcher + AbortGuard + SyncDiffEngine + SyncChunkJob + MarkMissingSkusJob + SyncSupplierCommand with --live/--dry-run/--resume (SYNC-01/03/05/06/07/09/10/13, D-04..D-09)
-- [ ] 02-04-reporting-ui-PLAN.md — D-08 receives_sync_reports migration + SyncReportCsvGenerator (D-10 11 cols) + SupplierSyncReportMail + SyncRunResource + ImportIssueResource + ProductResource + shield:generate audit (SYNC-08, SYNC-11, SYNC-12)
-- [ ] 02-05-guardrails-PLAN.md — Deptrac WpDirectDb layer + PolicyTemplateIntegrityTest permanent guardrail + sync-errors:prune command + 02-VERIFICATION.md (SYNC-04)
+- [x] 07-01-data-model-foundation-PLAN.md — 3 migrations (add_receives_weekly_digest_to_alert_recipients + create_dashboard_snapshots + create_user_saved_filters) + config/cutover.php + config/dashboard.php + 2 Dashboard models + 2 policies + factories + PolicyTemplateIntegrityTest floor bump + RolePermissionSeeder whereIn (DASH-04, DASH-05 foundation)
+- [ ] 07-02-home-dashboard-widgets-PLAN.md — HomeDashboardPage + 9 widgets (LastSyncRun / CrmPushSuccessRate / CompetitorFreshness / PendingReviews / ImportIssues / HorizonFailedJobs / SyncDiffsParity / ProductCatalogueHealth / WeeklyReportStatus) + SnapshotAggregator + DashboardRefreshCommand (every 5 min) + PruneDashboardSnapshotsCommand (daily 03:50) + HorizonLinkNavigationItem (DASH-01, DASH-02)
+- [ ] 07-03-global-search-csv-saved-filters-PLAN.md — getGloballySearchableAttributes() on 6 Resources (Product/PricingRule/CrmPushLog/Suggestion/CompetitorPrice/AutoCreateReview) + HasExportableTable trait + CsvExportWriter (spatie/simple-excel) + QueuedCsvExportJob on sync-bulk + QueuedCsvExportMail + SavedFilterAction save/apply/delete group (DASH-03, DASH-04)
+- [ ] 07-04-notification-centre-weekly-digest-PLAN.md — NotificationCentrePage at /admin/notifications with 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq) + NotificationCentreAggregator + WeeklyDigestComposer 5 sections + reports:weekly-digest command (Monday 07:00 London) + WeeklyDigestMail HTML+text + AlertRecipientResource receives_weekly_digest toggle (DASH-05, DASH-06)
+- [ ] 07-05-cutover-commands-PLAN.md — 6 artisan commands (cutover:snapshot-woo-db + cutover:divergence-scan + cutover:populate-overrides + cutover:drill-rollback + cutover:disable-legacy-plugins + cutover:checklist) + DivergenceScanner + OverridePopulator (merge-never-clear-pins D-15) + RollbackDrill + LegacyPluginDisabler (zero DB:: facade) + WooDbSnapshotter + CutoverChecklistReporter integrating Phase 6 D-20 gates (CUT-01, CUT-02, CUT-03, CUT-04, CUT-05, CUT-07)
+- [ ] 07-06-handover-deptrac-verification-PLAN.md — docs/ops/cutover-handover.md (4 CUT-06 sections + 5 appendices: D-19 sequence / env var inventory / rollback runbook / troubleshooting FAQ / Horizon primer) + Deptrac Dashboard + Cutover layers (dual-file sync) + DeptracDashboardLayerTest + DeptracCutoverLayerTest + 07-VERIFICATION.md v1 milestone ship verdict (CUT-06)
 **UI hint**: yes
 
 ## Progress
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Bitrix24 CRM Sync | 0/TBD | Not started | - |
 | 5. Competitor Analysis | 0/TBD | Not started | - |
 | 6. Product Auto-Create | 6/6 | Complete   | 2026-04-23 |
-| 7. Dashboard Polish + Cutover | 0/TBD | Not started | - |
+| 7. Dashboard Polish + Cutover | 0/6 | Planned    | - |
 
 ## Research Flags
 

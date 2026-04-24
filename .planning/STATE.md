@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 7 context gathered
-last_updated: "2026-04-24T07:49:37.891Z"
-last_activity: 2026-04-23
+status: executing
+stopped_at: Completed 07-01-data-model-foundation-PLAN.md
+last_updated: "2026-04-24T08:45:16.736Z"
+last_activity: 2026-04-24
 progress:
   total_phases: 7
   completed_phases: 6
-  total_plans: 32
-  completed_plans: 32
-  percent: 100
+  total_plans: 38
+  completed_plans: 33
+  percent: 87
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-18)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 06 — Product Auto-Create
+**Current focus:** Phase 07 — Dashboard Polish + Cutover
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-23
+Phase: 07 (Dashboard Polish + Cutover) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-04-24
 
 Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG — Feature-tier MySQL deferral carries forward to Phase 7 cutover prep)
 
@@ -82,6 +82,7 @@ Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG
 | Phase 06 P04 | 18m | 3 tasks | 30 files |
 | Phase 06-product-auto-create P05 | 11m | 2 tasks | 4 files |
 | Phase 06-product-auto-create P06 | 14m | 2 tasks | 4 files |
+| Phase 07 P01 | 22m | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Plan 06-04: P5-F Shield restoration (5th execution) — AlertRecipientPolicy restored from HEAD + spurious Foundation IntegrationEventPolicy stub deleted + 0 `{{ Placeholder }}` leaks confirmed
 - [Phase 06-product-auto-create]: Plan 05 pin enforcement via listener overlay (D-11) — ApplyPinsDuringSync subscribes to Phase 2's 3 supplier-change events + delegates to ProductOverrideGuard. Phase 2 SyncChunkJob UNTOUCHED (verified by dedicated Architecture test grep). Revert-after-the-fact window ~100-500ms on sync-bulk queue (accepted limitation). AUTO-10 shipped end-to-end.
 - [Phase 06-product-auto-create]: Plan 06-06: Phase 6 ships with FLAG verdict (architectural ship gates all green in-session; Feature-tier MySQL execution deferred to Phase 7 operator prep). DeptracProductAutoCreateLayerTest locks the domain boundary permanently (4 cases + dual-file YAML grep); AutoCreateRejectionRetentionTest mirrors Phase 5 COMP-07 shape for D-06 indefinite retention. 2 operator re-probes carry forward (supplier Q1 + Woo Q5).
+- [Phase 07]: Plan 07-01: config/cutover.php stores env-gate var NAMES (not values) for CUTOVER_DRILL_ALLOWED + CUTOVER_DISABLE_LIVE_ALLOWED + CUTOVER_IMMEDIATE_PUBLISH_ALLOWED — commands read env at runtime so setting the var alone doesn't auto-approve until a command explicitly reads the config key (two-step safety)
+- [Phase 07]: Plan 07-01: RolePermissionSeeder sales query restructured — prior outer view_% AND clause would have stripped user_saved_filter CRUD perms; now split into read-only + owner-scoped CRUD branches (defect caught in-plan)
+- [Phase 07]: Plan 07-01: receives_weekly_digest defaults TRUE (unlike receives_crm_alerts / receives_auto_create_alerts which default FALSE) — weekly digest is ambient ops summary not incident alert; Pitfall P6-D belt-and-braces UPDATE backfills every existing row
 
 ### Pending Todos
 
@@ -197,6 +201,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-24T07:49:37.877Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-dashboard-polish-cutover/07-CONTEXT.md
+Last session: 2026-04-24T08:45:16.722Z
+Stopped at: Completed 07-01-data-model-foundation-PLAN.md
+Resume file: None

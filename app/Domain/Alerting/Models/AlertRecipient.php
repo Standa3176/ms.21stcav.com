@@ -31,6 +31,14 @@ use Illuminate\Notifications\Notifiable;
  * Plan 05-01: receives_competitor_alerts is opt-in for competitor stale-feed
  * + CSV-issue alerts (Phase 2 D-08 + Phase 4 D-12 pattern). Default FALSE;
  * seeded fallback force-updated TRUE so alerts always land somewhere.
+ *
+ * Plan 07-01 D-08: receives_weekly_digest is opt-in for the Monday 07:00
+ * weekly ops digest email (DASH-05). Default TRUE (unlike other receives_*
+ * columns, the digest is an ambient summary not an incident alert — opting
+ * every existing recipient IN by default matches CONTEXT.md D-08). The
+ * Phase 7 Plan 01 migration also force-updates all existing rows to TRUE
+ * so the seeded fallback starts receiving the digest without ops touching
+ * the Filament form.
  */
 class AlertRecipient extends Model
 {
@@ -46,6 +54,7 @@ class AlertRecipient extends Model
         'receives_crm_alerts',
         'receives_competitor_alerts',
         'receives_auto_create_alerts',
+        'receives_weekly_digest',
     ];
 
     protected $casts = [
@@ -54,6 +63,7 @@ class AlertRecipient extends Model
         'receives_crm_alerts' => 'boolean',
         'receives_competitor_alerts' => 'boolean',
         'receives_auto_create_alerts' => 'boolean',
+        'receives_weekly_digest' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -84,5 +94,11 @@ class AlertRecipient extends Model
     public function scopeReceivesAutoCreateAlerts(Builder $q): Builder
     {
         return $q->where('receives_auto_create_alerts', true);
+    }
+
+    /** Scope: only rows opted-in to the weekly ops digest (Phase 7 Plan 01 D-08). */
+    public function scopeReceivesWeeklyDigest(Builder $q): Builder
+    {
+        return $q->where('receives_weekly_digest', true);
     }
 }

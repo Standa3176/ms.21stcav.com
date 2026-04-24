@@ -99,8 +99,8 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Dashboard (DASH) — Module F
 
-- [ ] **DASH-01**: A home dashboard surfaces health tiles (last sync, failed jobs, pending review count, CRM push failures) at a glance
-- [ ] **DASH-02**: Horizon is linked from the dashboard for queue visibility
+- [x] **DASH-01**: A home dashboard surfaces health tiles (last sync, failed jobs, pending review count, CRM push failures) at a glance
+- [x] **DASH-02**: Horizon is linked from the dashboard for queue visibility
 - [ ] **DASH-03**: Global search jumps to any product, rule, or CRM push log entry from the admin header
 - [x] **DASH-04**: All tabular views support saved filters and CSV export
 - [x] **DASH-05**: Scheduled reports email the admin distribution list weekly with sync, margin, and CRM metrics
@@ -254,8 +254,8 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | AUTO-09 | Phase 6 | Complete |
 | AUTO-10 | Phase 6 | Complete |
 | AUTO-11 | Phase 6 | Complete |
-| DASH-01 | Phase 7 | Pending |
-| DASH-02 | Phase 7 | Pending |
+| DASH-01 | Phase 7 | Complete |
+| DASH-02 | Phase 7 | Complete |
 | DASH-03 | Phase 7 | Pending |
 | DASH-04 | Phase 7 | Complete |
 | DASH-05 | Phase 7 | Complete |

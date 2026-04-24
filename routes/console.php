@@ -129,3 +129,18 @@ Schedule::command('snapshots:prune')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Prune dashboard_snapshots older than 30 days (Phase 7 Plan 02)');
+
+// Phase 7 Plan 04 (D-08) — reports:weekly-digest Monday 07:00 Europe/London.
+// Composes the 5-section ops digest (Sync / Margin / CRM / Auto-Create / Competitor)
+// and sends to AlertRecipient rows where receives_weekly_digest=true. On success,
+// upserts dashboard_snapshots.weekly_report_status so the Phase 7 Plan 02
+// WeeklyReportStatusWidget reflects last_sent_at + recipient_count + next_run ETA.
+// onOneServer + withoutOverlapping(30) prevents double-sends across multi-worker
+// scheduler deployments; timezone ensures ops see the 07:00 cadence in their
+// local TZ regardless of underlying server clock.
+Schedule::command('reports:weekly-digest')
+    ->weeklyOn(1, '07:00')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Weekly ops digest — Monday 07:00 Europe/London (DASH-05 / Phase 7 Plan 04)');

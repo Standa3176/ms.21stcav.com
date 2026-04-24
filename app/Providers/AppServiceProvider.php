@@ -312,6 +312,13 @@ class AppServiceProvider extends ServiceProvider
                 // sparkline history split.
                 \App\Console\Commands\Dashboard\DashboardRefreshCommand::class,
                 \App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand::class,
+                // Phase 7 Plan 04 — reports:weekly-digest (DASH-05 / D-08).
+                // Scheduled Monday 07:00 Europe/London (routes/console.php). Composes
+                // the 5-section digest and sends to AlertRecipient where
+                // receives_weekly_digest=true. Writes dashboard_snapshots.weekly_report_status
+                // so the Plan 07-02 WeeklyReportStatusWidget picks up last_sent_at +
+                // recipient_count (Plan 07-02 computeWeeklyReportStatus preserves these).
+                \App\Console\Commands\Reports\WeeklyDigestCommand::class,
             ]);
         }
     }

@@ -337,9 +337,10 @@ class AppServiceProvider extends ServiceProvider
                 // env vars (config keys store NAMES, not values — two-step safety).
                 \App\Console\Commands\Cutover\DivergenceScanCommand::class,
                 \App\Console\Commands\Cutover\PopulateOverridesCommand::class,
-                // Plan 07-05 Task 2 + 3 register the remaining four commands:
-                //   SnapshotWooDbCommand, DrillRollbackCommand,
-                //   DisableLegacyPluginsCommand, CutoverChecklistCommand
+                \App\Console\Commands\Cutover\SnapshotWooDbCommand::class,
+                \App\Console\Commands\Cutover\DrillRollbackCommand::class,
+                \App\Console\Commands\Cutover\DisableLegacyPluginsCommand::class,
+                // Plan 07-05 Task 3 registers the final CutoverChecklistCommand.
             ]);
         }
     }

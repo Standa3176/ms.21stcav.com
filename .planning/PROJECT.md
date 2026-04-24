@@ -2,167 +2,144 @@
 
 ## What This Is
 
-Standalone Laravel 12 + Filament 3 application that replaces two legacy WordPress plugins on `meetingstore.co.uk` (WooCommerce): the in-house **Stock Updater** (supplier price/stock sync + competitor CSV comparison) and the third-party **WooCommerce → Bitrix24 CRM Integration** by itgalaxycompany (stuck on v1.50.1 because sanctions block updates). The new app becomes the source of truth for product data, pricing, competitor intelligence and CRM sync — WordPress/WooCommerce is reduced to a pure shop frontend.
+Laravel 12 + Filament 3 operations platform — the sole source of truth for product data, pricing rules, competitor intelligence, and CRM sync on `meetingstore.co.uk`. Replaced two legacy WordPress plugins: the in-house **Stock Updater** (supplier price/stock sync + competitor CSV) and the third-party **WooCommerce → Bitrix24 CRM Integration** by itgalaxycompany (stuck on v1.50.1 because sanctions block updates). WordPress/WooCommerce is now a pure shop frontend; Laravel owns everything else.
+
+## Current State (v1.50.1 shipped 2026-04-24)
+
+v1 framework is **built and audited**. 7 phases, 38 plans, 82 tasks, ~15,160 LOC over 6 days of GSD execution. All 85 v1 requirements delivered; milestone audit verdict: **passed**.
+
+**Cutover is an ops execution, not dev work.** Ops runs `php artisan cutover:checklist` per `docs/ops/cutover-handover.md` Appendix A: snapshot → divergence-scan → populate-overrides → drill-rollback-staging → disable-legacy-plugins → flip `WOO_WRITE_ENABLED=true` → monitor 7 days at ≥99% parity.
+
+**Three operator carry-forward gates enforced by `cutover:checklist`:**
+1. Supplier API probe with live 21stcav.com credentials
+2. Woo sandbox image URL pass-through re-validation
+3. Feature-tier Pest suite run against online `meetingstore_ops_testing` MySQL
 
 ## Core Value
 
-**One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.** If this fails, the business loses its daily supplier sync (stock goes stale) and its CRM pipeline (leads don't land in Bitrix24). Everything else — dashboards, auto-created products, pricing UX — is secondary to that source-of-truth guarantee.
+**One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.** If this fails, the business loses its daily supplier sync (stock goes stale) and its CRM pipeline (leads don't land in Bitrix24). Everything else — dashboards, auto-created products, pricing UX — is secondary to that source-of-truth guarantee. v1 shipping proved this value: 85/85 requirements delivered without compromise; operator now holds the cutover lever.
 
 ## Requirements
 
-### Validated
+### Validated (shipped in v1.50.1)
 
-<!-- Shipped and confirmed valuable. -->
+<!-- All 85 v1 requirements delivered; audit status: passed. -->
 
-(None yet — greenfield build; ship to validate)
+- ✓ **A. Supplier sync** (SYNC-01..13) — v1.50.1 Phase 2
+- ✓ **B. Pricing engine** (PRCE-01..10) — v1.50.1 Phase 3
+- ✓ **C. Competitor analysis** (COMP-01..12) — v1.50.1 Phase 5
+- ✓ **D. Product auto-create** (AUTO-01..11) — v1.50.1 Phase 6
+- ✓ **E. Bitrix24 CRM sync** (CRM-01..13) — v1.50.1 Phase 4
+- ✓ **F. Dashboard** (DASH-01..06) — v1.50.1 Phase 7
+- ✓ **G. Cutover framework** (CUT-01..07) — v1.50.1 Phase 7 — cutover EXECUTION is ops (not dev)
+- ✓ **Cross-cutting infrastructure** (FOUND-01..13) — v1.50.1 Phase 1
 
-### Active
+Full requirement detail + traceability in `.planning/milestones/v1.50.1-REQUIREMENTS.md`.
 
-<!-- Current scope. Building toward these. -->
+### Active (none — pending v2 milestone kickoff)
 
-**A. Supplier sync** (replaces Stock Updater plugin)
-- [ ] Daily pull of all Woo products' SKU+price+stock from `21stcav.com` API (JWT-authed)
-- [ ] Writes to Woo via REST only — never direct WP DB writes
-- [ ] Missing-SKU handling: set Woo product to `pending` unless tagged `custom-ms` (stays `publish`)
-- [ ] Preserve `_exclude_from_auto_update` opt-out flag
-- [ ] Chunked/resumable sync with last-processed-ID tracking
-- [ ] Emails admin CSV report on completion
+<!-- Current dev scope. Empty between milestones. -->
 
-**B. Pricing engine** (new capability)
-- [ ] `PricingRule` model scoped by brand / category / brand+category
-- [ ] Most-specific wins: brand+category > category > brand > default tier (no stacking)
-- [ ] Default tiers kept from old plugin: <£100, £100–499, £500+
-- [ ] Formula: `final_price = round(supplier_price × (1 + margin%/100) × 1.2, 2)` (×1.2 = UK VAT)
-- [ ] Per-product override preserved (matches current `buy_price_percentage_to_add` meta)
-- [ ] Rule explorer in dashboard — preview effective price for any SKU
+(None — run `/gsd-new-milestone` to define v2 scope.)
 
-**C. Competitor analysis** (replaces Stock Updater CSV ingest, adds analytics)
-- [ ] Watches `storage/competitors/` for n8n-dropped CSV files
-- [ ] Auto-detects `sku`/`mpn` + `price` columns; strips currency symbols; divides by 1.2 to remove VAT
-- [ ] Persists to `competitor_prices` with full history (old plugin truncated daily — we keep everything)
-- [ ] Computes margin delta vs supplier price; suggests new margin % when competitor margin ≥ threshold (default 8%)
-- [ ] Dashboard: price trend charts, biggest deltas, per-competitor views
+### Future Requirements (v2 — candidate scope)
 
-**D. Product auto-create** (new capability)
-- [ ] Trigger: new SKU in supplier DB with no matching Woo product
-- [ ] SEO template mirrors current Meeting Store product page layout
-- [ ] Populates: title pattern, slug, meta description, long description, brand + category taxonomy, image
-- [ ] Image sourcing: supplier DB where available, otherwise placeholder + manual-review flag
-- [ ] Queue-based (`CreateWooProductJob`) with retry + audit log
-- [ ] Draft-first vs immediate-publish workflow TBD in planning
+<!-- Documented v2 direction from original brief; needs milestone-level discussion via `/gsd-new-milestone` before becoming Active. -->
 
-**E. Bitrix24 CRM sync** (replaces itgalaxy plugin — one-way subset)
-- [ ] On order creation → create Deal + Contact + Company in Bitrix24
-- [ ] On customer registration → create/update Contact
-- [ ] Multiple deal pipelines supported
-- [ ] Dynamic field mapping — fetch `crm.deal.fields` / `crm.contact.fields` / `crm.company.fields`, map via Filament UI
-- [ ] Order notes synced to Deal comments
-- [ ] Bulk historical-order backfill via artisan command
-- [ ] Capture UTM parameters + GA Client ID on checkout → push to Bitrix custom fields
-- [ ] Audit log of every CRM push attempt (request + response + retry history)
+- **Phase 8 — Channel feeds:** Google Merchant Center, Google Ads sync, GA4 revenue, Meta catalog, Google Search Console per-product impressions
+- **Phase 9 — Customer automation:** abandoned-cart recovery via Bitrix24, back-in-stock alerts, price-drop alerts, review aggregation
+- **Phase 10 — AI agent framework:** pricing agent (competitor + GA + margin + stock → suggestions), ad optimisation agent, SEO/content agent
+- **Phase 11 — Forecasting & operational intelligence:** stock-planning agent, sales forecasting, supplier performance dashboard, true profitability per SKU
+- **Phase 12 — B2B & channel expansion:** trade customer pricing, quote request → Bitrix Deal, WhatsApp Business, AI product-finder, RAMS platform integration hook
 
-**F. Dashboard** (Filament admin)
-- [ ] Supplier sync status — last run, duration, updated/failed counts, per-SKU drill-down
-- [ ] Import issues — SKUs missing at supplier, pending products, products with missing cost/price
-- [ ] Competitor analysis — current prices per SKU, margin history chart, top deltas
-- [ ] Pricing rules — CRUD + effective-price preview
-- [ ] CRM push log — order/customer sync attempts, failures, retries
-- [ ] Failed jobs — Horizon integration
+### Out of Scope (confirmed after v1.50.1)
 
-**G. Cutover**
-- [ ] Parallel running with existing plugins for a monitored window
-- [ ] Disable Stock Updater + itgalaxy plugins only after Laravel sync proves stable
-- [ ] Handover docs for ops team
-
-### Out of Scope
-
-<!-- Explicit boundaries. Reasoning captured to prevent re-adding. -->
-
-- **Two-way CRM sync (Bitrix24 → Woo)** — itgalaxy plugin supports it but we're dropping that direction; no inbound Bitrix webhook
+- **Two-way CRM sync (Bitrix24 → Woo)** — reasoning held through v1; confirmed at cutover
 - **Coupon list sync** — itgalaxy feature we don't use
-- **Delayed CRM send via cron** — we push immediately on order/customer events
+- **Delayed CRM send via cron** — push on event is faster and simpler
 - **WooCommerce checkout/cart/frontend replacement** — Woo stays as shop frontend
 - **Customer-facing features** — this is an internal ops tool
-- **Multi-store support** — single store (meetingstore.co.uk) only for v1
-- **Manual overrides in Woo admin** — Laravel is source of truth; Woo admin changes will be overwritten on next sync (documented behaviour, not a bug)
+- **Multi-store support** — single store; reconsider if acquisition expands the estate
+- **Manual overrides in Woo admin propagating back** — Laravel is source of truth; `ProductOverride` pin columns are the supported escape hatch
 - **Roistat / Yandex Metrika analytics** — Russian analytics stack, unused
-- **Post-v1 tier features** (Merchant Center feeds, GA4 integration, AI agents, stock forecasting, B2B pricing) — documented in brief but explicitly deferred to Phases 8+
+- **Filament v4 upgrade** — defer until plugin ecosystem stabilises post-cutover
+- **Tailwind 4 migration** — coupled to Filament 4
+- **AI-generated product descriptions** — constraint respected through Phase 6; Phase 10 agent territory
+- **Rich product variation auto-creation** — simple products only in v1 per AUTO anti-feature
+- **Immediate-publish auto-create mode** — gated behind `config('product_auto_create.mode')` + Woo sandbox gate 2; defaults to draft-first
 
 ## Context
 
-**Why now:**
-1. itgalaxy plugin cannot be legally updated (procurement blocked by sanctions) — stuck on June 2024 v1.50.1 while upstream is v1.67.2; security + feature risk growing
-2. Stock Updater is a ~1,700-line single-file WP plugin — brittle, hard to extend
-3. Pricing tied to flat margin tiers — no rules per brand/category/vendor
-4. No unified dashboard — competitor data, sync issues, CRM pushes all live in different places
-5. Product creation is manual — new supplier SKUs published to Woo one at a time
+**Why now:** itgalaxy plugin cannot be legally updated (procurement sanctions — stuck June 2024 v1.50.1 while upstream is v1.67.2); Stock Updater is brittle 1,700-line single-file WP plugin; pricing tied to flat margin tiers with no rules; no unified dashboard; product creation manual.
+
+**Result:** v1 replaces both plugins with a modular-monolith Laravel app that owns data and emits domain events. Cutover framework is shipped; legacy plugins remain live until ops executes D-19 sequence and parity stays ≥99% over 7 days.
 
 **External systems:**
 
 | System | Purpose | Direction | Auth |
 |---|---|---|---|
-| `21stcav.com/api/index.php` | Central supplier SKU/price DB (updated daily) | Laravel ← API | JWT (`/generate_token.php`) |
-| WooCommerce REST API | Push products, prices, stock, content, images | Laravel → Woo | Consumer key/secret (to be generated) |
-| WooCommerce webhooks | Receive order + customer events | Woo → Laravel | HMAC signature |
-| Bitrix24 CRM REST | Push deals/contacts/companies | Laravel → Bitrix24 | Inbound webhook URL |
-| n8n competitor scraping | CSV files dropped in storage dir | Laravel reads disk | File-based |
+| `21stcav.com/api/index.php` | Central supplier SKU/price DB (updated daily) | Laravel ← API | JWT |
+| WooCommerce REST API | Push products, prices, stock, content, images | Laravel → Woo | Consumer key/secret |
+| WooCommerce webhooks | Receive order + customer events | Woo → Laravel | HMAC-SHA256 signature, verified + dedup'd |
+| Bitrix24 CRM REST | Push deals/contacts/companies (via `bitrix24/b24phpsdk ^1.10`) | Laravel → Bitrix24 | Inbound webhook URL |
+| n8n competitor scraping | CSV files dropped in `storage/app/competitors/incoming/` | Laravel reads disk | File-based, atomic `.tmp → rename` convention |
 
-**Hosting:** Same VPS as `meetingstore.co.uk` WooCommerce install. Likely subdomain `ops.meetingstore.co.uk`.
+**Hosting:** Same VPS as `meetingstore.co.uk` WooCommerce install. Subdomain `ops.meetingstore.co.uk`.
 
-**Relationship to existing 21CAV Rams2 platform:** Separate app, separate DB. No runtime coupling in v1. Future Phase 12 may add a RAMS integration hook for Meeting Store customers who are also 21CAV installation clients.
+**Relationship to existing 21CAV Rams2 platform:** Separate app, separate DB. No runtime coupling in v1. Phase 12 candidate: RAMS integration hook for Meeting Store customers who are also 21CAV installation clients.
+
+**Tech stack shipped (all verified v1.50.1):**
+- PHP 8.2+ (floor; 8.4 works); Laravel 12; Filament 3.3; Horizon (7 named queue supervisors)
+- MySQL 8 (`meetingstore_ops` + `meetingstore_ops_testing`); Redis 7 (phpredis extension)
+- `automattic/woocommerce ^3.1` (Woo REST); `bitrix24/b24phpsdk ^1.10` (Bitrix CRM — v1.10 pinned because 3.x needs PHP 8.4+ floor); `spatie/simple-excel ^3.9` (CSV ingest + export); `intervention/image ^3.11` (auto-create image pipeline); `spatie/laravel-permission ^6.0` + `bezhansalleh/filament-shield ^3.3` (RBAC); `spatie/laravel-activitylog ^4.12` + `rmsramos/activitylog ^2.0` (audit trail)
+- Pest 3 + PHPUnit 11; Deptrac 2 with dual-config sync (`depfile.yaml` + `deptrac.yaml`)
+
+**Test posture:** Phases 1-5 Feature suite was green at execution time (~780 tests passing). Phases 6-7 authored ~120 Feature tests but execution was MySQL-deferred in the code-executor sandbox — the `cutover:checklist` Gate 3 enforces running them online before `WOO_WRITE_ENABLED=true` flip.
 
 ## Constraints
 
-- **Tech stack**: Laravel 12, PHP 8.2+, Filament 3, Horizon + Redis queues, MySQL, Blade/Livewire via Filament, PHPUnit + Pest — fixed by user decision
-- **WooCommerce integration**: REST only, never direct WP DB writes — future channel expansion (Shopify, Amazon) depends on this discipline
-- **Event-driven sync**: Emit domain events from day one (`ProductPriceChanged`, `StockWentToZero`, `OrderCreated`) — future agents/feeds subscribe without touching core
-- **Audit everything**: Every sync, push, rule application stored with full context — required for future AI-agent phases
-- **Suggestions pattern**: Any data-changing feature writes to a `suggestions` table first when `auto_apply=false` — makes future agents trivial to bolt on
-- **Feed abstraction**: Build future Merchant Center feed as generic `FeedGenerator` interface so Meta/Bing/Amazon slot in
-- **Compliance**: itgalaxy plugin cannot be updated due to procurement/sanctions rules — the migration is partly compliance-driven, not just tech-debt cleanup
-- **Parity first**: Cutover must run in parallel with old plugins before they're disabled — data-loss risk is unacceptable
+- **Tech stack fixed** (Laravel 12 + PHP 8.2+ + Filament 3 + Horizon + Redis + MySQL + Pest); no breaking changes mid-v2
+- **WooCommerce integration: REST only, never direct WP DB writes** — Deptrac `WpDirectDb` layer architectural test enforces across Sync + CRM + Cutover domains
+- **Event-driven sync** — all cross-domain communication via `DomainEvent` + `ShouldDispatchAfterCommit`; correlation_id threads through Context + spatie LogBatch + queued jobs
+- **Audit everything** — every write hits `audit_log` (spatie activitylog); every outbound HTTP call hits `integration_events` via `IntegrationLogger`; every failure has a trace back to its origin webhook
+- **Suggestions-first for any data-changing feature** — 4 active producers (margin_change, crm_push_failed, new_product_opportunity, auto_create_failed); seeded stub applier pattern proven across phases
+- **Feed abstraction (FOUND-13)** — `FeedGenerator` contract stub exists; Phase 8 v2 slots channel feeds into this seam without core refactor
+- **Compliance** — itgalaxy replacement is partly compliance-driven; sanctions posture held by using Bitrix's own official SDK (not third-party plugins)
+- **Parity first** — cutover command framework allows operator to run in parallel with legacy plugins; ≥99% parity over 7 days before flipping `WOO_WRITE_ENABLED=true`
+- **Dual-YAML Deptrac sync** — Phase 5 05-05 lesson locked: both `depfile.yaml` and `deptrac.yaml` MUST be updated in lockstep when adding layers
+- **Shield:generate P5-F restoration protocol** — after every `shield:generate --all`, hand-written policies restored from git; PolicyTemplateIntegrityTest enforces `{{ Placeholder }}` ban
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Laravel owns all product/pricing/CRM data; Woo is display layer only | Enables future multi-channel expansion without core rewrite | — Pending |
-| One-way CRM sync (Woo → Bitrix24); no inbound webhook | itgalaxy's two-way sync is the feature we're most willing to drop; reduces complexity | — Pending |
-| Deal + Contact + Company entity mode (fixed, not configurable for v1) | Covers 100% of current usage; configurability adds UI burden for zero real benefit | — Pending |
-| Most-specific pricing rule wins (no stacking) | Predictable, auditable, matches how the pricing manager thinks about rules | — Pending |
-| Capture UTM + GA Client ID; skip Roistat/Yandex Metrika | UK market; Russian analytics stack unused | — Pending |
-| Same VPS as WooCommerce install, `ops.meetingstore.co.uk` subdomain | Keeps latency to Woo API low; reuses existing infra | — Pending |
-| Laravel 12 + Filament 3 + Horizon stack (fixed) | User preference; matches existing 21CAV Laravel ecosystem | — Pending |
-| Domain events + audit log + suggestions pattern from day one | Non-negotiable if Phase 10 AI agents are to compound on v1 data | — Pending |
+| Laravel owns all product/pricing/CRM data; Woo is display layer only | Enables future multi-channel expansion without core rewrite | ✓ Good (v1.50.1) — proved via Woo REST-only constraint honoured across 85 requirements |
+| One-way CRM sync (Woo → Bitrix24); no inbound webhook | itgalaxy's two-way sync is the feature we're most willing to drop; reduces complexity | ✓ Good (v1.50.1) — Bitrix push path shipped with URL-based image pass-through, dedup via BitrixEntityMap + UF_CRM_WOO_ORDER_ID |
+| Deal + Contact + Company entity mode fixed | Covers 100% of current usage | ✓ Good (v1.50.1) — no configurability burden shipped |
+| Most-specific pricing rule wins (no stacking) | Predictable, auditable | ✓ Good (v1.50.1) — 50-triple golden fixture passes to the penny |
+| Capture UTM + GA Client ID; skip Roistat/Yandex Metrika | UK market; Russian analytics stack unused | ✓ Good (v1.50.1) — 6 Bitrix custom fields (UF_CRM_WOO_UTM_*) on Deal + Contact |
+| Same VPS, `ops.meetingstore.co.uk` subdomain | Keeps latency to Woo API low | — Pending (ops deploys post-cutover) |
+| Laravel 12 + Filament 3 + Horizon stack fixed | User preference; matches existing 21CAV ecosystem | ✓ Good (v1.50.1) — no stack changes mid-build |
+| Domain events + audit log + suggestions pattern from day one | Non-negotiable for Phase 10 AI agent compound-ability | ✓ Good (v1.50.1) — 4 real suggestion producers shipped; FeedGenerator contract stubbed for Phase 8 |
+| Dry-run-default CLI pattern | Protect against accidental prod writes | ✓ Good (v1.50.1) — pattern inherited by sync:supplier, pricing:recompute, bitrix:backfill-orders, competitor:watch, cutover:* commands |
+| Listener-based Phase 2 extension (never modify SyncChunkJob) | Preserves Phase 2 regression test scope | ✓ Good (v1.50.1) — Phase 6 pin enforcement via ApplyPinsDuringSync listener verified by D-11 grep test |
+| Pitfall P5-F shield:generate restoration protocol | Shield 3.9.10 overwrites hand-written policies | ✓ Good (v1.50.1) — executed clean on Phase 4 + Phase 5 + Phase 6 |
+| Phase 6 `NewProductOpportunityApplier` move from Competitor → ProductAutoCreate | Closes Phase 5→6 loop with one-way arrow preserved | ✓ Good (v1.50.1) — old file deleted, new registration in AppServiceProvider verified |
+| Dual-config Deptrac sync (depfile.yaml + deptrac.yaml) | Phase 5 lesson: stale config breaks layer tests silently | ✓ Good (v1.50.1) — 13 domain layers verified in both configs at audit time |
 
-## Open Items (for phase-level planning)
+## Cutover Runbook Reference
 
-Flagged in PROJECT-BRIEF.md — resolve at `/gsd-discuss-phase` or `/gsd-plan-phase` for the relevant phase, not here:
+Full runbook at `docs/ops/cutover-handover.md`. Key invocation:
 
-- Woo → Laravel webhook security (HMAC secret management)
-- Image handling for auto-created products (what does the supplier DB actually return?)
-- Draft vs immediate-publish for new products
-- Rollback strategy if sync misbehaves in production
-- Retention policy for audit logs and competitor history
-- User roles (admin only, or separate sales/ops roles?)
-- Email notification distribution list (keep current, or change?)
+```bash
+php artisan cutover:checklist
+```
+
+Exit code 1 until all gates PASS. Wraps all 3 operator carry-forward gates plus the D-19 cutover runbook steps. See `docs/ops/cutover-handover.md` Appendix A for the canonical sequence.
 
 ## Evolution
 
-This document evolves at phase transitions and milestone boundaries.
-
-**After each phase transition** (via `/gsd-transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
-
-**After each milestone** (via `/gsd-complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+This document evolves at milestone boundaries. Next evolution: `/gsd-new-milestone` for v2 scope.
 
 ---
-*Last updated: 2026-04-18 after initialization*
+*Last updated: 2026-04-24 after v1.50.1 milestone*

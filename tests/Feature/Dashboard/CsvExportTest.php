@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Dashboard\Services\CsvExportWriter;
+use App\Filament\Exports\CsvExportWriter;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 

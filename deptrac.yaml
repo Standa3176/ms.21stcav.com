@@ -48,12 +48,21 @@ parameters:
           regex: app/Domain/ProductAutoCreate/.*
     # Phase 7 Plan 01 scaffolded Dashboard models/policies; Plan 02 activates the
     # SnapshotAggregator + widgets which aggregate across Sync + CRM + Competitor
-    # + Products + Suggestions + Alerting. Plan 07-06 will finalise; this is the
-    # ship-with-the-dependency registration (07-01 SUMMARY §Known concerns item 3).
+    # + Products + Suggestions + Alerting. Plan 07-06 finalises with
+    # DeptracDashboardLayerTest (positive + 2 negatives + dual-file grep).
     - name: Dashboard
       collectors:
         - type: directory
           regex: app/Domain/Dashboard/.*
+    # Phase 7 Plan 05 — Cutover domain (6 artisan commands + 7 services for the
+    # v1 legacy-plugin → Laravel migration). Plan 07-06 registers the layer
+    # (Plan 07-05 deferred registration per planner permission). One-way arrow:
+    # no other layer depends on Cutover. DeptracCutoverLayerTest enforces.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Cutover
+      collectors:
+        - type: directory
+          regex: app/Domain/Cutover/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -148,8 +157,23 @@ parameters:
     #                       sync_diffs / csv_parse_errors / competitor_ingest_runs —
     #                       these are read-only metrics reads, not WP direct writes
     #                       (-WpDirectDb ban on Sync is about Woo writes).
-    # Plan 07-06 finalises the allow-list; this is the ship-with-the-dependency
-    # registration mentioned in 07-01 SUMMARY §Known concerns item 3.
+    # Plan 07-06 finalises the allow-list; DeptracDashboardLayerTest (dual-file
+    # grep + positive + 2 negative violators) enforces one-way arrow permanently.
     Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb]
+    # Phase 7 Plan 05/06 — Cutover orchestrates the v1 legacy-plugin migration.
+    # The 6 commands + 7 services read every prior domain (divergence scan walks
+    # Products via Woo comparison; populate-overrides writes ProductOverride;
+    # drill-rollback reads WOO_WRITE_ENABLED flag; disable-legacy-plugins uses
+    # WooClient; checklist aggregates gates from every phase). Same one-way-arrow
+    # contract as Dashboard: no other layer has Cutover in its allow-list.
+    # WpDirectDb is IN the allow-list but narrowly scoped: OverridePopulator uses
+    # DB::transaction() around the local meetingstore_ops DB writes to keep the
+    # per-product override upsert atomic (same pattern as Pricing's
+    # SimulatedImpactCalculator in Plan 03-03). LegacyPluginDisabler is
+    # separately static-scan-tested (Plan 07-05 Test DL4) to contain zero DB::
+    # facade references — the WpDirectDb ban on WORDPRESS writes is preserved.
+    # Feeds is explicitly EXCLUDED (v2 channel-feed domain).
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Cutover:      [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, Dashboard, WpDirectDb]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover]

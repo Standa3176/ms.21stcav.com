@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Dashboard\Jobs\QueuedCsvExportJob;
+use App\Filament\Exports\QueuedCsvExportJob;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Filament\Resources\ProductResource;
 use App\Mail\QueuedCsvExportMail;

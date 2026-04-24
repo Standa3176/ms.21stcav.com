@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Dashboard\Jobs;
+namespace App\Filament\Exports;
 
-use App\Domain\Dashboard\Services\CsvExportWriter;
 use App\Mail\QueuedCsvExportMail;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -19,6 +18,12 @@ use Illuminate\Support\Facades\URL;
 
 /**
  * Phase 7 Plan 03 — queued CSV export job (D-06, 10k-100k row path).
+ *
+ * Moved from App\Domain\Dashboard\Jobs in Plan 07-06 (Rule 1 — Bug): same
+ * architectural reason as CsvExportWriter — this job is cross-cutting
+ * export infrastructure consumed by every Filament Resource, not a
+ * dashboard-layer-specific job. Now lives under app/Filament/Exports/
+ * outside every Deptrac layer.
  *
  * Runs on the `sync-bulk` Horizon queue (Phase 1 FOUND-09 supervisor). The
  * browser path (<10k rows) streams inline; this job handles the slow path

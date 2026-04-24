@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Actions;
 
-use App\Domain\Dashboard\Jobs\QueuedCsvExportJob;
+use App\Filament\Exports\QueuedCsvExportJob;
 use Filament\Notifications\Notification;
 use Filament\Tables\Actions\BulkAction;
 use Illuminate\Database\Eloquent\Collection;

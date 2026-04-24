@@ -52,6 +52,16 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/Dashboard/.*
+    # Phase 7 Plan 05 — Cutover domain (6 artisan commands + 7 services for the
+    # v1 legacy-plugin → Laravel migration: snapshot-woo-db / divergence-scan /
+    # populate-overrides / drill-rollback / disable-legacy-plugins / checklist).
+    # One-way arrow: other layers MUST NOT depend on Cutover. DeptracCutoverLayerTest
+    # (Plan 07-06) enforces this with positive + 2 negative it-blocks + dual-file grep.
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Cutover
+      collectors:
+        - type: directory
+          regex: app/Domain/Cutover/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -133,5 +143,21 @@ parameters:
     # (one-way arrow: other domains MUST NOT depend on Dashboard).
     # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb]
+    # Phase 7 Plan 05/06 — Cutover orchestrates the v1 legacy-plugin migration.
+    # The 6 commands + 7 services read every prior domain (divergence scan walks
+    # Products; populate-overrides writes ProductOverride; drill-rollback reads
+    # WOO_WRITE_ENABLED flag from Foundation; disable-legacy-plugins uses WooClient;
+    # checklist aggregates gates from every phase). Same one-way-arrow contract
+    # as Dashboard: no other layer has Cutover in its allow-list.
+    # WpDirectDb is IN the allow-list but narrowly scoped: OverridePopulator uses
+    # DB::transaction() around the local meetingstore_ops DB writes to keep the
+    # per-product override upsert atomic. This is the same pattern as Pricing
+    # (SimulatedImpactCalculator in Plan 03-03). LegacyPluginDisabler is
+    # separately static-scan-tested (Plan 07-05 Test DL4) to contain zero DB::
+    # facade references — the WpDirectDb ban on WORDPRESS writes is preserved.
+    # Feeds is explicitly EXCLUDED — Feeds is the forward-compat v2 channel-feed
+    # domain; no Cutover command reads Feeds scope.
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Cutover:      [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, Dashboard, WpDirectDb]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover]

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Dashboard\Services;
+namespace App\Filament\Exports;
 
 use Illuminate\Support\Str;
 use Spatie\SimpleExcel\SimpleExcelWriter;
@@ -10,6 +10,15 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Phase 7 Plan 03 — CSV export writer service (D-06).
+ *
+ * Moved from App\Domain\Dashboard\Services in Plan 07-06 (Rule 1 — Bug):
+ * previous namespace placed this cross-cutting CSV-export infrastructure
+ * inside the Dashboard Deptrac layer, which tripped the one-way arrow for
+ * every Filament Resource that `use HasExportableTable`. The service is
+ * pure infrastructure (no dashboard-specific semantics) and now lives
+ * under app/Filament/Exports/ — outside every Deptrac layer, free for
+ * cross-domain import. Plan 07-06 re-run of deptrac analyse confirms 0
+ * violations introduced by this relocation.
  *
  * Two write modes:
  *   - streamDownload(): pipe rows directly to the browser via spatie/simple-excel

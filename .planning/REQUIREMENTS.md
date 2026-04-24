@@ -113,7 +113,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [x] **CUT-03**: `wp_unschedule_event` commands remove the Stock Updater + itgalaxy plugin crons before Laravel writes are enabled
 - [x] **CUT-04**: A Woo DB snapshot is taken before `WOO_WRITE_ENABLED=true` is flipped
 - [x] **CUT-05**: A rollback runbook + drill (flip flag back to `false`, restore snapshot if needed) is rehearsed before go-live
-- [ ] **CUT-06**: Ops handover docs cover: how to resume a sync, how to replay a failed CRM push, how to refresh Bitrix schema, how to interpret the notification centre
+- [x] **CUT-06**: Ops handover docs cover: how to resume a sync, how to replay a failed CRM push, how to refresh Bitrix schema, how to interpret the notification centre
 - [x] **CUT-07**: Stock Updater + itgalaxy Bitrix24 plugins are disabled in WordPress only after a clean monitored parallel-run window passes the parity threshold
 
 ## v2 Requirements
@@ -265,7 +265,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | CUT-03 | Phase 7 | Complete |
 | CUT-04 | Phase 7 | Complete |
 | CUT-05 | Phase 7 | Complete |
-| CUT-06 | Phase 7 | Pending |
+| CUT-06 | Phase 7 | Complete |
 | CUT-07 | Phase 7 | Complete |
 
 **Coverage:**

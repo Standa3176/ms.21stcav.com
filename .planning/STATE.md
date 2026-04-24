@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
-status: executing
-stopped_at: Completed 07-05-cutover-commands-PLAN.md
-last_updated: "2026-04-24T10:06:05.887Z"
+status: verifying
+stopped_at: Completed 07-06-PLAN.md — Phase 7 + v1 milestone complete
+last_updated: "2026-04-24T10:53:03.473Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 38
-  completed_plans: 37
-  percent: 97
+  completed_plans: 38
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 
 Phase: 07 (Dashboard Polish + Cutover) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-24
 
 Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG — Feature-tier MySQL deferral carries forward to Phase 7 cutover prep)
@@ -87,6 +87,7 @@ Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG
 | Phase 07 P03 | 11m | 2 tasks | 20 files |
 | Phase 07-dashboard-polish-cutover P04 | 30 | 2 tasks | 16 files |
 | Phase 07 P05 | 19m | 3 tasks | 19 files |
+| Phase 07 P06 | 25 | 4 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -198,6 +199,9 @@ Recent decisions affecting current work:
 - [Phase 07-dashboard-polish-cutover]: Weekly digest empty-recipient path exits 0 with warning (no false-positive failed-job alert)
 - [Phase 07]: Plan 07-05 ships 6 artisan cutover commands (snapshot-woo-db, divergence-scan, populate-overrides, drill-rollback, disable-legacy-plugins, checklist); D-15 merge-never-clear-pins + D-17/D-18 env-gate --live + D-19 sequence + D-20/D-21 checklist integration. Deptrac Cutover-layer registration deferred to 07-06 per planner permission.
 - [Phase 07]: sync_diffs schema reality (no field/laravel_value/live_value/product_id/detected_at columns) drove payload-JSON encoding — {product_id,sku,field,laravel,live,pin_column} fits existing payload JSON column; no migration required
+- [Phase 07]: Plan 07-06: Relocated CsvExportWriter + QueuedCsvExportJob from app/Domain/Dashboard to app/Filament/Exports to preserve Dashboard one-way-arrow Deptrac contract (Rule 1 fix of 18 pre-existing violations).
+- [Phase 07]: Plan 07-06: Cutover Deptrac allow-list includes WpDirectDb for OverridePopulator local-DB transactions (same narrow scope as Pricing's SimulatedImpactCalculator); LegacyPluginDisabler DL4 static scan locks the WP-write side of SYNC-04.
+- [Phase 07]: Plan 07-06: 07-VERIFICATION.md ships with FLAG verdict (same Phase 6 pattern) — all architectural gates green; ~120 Feature-tier Pest cases MySQL-deferred to operator pre-cutover via cutover:checklist feature-suite gate.
 
 ### Pending Todos
 
@@ -217,6 +221,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-24T10:05:53.301Z
-Stopped at: Completed 07-05-cutover-commands-PLAN.md
+Last session: 2026-04-24T10:52:47.498Z
+Stopped at: Completed 07-06-PLAN.md — Phase 7 + v1 milestone complete
 Resume file: None

@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Intelligence + B2B
-status: roadmapped
-stopped_at: Roadmap created for v2.0 (Phases 8-15) — ready for `/gsd-plan-phase 8`
-last_updated: "2026-04-24T20:34:06.357Z"
+status: planning
+stopped_at: Phase 8 context gathered
+last_updated: "2026-04-24T22:55:37.174Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 8
@@ -36,11 +36,13 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 **v2 build order:** 8 (C4) ∥ 9 (E1) → 10 (C1) → 11 (E2) → 12 (C3) → 13 (E3) → 14 (E4) → 15 (C2 — LATE, gates on v1 cutover + ≥4 weeks UTM data)
 
 **v2 active research flags:**
+
 - Phase 8: YES — Prism API surface, Langfuse self-hosted Docker, MCP PHP SDK, shield:safe-regenerate design
 - Phase 10: YES — prompt design, deterministic temp=0 calibration, token budget across input contexts
 - Phase 13: YES — WABA setup, Meta OBO BSP deprecation 2026, 24h window state machine
 
 **Top 3 operator decisions blocking ANY v2 phase (per research/SUMMARY.md):**
+
 1. Anthropic monthly budget ceiling — proposal: £200/month default
 2. Self-hosted Langfuse vs Cloud — proposal: self-hosted Docker (EU residency)
 3. Catalogue size sanity-check — assumption: ~5k SKUs (drives E4 FULLTEXT vs vector DB)
@@ -108,14 +110,17 @@ None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 ### Blockers/Concerns
 
 **Operator decisions to confirm before Phase 8 plan 01 lands:**
+
 - Anthropic budget ceiling sign-off (proposal: £200/month)
 - Self-hosted Langfuse Docker provisioning on ops VPS
 
 **Carry-forward from v1.50.1 (operator-side, not v2 dev work):**
+
 - v1 cutover execution per `docs/ops/cutover-handover.md` Appendix A
 - 3 operator carry-forward gates: supplier API probe, Woo sandbox image URL pass-through re-validation, feature-tier Pest suite run against online MySQL
 
 **Per-phase operator questions (per research/SUMMARY.md operator decisions tracker):**
+
 - Phase 9 (E1): trade customer-group seed list (Trade / Reseller / Education / NHS proposed); display strategy `retail` vs `hidden`
 - Phase 11 (E2): quote PDF branding template ownership; customer signature mechanism; Bitrix Deal line-item modelling for 30-line quotes
 - Phase 13 (E3): WABA ownership confirmation; template catalogue scope; Meta OBO deprecation verification
@@ -124,6 +129,6 @@ None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 
 ## Session Continuity
 
-Last session: 2026-04-24T20:34:06.357Z
-Stopped at: Roadmap created for v2.0 milestone (Phases 8-15) — 56 v2 REQ-IDs mapped, 100% coverage
+Last session: 2026-04-24T22:55:37.163Z
+Stopped at: Phase 8 context gathered
 Resume: `/gsd-plan-phase 8` (begin C4 Agent Framework planning; research flag YES — run `/gsd-research-phase 8` first if research-before-plan workflow enabled)

@@ -8,6 +8,9 @@ use App\Domain\ProductAutoCreate\Services\FieldPinManager;
 use App\Domain\Products\Filament\Resources\ProductResource\Pages;
 use App\Domain\Products\Filament\Resources\ProductResource\RelationManagers\VariantsRelationManager;
 use App\Domain\Products\Models\Product;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use Filament\Forms\Components\Grid;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
@@ -21,6 +24,7 @@ use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Filament\Resources\Resource;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Phase 2 Plan 02-04 — D-01 expansion Product Resource.
@@ -34,6 +38,8 @@ use Filament\Resources\Resource;
  */
 class ProductResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = Product::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
@@ -179,7 +185,48 @@ class ProductResource extends Resource
                 ]),
                 TernaryFilter::make('is_custom_ms')->label('Custom-MS'),
                 TernaryFilter::make('exclude_from_auto_update')->label('Excluded from auto-update'),
+            ])
+            // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+            ->headerActions([
+                SavedFilterAction::buildActionGroup(static::getSlug()),
+            ])
+            // Phase 7 Plan 03 — DASH-04 CSV export bulk actions.
+            // HasExportableTable streams <10k inline; QueueCsvExportAction
+            // dispatches QueuedCsvExportJob for 10k-100k; >100k hard-fails.
+            ->bulkActions([
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['sku', 'name'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var Product $record */
+        return ($record->sku ?? '(no sku)').' · '.($record->name ?? '(no name)');
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Product $record */
+        return [
+            'Status' => $record->status ?? '—',
+            'Stock' => $record->stock_status ?? '—',
+            'Type' => $record->type ?? '—',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('edit', ['record' => $record]);
     }
 
     public static function getRelations(): array

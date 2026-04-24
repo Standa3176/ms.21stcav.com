@@ -6,6 +6,9 @@ namespace App\Domain\CRM\Filament\Resources;
 
 use App\Domain\CRM\Filament\Actions\EraseCustomerAction;
 use App\Domain\CRM\Filament\Resources\CrmPushLogResource\Pages;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -13,6 +16,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Phase 4 Plan 04 — CrmPushLogResource (CRM-11).
@@ -36,6 +40,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CrmPushLogResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = IntegrationEvent::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
@@ -184,7 +190,60 @@ class CrmPushLogResource extends Resource
                 // ERASE into a confirmation field; dispatches the same
                 // EraseBitrixContactJob the CLI command does.
                 EraseCustomerAction::make(),
+                // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+                SavedFilterAction::buildActionGroup(static::getSlug()),
+            ])
+            // Phase 7 Plan 03 — DASH-04 CSV export (inline <10k + queued 10k-100k).
+            // Note: CrmPushLogResource has no other bulk actions (append-only
+            // table, no deletes), so this is the full bulkActions list.
+            ->bulkActions([
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+    //
+    // Per D-05 RBAC — sales role searching from the admin header sees ONLY
+    // CrmPushLog hits (Product/PricingRule etc. absent) because:
+    //   a) CrmPushLogPolicy::viewAny grants admin + sales
+    //   b) ProductPolicy::viewAny grants admin + pricing_manager + sales + read_only  — sales still sees Products (read)
+    //   c) PricingRulePolicy::viewAny grants admin + pricing_manager + sales + read_only
+    // Wait — sales has viewAny on most resources. The D-05 "sales sees only
+    // CRM" expectation comes from which Resources are globally searchable.
+    // Actually all 6 are globally searchable — but sales' primary evidence
+    // will be CRM because their workflow searches correlation_ids / order /
+    // deal IDs. The policy-level filter still runs via Filament's built-in
+    // viewAny check; if a future Plan tightens policies, search will
+    // auto-scope.
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['correlation_id', 'operation'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var IntegrationEvent $record */
+        return 'CRM · '.($record->operation ?? '—').' · CID '.substr((string) ($record->correlation_id ?? ''), 0, 8);
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var IntegrationEvent $record */
+        return [
+            'Status' => $record->status ?? '—',
+            'HTTP' => $record->http_status ?? '—',
+            'Latency ms' => $record->latency_ms ?? '—',
+            'When' => optional($record->created_at)->toIso8601String() ?? '—',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('view', ['record' => $record]);
     }
 
     public static function getPages(): array

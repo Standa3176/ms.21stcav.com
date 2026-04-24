@@ -7,15 +7,21 @@ namespace App\Domain\Suggestions\Filament\Resources;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 class SuggestionResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = Suggestion::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-inbox';
@@ -245,7 +251,47 @@ class SuggestionResource extends Resource
                             ->body('Check CRM Push Log after a few seconds for the retry result.')
                             ->send();
                     }),
+            ])
+            // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+            ->headerActions([
+                SavedFilterAction::buildActionGroup(static::getSlug()),
+            ])
+            // Phase 7 Plan 03 — DASH-04 CSV export (inline <10k + queued 10k-100k).
+            ->bulkActions([
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['kind', 'correlation_id'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var Suggestion $record */
+        return '['.($record->kind ?? '—').'] · '.($record->status ?? '—');
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Suggestion $record */
+        return [
+            'Kind' => $record->kind ?? '—',
+            'Status' => $record->status ?? '—',
+            'Proposed' => optional($record->proposed_at)->diffForHumans() ?? '—',
+            'CID' => substr((string) ($record->correlation_id ?? ''), 0, 8),
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('view', ['record' => $record]);
     }
 
     public static function getPages(): array

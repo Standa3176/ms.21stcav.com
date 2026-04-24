@@ -6,6 +6,9 @@ namespace App\Domain\Pricing\Filament\Resources;
 
 use App\Domain\Pricing\Filament\Resources\PricingRuleResource\Pages;
 use App\Domain\Pricing\Models\PricingRule;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -19,6 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Phase 3 Plan 03 — PricingRuleResource (PRCE-02, PRCE-08, PRCE-09).
@@ -37,6 +41,8 @@ use Filament\Tables\Table;
  */
 class PricingRuleResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = PricingRule::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-scale';
@@ -190,10 +196,49 @@ class PricingRuleResource extends Resource
                     ->authorize(fn (PricingRule $record): bool => auth()->user()?->can('update', $record) ?? false)
                     ->url(fn (PricingRule $record): string => static::getUrl('simulated-impact', ['record' => $record])),
             ])
+            // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+            ->headerActions([
+                SavedFilterAction::buildActionGroup(static::getSlug()),
+            ])
             ->bulkActions([
                 DeleteBulkAction::make()
                     ->authorize(fn (): bool => auth()->user()?->hasAnyRole(['admin', 'pricing_manager']) ?? false),
+                // Phase 7 Plan 03 — DASH-04 CSV export (inline + queued).
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['scope'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var PricingRule $record */
+        return 'Rule #'.$record->id.' · '.($record->scope ?? '—');
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var PricingRule $record */
+        return [
+            'Scope' => $record->scope ?? '—',
+            'Margin' => $record->margin_basis_points !== null
+                ? number_format($record->margin_basis_points / 100, 2).'%'
+                : '—',
+            'Priority' => $record->priority ?? '—',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('edit', ['record' => $record]);
     }
 
     public static function getPages(): array

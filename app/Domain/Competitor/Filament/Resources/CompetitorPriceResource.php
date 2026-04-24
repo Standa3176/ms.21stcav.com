@@ -7,6 +7,9 @@ namespace App\Domain\Competitor\Filament\Resources;
 use App\Domain\Competitor\Filament\Resources\CompetitorPriceResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use Filament\Forms\Components\DatePicker;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
@@ -14,6 +17,7 @@ use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Phase 5 Plan 04a — CompetitorPriceResource (COMP-05/COMP-10 surface).
@@ -30,6 +34,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 class CompetitorPriceResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = CompetitorPrice::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-pound';
@@ -99,7 +105,53 @@ class CompetitorPriceResource extends Resource
 
                         return $q;
                     }),
+            ])
+            // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+            ->headerActions([
+                SavedFilterAction::buildActionGroup(static::getSlug()),
+            ])
+            // Phase 7 Plan 03 — DASH-04 CSV export (inline <10k + queued 10k-100k).
+            // competitor_prices has no other bulk actions (COMP-07 immutable history).
+            ->bulkActions([
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['sku'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var CompetitorPrice $record */
+        $competitor = $record->competitor?->name ?? '?';
+
+        return ($record->sku ?? '—').' @ '.$competitor;
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var CompetitorPrice $record */
+        return [
+            'Gross' => $record->price_pennies_gross !== null
+                ? '£'.number_format($record->price_pennies_gross / 100, 2)
+                : '—',
+            'Ex VAT' => $record->price_pennies_ex_vat !== null
+                ? '£'.number_format($record->price_pennies_ex_vat / 100, 2)
+                : '—',
+            'Recorded' => optional($record->recorded_at)->diffForHumans() ?? '—',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('index');
     }
 
     public static function getPages(): array

@@ -8,6 +8,9 @@ use App\Domain\ProductAutoCreate\Filament\Resources\AutoCreateReviewResource\Pag
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Models\AutoCreateRejection;
 use App\Domain\Products\Models\Product;
+use App\Filament\Actions\QueueCsvExportAction;
+use App\Filament\Actions\SavedFilterAction;
+use App\Filament\Concerns\HasExportableTable;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -25,6 +28,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * Phase 6 Plan 04 — Auto-Create Review Resource (AUTO-06, D-09, D-06).
@@ -69,6 +73,8 @@ use Illuminate\Database\Eloquent\Collection;
  */
 class AutoCreateReviewResource extends Resource
 {
+    use HasExportableTable;
+
     protected static ?string $model = Product::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
@@ -480,6 +486,15 @@ class AutoCreateReviewResource extends Resource
                                 ->send();
                         }),
                 ]),
+                // Phase 7 Plan 03 — DASH-04 CSV export (inline <10k + queued 10k-100k).
+                // Kept OUTSIDE the BulkActionGroup so the export appears as a
+                // first-class bulk action rather than buried in the approve/reject menu.
+                static::getExportBulkAction(),
+                QueueCsvExportAction::make(static::class),
+            ])
+            // Phase 7 Plan 03 — DASH-04 saved-filter header action (per-user).
+            ->headerActions([
+                SavedFilterAction::buildActionGroup(static::getSlug()),
             ])
             ->emptyStateHeading('No products awaiting review')
             ->emptyStateDescription('Auto-create drafts appear here when the supplier sync detects new SKUs. Configure skip rules to filter out unwanted drafts before they reach the inbox.')
@@ -498,6 +513,42 @@ class AutoCreateReviewResource extends Resource
     {
         // Products are created by CreateWooProductJob — not from UI.
         return false;
+    }
+
+    // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────
+    //
+    // Scoped to review-inbox statuses via getEloquentQuery above, so global
+    // search results here show ONLY auto-create drafts (not already-published
+    // products — those come from ProductResource).
+
+    /** @return array<int, string> */
+    public static function getGloballySearchableAttributes(): array
+    {
+        return ['sku', 'name'];
+    }
+
+    public static function getGlobalSearchResultTitle(Model $record): string
+    {
+        /** @var Product $record */
+        return ($record->sku ?? '—').' · '.($record->name ?? '(no name)');
+    }
+
+    /** @return array<string, string|int|null> */
+    public static function getGlobalSearchResultDetails(Model $record): array
+    {
+        /** @var Product $record */
+        return [
+            'Status' => $record->auto_create_status ?? '—',
+            'Completeness' => $record->completeness_score !== null
+                ? $record->completeness_score.'/100'
+                : '—',
+            'Image review' => $record->requires_manual_image_review ? 'Yes' : 'No',
+        ];
+    }
+
+    public static function getGlobalSearchResultUrl(Model $record): string
+    {
+        return static::getUrl('edit', ['record' => $record]);
     }
 
     /** @return array<string, string> */

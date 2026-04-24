@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-02-home-dashboard-widgets-PLAN.md
-last_updated: "2026-04-24T09:02:22.648Z"
+stopped_at: Completed 07-03-global-search-csv-saved-filters-PLAN.md
+last_updated: "2026-04-24T09:17:00.000Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 38
-  completed_plans: 34
-  percent: 89
+  completed_plans: 35
+  percent: 92
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 07 (Dashboard Polish + Cutover) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-24
 
@@ -84,6 +84,7 @@ Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG
 | Phase 06-product-auto-create P06 | 14m | 2 tasks | 4 files |
 | Phase 07 P01 | 22m | 3 tasks | 16 files |
 | Phase 07 P02 | 9m | 2 tasks | 21 files |
+| Phase 07 P03 | 11m | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,10 @@ Recent decisions affecting current work:
 - [Phase 07]: Dashboard Deptrac layer shipped in 07-02 (not deferred to 07-06) per ship-with-the-dependency rule; allow-list covers all prior domains + WpDirectDb for read-only metrics queries.
 - [Phase 07]: CRM push success rate reads from integration_events (channel='bitrix') — no dedicated crm_push_logs table exists; CrmPushLogResource already binds to IntegrationEvent from Phase 4.
 - [Phase 07]: Custom home-dashboard.blade.php skipped — Filament's default Dashboard view renders 9-widget 3-column grid correctly via getWidgets()+getColumns().
+- [Phase 07]: Plan 07-03: QueuedCsvExportJob uses \$this->onQueue('sync-bulk') in constructor (PHP 8.4 trait-collision guard — NEVER public string \$queue); CsvExportWriter uses explicit unset(\$writer) before each return to force SimpleExcelWriter flush (Pitfall P2-A).
+- [Phase 07]: Plan 07-03: HasExportableTable trait + SavedFilterAction Filament action shared across all 6 Resources — one-line opt-in for future Resources; app/Filament/* is cross-cutting (not a Deptrac-tracked layer).
+- [Phase 07]: Plan 07-03: CrmPushLog global search attributes [correlation_id, operation] instead of plan-sketched [correlation_id, woo_order_id, bitrix_deal_id] — the latter live inside request_body JSON (no top-level indexed columns); operators search by correlation_id in practice.
+- [Phase 07]: Plan 07-03: 4 Pest Feature test files (30 cases total) authored; MySQL + PHP CLI + Deptrac all deferred in execution environment (same precedent as Phase 6 + 07-01 + 07-02). Phase 7 Plan 06 verifier backlog now = 12 Phase 7 Feature files.
 
 ### Pending Todos
 
@@ -205,6 +210,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-24T09:02:22.634Z
-Stopped at: Completed 07-02-home-dashboard-widgets-PLAN.md
+Last session: 2026-04-24T09:17:00.000Z
+Stopped at: Completed 07-03-global-search-csv-saved-filters-PLAN.md
 Resume file: None

@@ -155,7 +155,7 @@ Plans:
 Plans:
 - [x] 07-01-data-model-foundation-PLAN.md — 3 migrations (add_receives_weekly_digest_to_alert_recipients + create_dashboard_snapshots + create_user_saved_filters) + config/cutover.php + config/dashboard.php + 2 Dashboard models + 2 policies + factories + PolicyTemplateIntegrityTest floor bump + RolePermissionSeeder whereIn (DASH-04, DASH-05 foundation)
 - [x] 07-02-home-dashboard-widgets-PLAN.md — HomeDashboardPage + 9 widgets (LastSyncRun / CrmPushSuccessRate / CompetitorFreshness / PendingReviews / ImportIssues / HorizonFailedJobs / SyncDiffsParity / ProductCatalogueHealth / WeeklyReportStatus) + SnapshotAggregator + DashboardRefreshCommand (every 5 min) + PruneDashboardSnapshotsCommand (daily 03:50) + HorizonLinkNavigationItem (DASH-01, DASH-02)
-- [ ] 07-03-global-search-csv-saved-filters-PLAN.md — getGloballySearchableAttributes() on 6 Resources (Product/PricingRule/CrmPushLog/Suggestion/CompetitorPrice/AutoCreateReview) + HasExportableTable trait + CsvExportWriter (spatie/simple-excel) + QueuedCsvExportJob on sync-bulk + QueuedCsvExportMail + SavedFilterAction save/apply/delete group (DASH-03, DASH-04)
+- [x] 07-03-global-search-csv-saved-filters-PLAN.md — getGloballySearchableAttributes() on 6 Resources (Product/PricingRule/CrmPushLog/Suggestion/CompetitorPrice/AutoCreateReview) + HasExportableTable trait + CsvExportWriter (spatie/simple-excel) + QueuedCsvExportJob on sync-bulk + QueuedCsvExportMail + SavedFilterAction save/apply/delete group (DASH-03, DASH-04)
 - [ ] 07-04-notification-centre-weekly-digest-PLAN.md — NotificationCentrePage at /admin/notifications with 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq) + NotificationCentreAggregator + WeeklyDigestComposer 5 sections + reports:weekly-digest command (Monday 07:00 London) + WeeklyDigestMail HTML+text + AlertRecipientResource receives_weekly_digest toggle (DASH-05, DASH-06)
 - [ ] 07-05-cutover-commands-PLAN.md — 6 artisan commands (cutover:snapshot-woo-db + cutover:divergence-scan + cutover:populate-overrides + cutover:drill-rollback + cutover:disable-legacy-plugins + cutover:checklist) + DivergenceScanner + OverridePopulator (merge-never-clear-pins D-15) + RollbackDrill + LegacyPluginDisabler (zero DB:: facade) + WooDbSnapshotter + CutoverChecklistReporter integrating Phase 6 D-20 gates (CUT-01, CUT-02, CUT-03, CUT-04, CUT-05, CUT-07)
 - [ ] 07-06-handover-deptrac-verification-PLAN.md — docs/ops/cutover-handover.md (4 CUT-06 sections + 5 appendices: D-19 sequence / env var inventory / rollback runbook / troubleshooting FAQ / Horizon primer) + Deptrac Dashboard + Cutover layers (dual-file sync) + DeptracDashboardLayerTest + DeptracCutoverLayerTest + 07-VERIFICATION.md v1 milestone ship verdict (CUT-06)
@@ -174,7 +174,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Bitrix24 CRM Sync | 0/TBD | Not started | - |
 | 5. Competitor Analysis | 0/TBD | Not started | - |
 | 6. Product Auto-Create | 6/6 | Complete   | 2026-04-23 |
-| 7. Dashboard Polish + Cutover | 0/6 | Planned    | - |
+| 7. Dashboard Polish + Cutover | 3/6 | In progress | - |
 
 ## Research Flags
 

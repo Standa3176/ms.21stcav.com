@@ -1,227 +1,129 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.50.1
-milestone_name: milestone
-status: verifying
-stopped_at: Completed 07-06-PLAN.md — Phase 7 + v1 milestone complete
+milestone: v2.0
+milestone_name: Intelligence + B2B
+status: roadmapped
+stopped_at: Roadmap created for v2.0 (Phases 8-15) — ready for `/gsd-plan-phase 8`
 last_updated: "2026-04-24T20:34:06.357Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 8
-  completed_phases: 7
-  total_plans: 38
-  completed_plans: 38
-  percent: 100
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-18)
+See: .planning/PROJECT.md (updated 2026-04-24 — v2.0 milestone kicked off)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 07 — Dashboard Polish + Cutover
+**Current focus:** Phase 08 — C4 Agent Framework (v2.0 milestone)
 
 ## Current Position
 
-Phase: 07
-Plan: Not started
-Status: Phase complete — ready for verification
+Milestone: v2.0 Intelligence + B2B
+Phase: 08 (C4 Agent Framework)
+Plan: Not started — awaiting `/gsd-plan-phase 8`
+Status: Roadmap complete; phase planning ready to begin
 Last activity: 2026-04-24
 
-Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG — Feature-tier MySQL deferral carries forward to Phase 7 cutover prep)
+Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
+
+**v2 build order:** 8 (C4) ∥ 9 (E1) → 10 (C1) → 11 (E2) → 12 (C3) → 13 (E3) → 14 (E4) → 15 (C2 — LATE, gates on v1 cutover + ≥4 weeks UTM data)
+
+**v2 active research flags:**
+- Phase 8: YES — Prism API surface, Langfuse self-hosted Docker, MCP PHP SDK, shield:safe-regenerate design
+- Phase 10: YES — prompt design, deterministic temp=0 calibration, token budget across input contexts
+- Phase 13: YES — WABA setup, Meta OBO BSP deprecation 2026, 24h window state machine
+
+**Top 3 operator decisions blocking ANY v2 phase (per research/SUMMARY.md):**
+1. Anthropic monthly budget ceiling — proposal: £200/month default
+2. Self-hosted Langfuse vs Cloud — proposal: self-hosted Docker (EU residency)
+3. Catalogue size sanity-check — assumption: ~5k SKUs (drives E4 FULLTEXT vs vector DB)
 
 ## Performance Metrics
 
-**Velocity:**
+**Velocity (v1.50.1 final):**
 
-- Total plans completed: 28
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 38 (v1)
+- Average duration: ~25 min/plan
+- Total execution time: ~16 hours over 6 days
 
-**By Phase:**
+**By Phase (v1.50.1):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| — | — | — | — |
+| 1 | 5 | ~3.7h | 44m |
+| 2 | 5 | ~2.0h | 24m |
 | 3 | 5 | - | - |
-| 04 | 5 | - | - |
-| 05 | 6 | - | - |
-| 06 | 6 | - | - |
-| 07 | 6 | - | - |
+| 4 | 5 | ~3.5h | 42m |
+| 5 | 6 | ~2.4h | 24m |
+| 6 | 6 | ~1.7h | 17m |
+| 7 | 6 | ~2.0h | 19m |
 
-**Recent Trend:**
-
-- Last 5 plans: —
-- Trend: — (no data yet)
-
-*Updated after each plan completion*
-| Phase 01 P01-scaffold | 50m | 3 tasks | 25 files |
-| Phase 01 P02-rbac | 35m | 2 tasks | 9 files |
-| Phase 01 P03 | 40m | 2 tasks | 13 files |
-| Phase 01 P04 | ~19 min | 3 tasks | 25 files |
-| Phase 01 P05 | 85 min | 4 tasks | 21 files |
-| Phase 02 P01 | 10m | 2 tasks | 24 files |
-| Phase 02 P02 | 45m | 2 tasks | 14 files |
-| Phase 02-supplier-sync P03-orchestration | 25m | 3 tasks | 26 files |
-| Phase 02-supplier-sync P04-reporting-ui | ~30 min | 3 tasks | 24 files |
-| Phase 02-supplier-sync P05-guardrails | ~12 min | 2 tasks | 11 files |
-| Phase 04 P01 | 95min | 3 tasks | 30 files |
-| Phase 04 P02 | 60min | 3 tasks | 10 files |
-| Phase 04 P03 | 34min | 3 tasks | 32 files |
-| Phase 04 P05 | 40min | 3 tasks | 27 files |
-| Phase 05 P01 | ~17 min | 2 tasks | 34 files |
-| Phase 05-competitor-analysis P02 | ~30min | 2 tasks | 32 files |
-| Phase 05-competitor-analysis P03 | 41m | 3 tasks | 28 files |
-| Phase 05 P04a | 35m | 2 tasks | 17 files |
-| Phase 05-competitor-analysis P04b | ~2h | 3 tasks | 21 files |
-| Phase 05-competitor-analysis P05-retention-guardrails-verification | 40m | 3 tasks | 8 files |
-| Phase 06 P01 | 24m | 2 tasks | 41 files |
-| Phase 06 P02 | 20 | 3 tasks | 15 files |
-| Phase 06 P03 | 18m | 3 tasks | 21 files |
-| Phase 06 P04 | 18m | 3 tasks | 30 files |
-| Phase 06-product-auto-create P05 | 11m | 2 tasks | 4 files |
-| Phase 06-product-auto-create P06 | 14m | 2 tasks | 4 files |
-| Phase 07 P01 | 22m | 3 tasks | 16 files |
-| Phase 07 P02 | 9m | 2 tasks | 21 files |
-| Phase 07 P03 | 11m | 2 tasks | 20 files |
-| Phase 07-dashboard-polish-cutover P04 | 30 | 2 tasks | 16 files |
-| Phase 07 P05 | 19m | 3 tasks | 19 files |
-| Phase 07 P06 | 25 | 4 tasks | 12 files |
+**v2 phases:** No data yet — v2 planning kicks off with Phase 8.
 
 ## Accumulated Context
 
-### Decisions
+### v2 Milestone Decisions (locked 2026-04-24)
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+- **Anthropic budget:** £200/month default; revisit after Phase 8 ships + 2 weeks of real usage
+- **Langfuse:** self-hosted Docker on ops VPS (EU residency for margin + customer data)
+- **Catalogue assumption:** ~5k SKUs; MySQL FULLTEXT for E4; vector DB deferred to v2.1
+- **Phase numbering:** Continues from v1 (Phase 8-15); does NOT reset
+- **Net-additive architecture:** 5 new Deptrac layers, 2 new Horizon queues, 4 required composer packages, ZERO version bumps to v1's stack
+- **Cutover gate on Phase 15:** Must NOT begin Phase 15 planning until v1 cutover is live in production AND ≥4 weeks of Bitrix Deal UTM data has accumulated. Pre-flight (ADAGT-05) verifies GCLID capture or ships a v1 hotfix first.
+- **v1 frozen:** v2 is net-additive; v1 jobs/listeners are NEVER modified; all v2 hooks are subscribers via DomainEvent + listener-based extension
 
-- Roadmap: CRM sync moved to Phase 4 (ahead of Competitor and Auto-Create) because sanctions-compliance risk on itgalaxy v1.50.1 is the original "why now" — every week deferred accumulates legal/security exposure
-- Roadmap: 7-phase structure locked as dependency-forced (cannot compress to coarse 3-5 without losing coherent delivery boundaries)
-- Stack: Laravel 12 + Filament 3.3 + Horizon + phpredis + `automattic/woocommerce` + `bitrix24/b24phpsdk` (official) with `mesilov/bitrix24-php-sdk` as documented fallback
-- [Phase 01]: Phase 1 scaffold: spatie/laravel-permission ^6.0 (not ^7.2 as STACK.md says; Shield 3.x requires ^6.0); rmsramos/activitylog ^2.0 (not ^1.0; first Laravel-12 compatible); Tailwind downgraded v4→v3.4.17 per Pitfall D (Filament 3 incompat with Tailwind 4); Horizon pcntl/posix bypassed on Windows dev
-- [Phase 01 P02]: Shield permission format is `{action}_{resource_snake_singular}` underscore (NOT `::`) — verified via `permission:show`; RolePermissionSeeder uses LIKE patterns (`%_product`, `%_pricing_rule`, etc.) so later-phase Resources auto-attach after `shield:generate` re-run
-- [Phase 01 P02]: Shield's auto-created `super_admin` + `panel_user` roles disabled in `config/filament-shield.php` — D-02 locks role set to exactly 4 (admin/pricing_manager/sales/read_only)
-- [Phase 01 P02]: Shield 3.9.10's RolePolicy stub leaks 4 unrendered `{{ Placeholder }}` literal strings — MUST audit all Shield-generated Policies going forward (deferred-items pitfall)
-- [Phase 01 P02]: Admin user seeded via DatabaseSeeder (admin@meetingstore.co.uk / password) — operator must rotate password before production
-- [Phase 01]: Phase 01 P03: AttachCorrelationId registered GLOBALLY (not per-group) — Laravel 12 health:/up route bypasses web+api groups; global registration threads correlation_id through all HTTP entries including health checks
-- [Phase 01]: Phase 01 P03: BaseCommand abstract method named perform() — execute() and run() both collide with Laravel/Symfony Command base class concrete methods
-- [Phase 01]: Phase 01 P03: testing DB isolation via phpunit.xml DB_DATABASE=meetingstore_ops_testing — MySQL (not sqlite :memory) preserves JSON column + nullableUlidMorphs semantics parity with prod; resolves Plan 02 RefreshDatabase-truncation handoff
-- [Phase 01]: Phase 01 P03: Context::hydrated callback calls BOTH startBatch() AND setBatch() — setBatch alone is a spatie no-op when no batch is open; discovered during Pitfall J queue-boundary test authoring
-- [Phase 01]: Suggestion ULID primary key retained end-to-end — nullableUlidMorphs subject on integration_events resolves back via $event->subject (Warning 8)
-- [Phase 01]: SuggestionPolicy hardcoded to hasRole('admin') — overrides shield:generate's permission-based stub (Pitfall K belt-and-braces)
-- [Phase 01]: ->authorize() on Filament approve/reject Actions is mandatory defence-in-depth; ->visible() alone is insufficient (Warning 9)
-- [Phase 01]: ApplySuggestionJob queue routing via $this->onQueue('default') in constructor — PHP 8.4 rejects $queue trait property redeclare
-- [Phase 01]: Migration timestamp 190000 (not plan's 104000) — orchestrator permission-to-deviate for logical ordering
-- [Phase 01]: Horizon Pitfall E boot assertion guarded by app()->environment('testing') — phpunit.xml forces QUEUE_CONNECTION=sync
-- [Phase 01]: ThrottledFailedJobNotifier uses Cache::add atomic lock (race-safe) over has+put pattern
-- [Phase 01]: shield:generate deliberately NOT re-run in Plan 05 — would regress SuggestionPolicy + RolePolicy (Plan 04 pattern); AlertRecipientPolicy uses hasRole('admin') directly
-- [Phase 02]: Plan 02-01: observer uses forceFill + saveQuietly (not touch) to avoid activity_log bloat from routine variation saves
-- [Phase 02]: Plan 02-01: 6 models shipped in Task 1 (not Task 2) so factory smoke tests resolve — splitting models across tasks would fail TDD RED-phase class resolution
-- [Phase 02]: Plan 02-01: sync_runs.consecutive_failures shipped as unsignedInt default 0 (D-06(b) Checker blocker) — enables multi-worker AbortGuard via atomic SyncRun::increment across supervisor processes
-- [Phase 02]: Plan 02-02: automattic/woocommerce resolved to 3.1.0 not 3.1.1 — Packagist only advertises 3.1.0 as of 2026-04-18 install; caret pin ^3.1 matches both; functional parity (3.1.1 adds PHP 8.5 support, irrelevant on PHP 8.4 dev)
-- [Phase 02]: Plan 02-02: Automattic\WooCommerce\Client 3.1.0 does NOT expose patch() method — WooClient::patch() routes through $this->inner->http->request(endpoint, 'PATCH', payload) which is the same underlying generic method other verbs use
-- [Phase 02]: Plan 02-02: WooClient is no longer final — WooRateLimitTest subclasses via anonymous class to override protected sleepMicros(int) test seam for deterministic timing assertions without real usleep delays
-- [Phase 02]: Plan 02-02: SupplierClient bind() not singleton() — token state lives in Cache (external), instance has no sockets/cURL handles, tests get fresh instance per resolve; WooClient remains singleton because Automattic cURL handle is worth reusing
-- [Phase 02]: Plan 02-02: correlation_id column is VARCHAR(36) across integration_events + 3 other Phase 1 tables — tests MUST use plain Str::uuid() not prefixed IDs (e.g. test-{uuid} = 41 chars, SQLSTATE[22001] truncation)
-- [Phase 02-supplier-sync]: Phase 02 P03: DomainEvent retrofitted with ShouldDispatchAfterCommit (Pitfall P2-I); 0 Phase 1 regressions
-- [Phase 02-supplier-sync]: Phase 02 P03: AbortGuard is STATELESS with DB-backed counters (NOT singleton) — multi-worker supervisors share state via sync_runs row atomic SQL (Checker blocker fix)
-- [Phase 02-supplier-sync]: Phase 02 P03: SyncSupplierCommand registered via ServiceProvider::commands() inside runningInConsole() guard (Artisan::starting() does not exist on Laravel 12 Kernel)
-- [Phase 02-supplier-sync]: Phase 02 P03: Deptrac Sync→Products cross-domain allowed (depfile.yaml + deptrac.yaml) — anticipated by Plan 02-01 key-decisions, needed for SyncChunkJob's local mirror + idempotency check
-- [Phase 02-supplier-sync]: Shield 3.9.10 emits  separator for multi-word Resources (e.g. view_sync::run); seeder LIKE patterns now cover BOTH underscore + :: styles forward-compatibly
-- [Phase 02-supplier-sync]: Pitfall P2-A CSV flush via explicit unset($writer) before return — SimpleExcelWriter's __destruct flush timing is non-deterministic; async Mail::attach on queued mail would read partial file otherwise
-- [Phase 02-supplier-sync]: Plan 02-05: SYNC-04 enforced via Deptrac WpDirectDb layer (classLike regex matching Illuminate\Support\Facades\DB) + architectural negative test; SyncChunkJob's DB::transaction wrapper removed — atomicity preserved via Woo remote write + row-level Eloquent + cursor-last ordering + P2-F idempotency
-- [Phase 02-supplier-sync]: Plan 02-05: PolicyTemplateIntegrityTest promoted from tests/Feature to tests/Architecture; extended from 1 to 3 tests (literal grep + positive control count + Gate::policy binding resolution). Feature version deleted in same commit — no duplication.
-- [Phase 02-supplier-sync]: Plan 02-05: PruneSyncErrorsCommand extends Illuminate\Console\Command (Phase 1 Prune* pattern), not BaseCommand — consistency with the 3 existing prunes outweighed the correlation-id hop BaseCommand would add; --days=0 is a graceful no-op safety guard.
-- [Phase 02-supplier-sync]: Plan 02-05: Deptrac negative-test assertion is exit-code-only (not stdout-grep) — deptrac-shim phar output is unreliable via Symfony\Process on Windows PHP; exit code is the CI-authoritative signal.
-- [Phase 04]: Plan 04-01: bitrix24/b24phpsdk ^1.10.0 resolved to 1.10.0 (only 1.10.x patch on Packagist as of 2026-04-19); constraint widened from ^1.10 to ^1.10.0 after composer 'too strict' warning
-- [Phase 04]: Plan 04-01: BitrixClient un-finalled (Phase 2 WooClient precedent) — Mockery-parity test seam without interface extraction
-- [Phase 04]: Plan 04-01: smoke-test probe-runner container binding (PROBE_RUNNER_KEY) — test seam for artisan commands that want to exercise the command loop WITHOUT mocking an injected service
-- [Phase 04]: Plan 04-01: integration_events.operation + .status are NOT-NULL (Phase 1 schema) — every CRM log call fills operation=<endpoint>, status='success'|'failed'
-- [Phase 04]: Plan 04-01: Shadow-Mode Option A locked — sync_diffs.provider column (default 'woo', indexed) reuses Phase 1 shadow table; Phase 7 divergence-scan filter is cheap
-- [Phase 04]: Plan 04-02: SDK 1.10.x ServiceBuilderFactory doesn't accept Guzzle HandlerStack — 2 req/sec throttle enforced via usleep inside withSdk; BitrixRateLimitMiddleware shipped standalone + tested for future SDK version
-- [Phase 04]: Plan 04-02: Shadow-mode gate is first-statement check on every write method (6 total); read methods always hit SDK so Filament schema discovery works in shadow mode
-- [Phase 04]: Plan 04-02: webhook URL sanitisation (T-04-02-01) runs on both rethrown exception message + integration_events.error_message — close leak on both caller paths
-- [Phase 04]: Plan 04-02: EntityDeduper adopts LOWEST Bitrix ID on multi-match (legacy plugin parity; oldest record wins); multi-match writes bitrix.deal.duplicate_detected audit row so ops can merge
-- [Phase 04]: Plan 04-03 self-dispatch-with-delay pattern replaces InteractsWithQueue::release() for D-10 race guard — testable under Queue::fake
-- [Phase 04]: Plan 04-03 AlertDistribution extended with onlyReceiving constructor option — backwards-compatible single-class scope filter
-- [Phase 04]: Plan 04-05: BackfillOrdersChunkJob uses config override for dry-run mode (scoped to worker process) instead of per-job  param — preserves PushOrderToBitrixJob signature
-- [Phase 04]: Plan 04-05: GDPR scrubs 18 Contact PII fields (NAME, LAST_NAME, SECOND_NAME, PHONE, EMAIL, WEB, IM, ADDRESS, ADDRESS_2, ADDRESS_CITY, ADDRESS_POSTAL_CODE, ADDRESS_REGION, ADDRESS_PROVINCE, POST, BIRTHDATE, COMMENTS, SOURCE_DESCRIPTION, PHOTO) + 4 Deal PII fields preserving HMRC-required OPPORTUNITY/STAGE_ID/UF_CRM_WOO_ORDER_ID/CATEGORY_ID/BEGINDATE/CLOSEDATE/CURRENCY_ID/COMPANY_ID/CONTACT_ID
-- [Phase 04]: Plan 04-05: gdpr_erasure_log has indefinite retention — separate from activity_log 365-day cap; GdprErasureRetentionTest plants 5-year-old row + runs ALL prune commands + asserts row survives
-- [Phase 04]: Plan 04-05: Filament ERASE confirmation uses 'in:ERASE' rule + validationMessages (custom Closure rules trip Filament DI-resolver); rule() second arg is Closure|bool NOT string
-- [Phase 05]: Plan 05-01: config/competitor.php uses basis points (margin_delta_threshold_bps=800 for 8%) matching Phase 3 PricingRule.margin_basis_points convention — downstream analyser reads one integer type across pipeline
-- [Phase 05]: Plan 05-01: policies registered in AppServiceProvider::boot (NOT AuthServiceProvider — project does not have AuthServiceProvider); all Gate::policy bindings follow Phase 1-4 precedent
-- [Phase 05]: Plan 05-01: CompetitorPriceFactory does NOT use ->unique() on sku — trend-chart / multi-date fixtures need same-SKU rows; (competitor_id, sku, recorded_at) DB unique index is the actual COMP-07 guarantee
-- [Phase 05]: Plan 05-02: Bus::batch with ->then()/->catch() chosen over chain-terminal for atomic archive/quarantine semantics; chunk size = 100 rows (config locked)
-- [Phase 05]: Plan 05-02: PHP 8.4 trait-collision — queue name set via onQueue() in constructor NOT public $queue property (Queueable trait incompatibility)
-- [Phase 05]: Plan 05-02: Deptrac config canonical file is deptrac.yaml (not depfile.yaml — both kept in sync; Plan 05-05 to consolidate)
-- [Phase 05-competitor-analysis]: Plan 05-03: A1 gate confirmed PricingRuleChanged event was missing — shipped event class + observer + #[ObservedBy] attribute on PricingRule (Laravel 11+ idiomatic registration; first use in this codebase).
-- [Phase 05-competitor-analysis]: Plan 05-03: A3 gate confirmed WooClient lacks /orders endpoint — RecacheSalesCountsJob ships as fallback STUB; logs recache.wooclient_orders_missing and exits. Real-time IncrementSkuSalesCount listener (W1 semantics: 1 per line-item, NOT multiplied by quantity) remains authoritative until post-Phase-5 WooClient extension. TODO-A3-FOLLOWUP carries the contract.
-- [Phase 05-competitor-analysis]: Plan 05-03: MarginChangeApplier fires PricingRuleChanged via the observer chain (NOT direct dispatch) — single source of truth for margin_basis_points changed semantics; future listeners on PricingRuleChanged don't need to know about this applier. THIRD real producer on Suggestions seam after CrmPushRetryApplier + NewProductOpportunityApplier.
-- [Phase 05]: RolePermissionSeeder explicit whitelist (NOT LIKE) for Phase 5 resources with mixed grants — MySQL _ single-char wildcard bug caught pricing_manager accidentally getting create/delete on csv_parse_error
-- [Phase 05]: P5-F shield:generate restoration protocol 4th execution: 13 policies restored from HEAD + IntegrationEventPolicy stub removed; process is now stable across Phases 1/2/4/5
-- [Phase 05-competitor-analysis]: Plan 05-04b: Notification::send(collection, NotificationInstance) chosen over AlertDistribution — stale-feed body needs model context (competitor + hoursStale); AlertDistribution is for uniform failure broadcasts.
-- [Phase 05-competitor-analysis]: Plan 05-04b: Cache::add 24h dedup keyed on YYYY-MM-DD (first-miss-of-day wins semantics) — simpler than rolling-24h per-competitor timestamps; auto-rolls at midnight.
-- [Phase 05-competitor-analysis]: Plan 05-04b: Deptrac Competitor → Alerting layer edge landed in-plan (NOT deferred to 05-05 as the original comment suggested). Rule: deptrac.yaml updates ship in the plan introducing the dependency — avoids CI-red interim state.
-- [Phase 05-competitor-analysis]: Plan 05-04b: Idempotent demo seeder pattern — firstOrCreate keyed on natural unique columns + CSV file written only if absent + DatabaseSeeder gated by app()->environment(['local', 'testing']) (T-05-04b-05 prod-leak mitigation). Pattern for future demo-heavy plans.
-- [Phase 05-competitor-analysis]: Plan 05-05: CompetitorCsvPruneCommand uses Symfony --days= null-default to disambiguate 'flag absent' (config fallback) vs '--days=0' (safety-guard warning) vs --days=N (override) — honours plan's contradictory must_haves semantics
-- [Phase 05-competitor-analysis]: Plan 05-05: Deptrac Competitor allow-list retains Webhooks (6-entry list, not plan's 5) because Plan 05-03 shipped IncrementSkuSalesCount listener subscribing to OrderReceived. Same precedent as Plan 03-05 WpDirectDb retention
-- [Phase 05-competitor-analysis]: Plan 05-05 regression-triage: Plan 05-04b SUMMARY mislabelled 3 DeptracLayerTest positives as 'pre-existing Auditor/AbortGuard/CRM' failures. Actual root cause: 05-04b updated deptrac.yaml but left depfile.yaml stale. Sync-both-files mandated for all future layer-edge changes
-- [Phase 05-competitor-analysis]: Plan 05-05: CompetitorPricesNeverPrunedTest ships 2 complementary tests (dynamic all-prunes + static-scan of Command files) — permanent COMP-07 boundary for Phase 5's headline differentiator
-- [Phase 06]: Plan 06-01: Placeholder asset hosted at public/images/av-product-placeholder.webp (not storage/app/public/) — skips storage:link dependency per Pitfall P6-F; config key composes {APP_URL}/images/av-product-placeholder.webp
-- [Phase 06]: Plan 06-01: products.auto_create_status enum DEFAULT 'manual' + belt-and-braces UPDATE backfill in migration (Pitfall P6-D) — same pattern applied to product_overrides.pin_* columns
-- [Phase 06]: Plan 06-01 A3 finding: Laravel 12 saveQuietly suppresses both saving + saved events — Plan 06-03 MUST wire CompletenessScorer via listener on domain events (ProductPriceChanged + SupplierStockChanged + SupplierSkuMissing), NOT via Product::saved observer. Phase 2 code stays untouched.
-- [Phase 06]: Plan 06-01 Q1 probe synthesized — live supplier credentials absent in execution env; storage/app/research/supplier-probe.json carries __synthesized=true header + __re_probe_instructions. Operator MUST re-run supplier:probe-single-sku during Phase 7 cutover prep before Plan 06-02 image pipeline locks.
-- [Phase 06]: Plan 06-02: intervention/image v3 pinned ^3.11 (NOT v4 — PHP 8.3+ floor incompatible with project 8.2 floor). ImageManager::class DI alias added in AppServiceProvider::register because image-laravel 1.5 binds only to string key 'image'
-- [Phase 06]: Plan 06-02: Woo URL pass-through contract locked via WooUrlPassthroughSmokeTest — Plan 03 dispatches ProcessAutoCreateImageJob which merges ImagePayloadBuilder output into PUT /products/{wooId}. Auto-approved Task 1 checkpoint; operator MUST re-validate live Woo sandbox during Phase 7 cutover prep before flipping product_auto_create.mode to immediate
-- [Phase 06]: Plan 06-02: ProcessAutoCreateImageJob on sync-bulk queue (Phase 1 FOUND-09) via $this->onQueue() in constructor — NEVER public string $queue (PHP 8.4 trait collision). 3 retries + [30s, 5m, 30m] backoff + failed() writes kind='auto_create_failed' Suggestion for Plan 04 Replay action
-- [Phase 06]: Observer → listener pivot (A3 FINDING) — RecomputeCompletenessOnSupplierChange subscribes to Supplier* events because Laravel 12 saveQuietly suppresses observers
-- [Phase 06]: Applier MOVE (RESEARCH Q4 option b) — NewProductOpportunityApplier relocated from Competitor to ProductAutoCreate to preserve one-way Deptrac arrow
-- [Phase 06]: SupplierPriceUnusableException downgrades sell_price=null instead of retry — supplier-returned 0 is a data-state issue, not transient
-- [Phase 06]: Plan 06-04: FieldPinManager service-layer indirection preserves Deptrac one-way arrow (Products UI → ProductAutoCreate service → Pricing model) instead of direct ProductResource→ProductOverride import
-- [Phase 06]: Plan 06-04: Deptrac Products allow-list extended [Foundation] → [Foundation, ProductAutoCreate] in BOTH deptrac.yaml + depfile.yaml (dual-config-sync; Phase 5 Plan 05-05 lesson)
-- [Phase 06]: Plan 06-04: AutoCreateSetting = singleton Eloquent model + migration (mirrors Phase 4 CrmPipelineSetting pattern) — chosen over spatie/laravel-settings for typed-column Filament binding + LogsActivity audit
-- [Phase 06]: Plan 06-04: P5-F Shield restoration (5th execution) — AlertRecipientPolicy restored from HEAD + spurious Foundation IntegrationEventPolicy stub deleted + 0 `{{ Placeholder }}` leaks confirmed
-- [Phase 06-product-auto-create]: Plan 05 pin enforcement via listener overlay (D-11) — ApplyPinsDuringSync subscribes to Phase 2's 3 supplier-change events + delegates to ProductOverrideGuard. Phase 2 SyncChunkJob UNTOUCHED (verified by dedicated Architecture test grep). Revert-after-the-fact window ~100-500ms on sync-bulk queue (accepted limitation). AUTO-10 shipped end-to-end.
-- [Phase 06-product-auto-create]: Plan 06-06: Phase 6 ships with FLAG verdict (architectural ship gates all green in-session; Feature-tier MySQL execution deferred to Phase 7 operator prep). DeptracProductAutoCreateLayerTest locks the domain boundary permanently (4 cases + dual-file YAML grep); AutoCreateRejectionRetentionTest mirrors Phase 5 COMP-07 shape for D-06 indefinite retention. 2 operator re-probes carry forward (supplier Q1 + Woo Q5).
-- [Phase 07]: Plan 07-01: config/cutover.php stores env-gate var NAMES (not values) for CUTOVER_DRILL_ALLOWED + CUTOVER_DISABLE_LIVE_ALLOWED + CUTOVER_IMMEDIATE_PUBLISH_ALLOWED — commands read env at runtime so setting the var alone doesn't auto-approve until a command explicitly reads the config key (two-step safety)
-- [Phase 07]: Plan 07-01: RolePermissionSeeder sales query restructured — prior outer view_% AND clause would have stripped user_saved_filter CRUD perms; now split into read-only + owner-scoped CRUD branches (defect caught in-plan)
-- [Phase 07]: Plan 07-01: receives_weekly_digest defaults TRUE (unlike receives_crm_alerts / receives_auto_create_alerts which default FALSE) — weekly digest is ambient ops summary not incident alert; Pitfall P6-D belt-and-braces UPDATE backfills every existing row
-- [Phase 07]: Dashboard Deptrac layer shipped in 07-02 (not deferred to 07-06) per ship-with-the-dependency rule; allow-list covers all prior domains + WpDirectDb for read-only metrics queries.
-- [Phase 07]: CRM push success rate reads from integration_events (channel='bitrix') — no dedicated crm_push_logs table exists; CrmPushLogResource already binds to IntegrationEvent from Phase 4.
-- [Phase 07]: Custom home-dashboard.blade.php skipped — Filament's default Dashboard view renders 9-widget 3-column grid correctly via getWidgets()+getColumns().
-- [Phase 07]: Plan 07-03: QueuedCsvExportJob uses \$this->onQueue('sync-bulk') in constructor (PHP 8.4 trait-collision guard — NEVER public string \$queue); CsvExportWriter uses explicit unset(\$writer) before each return to force SimpleExcelWriter flush (Pitfall P2-A).
-- [Phase 07]: Plan 07-03: HasExportableTable trait + SavedFilterAction Filament action shared across all 6 Resources — one-line opt-in for future Resources; app/Filament/* is cross-cutting (not a Deptrac-tracked layer).
-- [Phase 07]: Plan 07-03: CrmPushLog global search attributes [correlation_id, operation] instead of plan-sketched [correlation_id, woo_order_id, bitrix_deal_id] — the latter live inside request_body JSON (no top-level indexed columns); operators search by correlation_id in practice.
-- [Phase 07]: Plan 07-03: 4 Pest Feature test files (30 cases total) authored; MySQL + PHP CLI + Deptrac all deferred in execution environment (same precedent as Phase 6 + 07-01 + 07-02). Phase 7 Plan 06 verifier backlog now = 12 Phase 7 Feature files.
-- [Phase 07-dashboard-polish-cutover]: Notification centre aggregates from existing tables (no new notifications table)
-- [Phase 07-dashboard-polish-cutover]: Weekly digest uses explicit HTML + plain-text Blade views (Mail::markdown rejected per D-09)
-- [Phase 07-dashboard-polish-cutover]: Weekly digest empty-recipient path exits 0 with warning (no false-positive failed-job alert)
-- [Phase 07]: Plan 07-05 ships 6 artisan cutover commands (snapshot-woo-db, divergence-scan, populate-overrides, drill-rollback, disable-legacy-plugins, checklist); D-15 merge-never-clear-pins + D-17/D-18 env-gate --live + D-19 sequence + D-20/D-21 checklist integration. Deptrac Cutover-layer registration deferred to 07-06 per planner permission.
-- [Phase 07]: sync_diffs schema reality (no field/laravel_value/live_value/product_id/detected_at columns) drove payload-JSON encoding — {product_id,sku,field,laravel,live,pin_column} fits existing payload JSON column; no migration required
-- [Phase 07]: Plan 07-06: Relocated CsvExportWriter + QueuedCsvExportJob from app/Domain/Dashboard to app/Filament/Exports to preserve Dashboard one-way-arrow Deptrac contract (Rule 1 fix of 18 pre-existing violations).
-- [Phase 07]: Plan 07-06: Cutover Deptrac allow-list includes WpDirectDb for OverridePopulator local-DB transactions (same narrow scope as Pricing's SimulatedImpactCalculator); LegacyPluginDisabler DL4 static scan locks the WP-write side of SYNC-04.
-- [Phase 07]: Plan 07-06: 07-VERIFICATION.md ships with FLAG verdict (same Phase 6 pattern) — all architectural gates green; ~120 Feature-tier Pest cases MySQL-deferred to operator pre-cutover via cutover:checklist feature-suite gate.
+### v2 Cross-Cutting Invariants (every phase respects)
+
+1. Suggestions seam mandatory for any data-changing feature
+2. Dual-YAML Deptrac sync — every new layer in BOTH `depfile.yaml` AND `deptrac.yaml`
+3. Dry-run-default CLI — `--live` opt-in
+4. Shadow-mode gates default false: `AGENT_WRITE_ENABLED`, `AGENT_AUTO_APPLY_ENABLED`, `WHATSAPP_OUTBOUND_ENABLED`, `QUOTE_BITRIX_PUSH_ENABLED`
+5. `shield:safe-regenerate` wrapper ships in Phase 8 — every later phase uses it
+6. Correlation_id threading: Context → Prism → Langfuse → Suggestions → integration_events
+7. ULID PKs for all cross-domain references (`AgentRun`, `Quote`, `WhatsAppConversation`, `ChatbotSession`)
+8. Listener-based extension of v1 — never modify v1 jobs
+9. Provider seam pattern — new external APIs get thin `<X>Client` wrappers (mirror `WooClient` / `BitrixClient`)
+10. Golden fixture extension, not modification — v1's 50 PriceCalculator triples remain byte-identical
+
+### Decisions (carry-forward from v1.50.1 — see PROJECT.md Key Decisions table)
+
+Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affecting v2 work:
+
+- v1 framework + audit/integration/suggestions seams are the load-bearing seams for every v2 phase
+- v1 cutover is ops-executed in parallel with v2 dev (does NOT block v2 phases 8-14)
+- E5 RAMS cross-project integration deferred to v2.1+
+- Channel feeds (Phase 8 in candidate list), customer automation, forecasting all deferred to v2.1+
 
 ### Pending Todos
 
-None yet.
+None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 
 ### Blockers/Concerns
 
-yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps to Address"):
+**Operator decisions to confirm before Phase 8 plan 01 lands:**
+- Anthropic budget ceiling sign-off (proposal: £200/month)
+- Self-hosted Langfuse Docker provisioning on ops VPS
 
-- Phase 1: retention policies, user roles, rollback SLA (ops/compliance sign-off)
-- Phase 2: variable-product count, admin email distribution list (ops check)
-- Phase 3: rounding convention (5-min ops conversation)
-- Phase 4: UTM capture mechanism, GDPR workflow, webhook-delivery SLA
-- Phase 5: MAP-policy brand coverage
-- Phase 6: supplier image-DB availability, draft-vs-immediate-publish
-- Plan 06-01 test suite execution deferred — MySQL service not running in execution environment. 7 Pest test files authored to correct spec and will run when meetingstore_ops_testing MySQL is online.
+**Carry-forward from v1.50.1 (operator-side, not v2 dev work):**
+- v1 cutover execution per `docs/ops/cutover-handover.md` Appendix A
+- 3 operator carry-forward gates: supplier API probe, Woo sandbox image URL pass-through re-validation, feature-tier Pest suite run against online MySQL
+
+**Per-phase operator questions (per research/SUMMARY.md operator decisions tracker):**
+- Phase 9 (E1): trade customer-group seed list (Trade / Reseller / Education / NHS proposed); display strategy `retail` vs `hidden`
+- Phase 11 (E2): quote PDF branding template ownership; customer signature mechanism; Bitrix Deal line-item modelling for 30-line quotes
+- Phase 13 (E3): WABA ownership confirmation; template catalogue scope; Meta OBO deprecation verification
+- Phase 14 (E4): public vs internal SKU split; anonymous chatbot PII storage posture; chatbot 24/7 vs business-hours
+- Phase 15 (C2): GCLID capture in v1 — hotfix on v1 may be required before P15
 
 ## Session Continuity
 
-Last session: 2026-04-24T10:52:47.498Z
-Stopped at: Completed 07-06-PLAN.md — Phase 7 + v1 milestone complete
-Resume file: None
+Last session: 2026-04-24T20:34:06.357Z
+Stopped at: Roadmap created for v2.0 milestone (Phases 8-15) — 56 v2 REQ-IDs mapped, 100% coverage
+Resume: `/gsd-plan-phase 8` (begin C4 Agent Framework planning; research flag YES — run `/gsd-research-phase 8` first if research-before-plan workflow enabled)

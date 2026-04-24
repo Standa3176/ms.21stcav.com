@@ -133,14 +133,62 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AGNT-01..13 | Phase 8 | Pending |
-| TRDE-01..06 | Phase 9 | Pending |
-| PRCAGT-01..05 | Phase 10 | Pending |
-| QUOT-01..08 | Phase 11 | Pending |
-| SEOAGT-01..05 | Phase 12 | Pending |
-| CHAT-01..08 | Phase 13 | Pending |
-| FIND-01..06 | Phase 14 | Pending |
-| ADAGT-01..05 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| AGNT-01 | Phase 8 | Pending |
+| AGNT-02 | Phase 8 | Pending |
+| AGNT-03 | Phase 8 | Pending |
+| AGNT-04 | Phase 8 | Pending |
+| AGNT-05 | Phase 8 | Pending |
+| AGNT-06 | Phase 8 | Pending |
+| AGNT-07 | Phase 8 | Pending |
+| AGNT-08 | Phase 8 | Pending |
+| AGNT-09 | Phase 8 | Pending |
+| AGNT-10 | Phase 8 | Pending |
+| AGNT-11 | Phase 8 | Pending |
+| AGNT-12 | Phase 8 | Pending |
+| AGNT-13 | Phase 8 | Pending |
+| TRDE-01 | Phase 9 | Pending |
+| TRDE-02 | Phase 9 | Pending |
+| TRDE-03 | Phase 9 | Pending |
+| TRDE-04 | Phase 9 | Pending |
+| TRDE-05 | Phase 9 | Pending |
+| TRDE-06 | Phase 9 | Pending |
+| PRCAGT-01 | Phase 10 | Pending |
+| PRCAGT-02 | Phase 10 | Pending |
+| PRCAGT-03 | Phase 10 | Pending |
+| PRCAGT-04 | Phase 10 | Pending |
+| PRCAGT-05 | Phase 10 | Pending |
+| QUOT-01 | Phase 11 | Pending |
+| QUOT-02 | Phase 11 | Pending |
+| QUOT-03 | Phase 11 | Pending |
+| QUOT-04 | Phase 11 | Pending |
+| QUOT-05 | Phase 11 | Pending |
+| QUOT-06 | Phase 11 | Pending |
+| QUOT-07 | Phase 11 | Pending |
+| QUOT-08 | Phase 11 | Pending |
+| SEOAGT-01 | Phase 12 | Pending |
+| SEOAGT-02 | Phase 12 | Pending |
+| SEOAGT-03 | Phase 12 | Pending |
+| SEOAGT-04 | Phase 12 | Pending |
+| SEOAGT-05 | Phase 12 | Pending |
+| CHAT-01 | Phase 13 | Pending |
+| CHAT-02 | Phase 13 | Pending |
+| CHAT-03 | Phase 13 | Pending |
+| CHAT-04 | Phase 13 | Pending |
+| CHAT-05 | Phase 13 | Pending |
+| CHAT-06 | Phase 13 | Pending |
+| CHAT-07 | Phase 13 | Pending |
+| CHAT-08 | Phase 13 | Pending |
+| FIND-01 | Phase 14 | Pending |
+| FIND-02 | Phase 14 | Pending |
+| FIND-03 | Phase 14 | Pending |
+| FIND-04 | Phase 14 | Pending |
+| FIND-05 | Phase 14 | Pending |
+| FIND-06 | Phase 14 | Pending |
+| ADAGT-01 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-02 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-03 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-04 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-05 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
 
 **Coverage:**
 - v2 requirements: 56 total (13 AGNT + 5 PRCAGT + 5 ADAGT + 5 SEOAGT + 6 TRDE + 8 QUOT + 8 CHAT + 6 FIND)
@@ -150,3 +198,4 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 
 ---
 *Requirements defined: 2026-04-24 after v1.50.1 shipped. Operator decisions locked: Anthropic £200/month budget default, self-hosted Langfuse Docker, ~5k SKU MySQL FULLTEXT assumption.*
+*Traceability table expanded by `/gsd-roadmap`: 2026-04-24 — every REQ-ID mapped to exactly one phase (8 phases, 56 requirements, 100% coverage).*

@@ -132,7 +132,7 @@ class SuggestionResource extends Resource
                         $competitor = (string) data_get($record->evidence, 'competitor_name', '?');
 
                         return sprintf(
-                            'SKU %s (vs %s): margin %d bps → %d bps (Δ %+d bps). Approving updates the PricingRule; PricingRuleChanged fires for downstream recompute.',
+                            'SKU %s (vs %s): margin %d bps → %d bps (Δ %+d bps). Approving updates the PricingRule only — run `php artisan pricing:recompute --live` afterwards to materialise new prices across affected SKUs and trigger Woo pushes.',
                             $sku,
                             $competitor,
                             $old,

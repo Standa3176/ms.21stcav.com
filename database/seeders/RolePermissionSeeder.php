@@ -165,6 +165,31 @@ class RolePermissionSeeder extends Seeder
                     'create_auto::create::rejection',
                     // NOTE: NO Settings page perm for pricing_manager — draft vs
                     // immediate-publish governance stays admin-only (AUTO-07).
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 7 Plan 01 — Dashboard domain (D-02 + D-07).
+                    // pricing_manager gets view-only on dashboard_snapshot
+                    // (ambient ops intel) + full CRUD on their OWN
+                    // user_saved_filter rows (policy scopes ownership).
+                    // Using explicit whereIn (not LIKE) per Phase 5 Plan 04a
+                    // MySQL `_` single-char wildcard lesson.
+                    // ═══════════════════════════════════════════════════════════
+                    // --- Dashboard snapshot — view-only for pricing_manager ---
+                    'view_dashboard_snapshot',
+                    'view_any_dashboard_snapshot',
+                    'view_dashboard::snapshot',
+                    'view_any_dashboard::snapshot',
+                    // --- User saved filter — per-user CRUD (policy scopes
+                    //     ownership; admin override on delete is policy-level).
+                    'view_user_saved_filter',
+                    'view_any_user_saved_filter',
+                    'create_user_saved_filter',
+                    'update_user_saved_filter',
+                    'delete_user_saved_filter',
+                    'view_user::saved::filter',
+                    'view_any_user::saved::filter',
+                    'create_user::saved::filter',
+                    'update_user::saved::filter',
+                    'delete_user::saved::filter',
                 ]);
             })
             ->pluck('name')
@@ -178,30 +203,54 @@ class RolePermissionSeeder extends Seeder
         //    access to csv_parse_error or competitor_csv_mapping — those are
         //    pricing_manager + admin triage surfaces).
         $salesPermissions = Permission::query()
-            ->where(function ($q) {
-                $q->where(function ($inner) {
-                    // CRM push log (Phase 4) — all separator variants.
-                    $inner->where('name', 'like', '%_crm_push_log')
-                        ->orWhere('name', 'like', '%crm_push::log')
-                        ->orWhere('name', 'like', '%crm::push_log')
-                        ->orWhere('name', 'like', '%crm::push::log');
+            ->where(function ($outer) {
+                // ───── Read-only branch ─────
+                // CRM push log + competitor intel + Phase 7 dashboard widgets.
+                // Wrapped in an outer `view_%` AND clause so only view / view_any
+                // perms attach (sales cannot mutate these resources).
+                $outer->where(function ($q) {
+                    $q->where(function ($inner) {
+                        $inner->where('name', 'like', '%_crm_push_log')
+                            ->orWhere('name', 'like', '%crm_push::log')
+                            ->orWhere('name', 'like', '%crm::push_log')
+                            ->orWhere('name', 'like', '%crm::push::log');
+                    })
+                        ->orWhereIn('name', [
+                            // Phase 5 — competitor price visibility for quote-building.
+                            'view_competitor_price',
+                            'view_any_competitor_price',
+                            'view_competitor::price',
+                            'view_any_competitor::price',
+                            // Phase 5 — ingest-run visibility ("is today's data in?").
+                            'view_competitor_ingest_run',
+                            'view_any_competitor_ingest_run',
+                            'view_competitor::ingest::run',
+                            'view_any_competitor::ingest::run',
+                            // Phase 7 Plan 01 — dashboard widgets are ambient ops
+                            // intel; sales sees CRM-centric tiles + global freshness.
+                            'view_dashboard_snapshot',
+                            'view_any_dashboard_snapshot',
+                            'view_dashboard::snapshot',
+                            'view_any_dashboard::snapshot',
+                        ])
+                        ->where('name', 'like', 'view_%');
                 })
-                    ->orWhereIn('name', [
-                        // Phase 5 — competitor price visibility for quote-building.
-                        'view_competitor_price',
-                        'view_any_competitor_price',
-                        'view_competitor::price',
-                        'view_any_competitor::price',
-                        // Phase 5 — ingest-run visibility ("is today's data in?").
-                        'view_competitor_ingest_run',
-                        'view_any_competitor_ingest_run',
-                        'view_competitor::ingest::run',
-                        'view_any_competitor::ingest::run',
-                    ]);
-            })
-            ->where(function ($q) {
-                // Read-only: view + view_any only.
-                $q->where('name', 'like', 'view_%');
+                // ───── Owner-scoped CRUD branch (Phase 7 Plan 01) ─────
+                // Sales also needs create/update/delete on THEIR OWN user_saved_filter
+                // rows (policy enforces ownership + admin override). This branch sits
+                // OUTSIDE the view_% read-only gate so the CRUD perms actually land.
+                ->orWhereIn('name', [
+                    'view_user_saved_filter',
+                    'view_any_user_saved_filter',
+                    'create_user_saved_filter',
+                    'update_user_saved_filter',
+                    'delete_user_saved_filter',
+                    'view_user::saved::filter',
+                    'view_any_user::saved::filter',
+                    'create_user::saved::filter',
+                    'update_user::saved::filter',
+                    'delete_user::saved::filter',
+                ]);
             })
             ->pluck('name')
             ->all();

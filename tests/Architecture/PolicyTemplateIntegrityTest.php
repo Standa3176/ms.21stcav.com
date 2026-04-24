@@ -41,6 +41,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
         app_path('Domain/Alerting/Policies'),
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
+        app_path('Domain/Dashboard/Policies'),        // Phase 7 Plan 01 — 2 Dashboard policies
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
@@ -74,6 +75,7 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
         app_path('Domain/Alerting/Policies'),
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
+        app_path('Domain/Dashboard/Policies'),        // Phase 7 Plan 01 — 2 Dashboard policies
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
@@ -103,9 +105,11 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     //      AutoCreateSkipRulePolicy + AutoCreateRejectionPolicy).
     // 24 = above + AutoCreateSettingsPolicy (Phase 6 Plan 04 — admin-only
     //      gate on the settings singleton Page).
-    //      Floor bumped 23 → 24.
+    // 26 = above + 2 Dashboard policies (Phase 7 Plan 01:
+    //      DashboardSnapshotPolicy + UserSavedFilterPolicy).
+    //      Floor bumped 24 → 26.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(24, 'Expected ≥ 24 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(26, 'Expected ≥ 26 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -141,6 +145,9 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class => \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class,
         // Phase 6 Plan 04 — singleton AutoCreateSetting Page gate (admin-only).
         \App\Domain\ProductAutoCreate\Models\AutoCreateSetting::class   => \App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy::class,
+        // Phase 7 Plan 01 — Dashboard domain (D-02 + D-07).
+        \App\Domain\Dashboard\Models\DashboardSnapshot::class           => \App\Domain\Dashboard\Policies\DashboardSnapshotPolicy::class,
+        \App\Domain\Dashboard\Models\UserSavedFilter::class             => \App\Domain\Dashboard\Policies\UserSavedFilterPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

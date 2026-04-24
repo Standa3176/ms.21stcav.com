@@ -108,13 +108,13 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 
 ### Cutover (CUT) — Module G
 
-- [ ] **CUT-01**: A shadow-mode monitoring dashboard shows Laravel-vs-Woo divergence over a configurable window with a parity-threshold pass/fail
-- [ ] **CUT-02**: A pre-cutover divergence scan auto-populates `ProductOverride` rows for fields where a human edit in Woo differs from Laravel's computed value
-- [ ] **CUT-03**: `wp_unschedule_event` commands remove the Stock Updater + itgalaxy plugin crons before Laravel writes are enabled
-- [ ] **CUT-04**: A Woo DB snapshot is taken before `WOO_WRITE_ENABLED=true` is flipped
-- [ ] **CUT-05**: A rollback runbook + drill (flip flag back to `false`, restore snapshot if needed) is rehearsed before go-live
+- [x] **CUT-01**: A shadow-mode monitoring dashboard shows Laravel-vs-Woo divergence over a configurable window with a parity-threshold pass/fail
+- [x] **CUT-02**: A pre-cutover divergence scan auto-populates `ProductOverride` rows for fields where a human edit in Woo differs from Laravel's computed value
+- [x] **CUT-03**: `wp_unschedule_event` commands remove the Stock Updater + itgalaxy plugin crons before Laravel writes are enabled
+- [x] **CUT-04**: A Woo DB snapshot is taken before `WOO_WRITE_ENABLED=true` is flipped
+- [x] **CUT-05**: A rollback runbook + drill (flip flag back to `false`, restore snapshot if needed) is rehearsed before go-live
 - [ ] **CUT-06**: Ops handover docs cover: how to resume a sync, how to replay a failed CRM push, how to refresh Bitrix schema, how to interpret the notification centre
-- [ ] **CUT-07**: Stock Updater + itgalaxy Bitrix24 plugins are disabled in WordPress only after a clean monitored parallel-run window passes the parity threshold
+- [x] **CUT-07**: Stock Updater + itgalaxy Bitrix24 plugins are disabled in WordPress only after a clean monitored parallel-run window passes the parity threshold
 
 ## v2 Requirements
 
@@ -260,13 +260,13 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | DASH-04 | Phase 7 | Complete |
 | DASH-05 | Phase 7 | Complete |
 | DASH-06 | Phase 7 | Complete |
-| CUT-01 | Phase 7 | Pending |
-| CUT-02 | Phase 7 | Pending |
-| CUT-03 | Phase 7 | Pending |
-| CUT-04 | Phase 7 | Pending |
-| CUT-05 | Phase 7 | Pending |
+| CUT-01 | Phase 7 | Complete |
+| CUT-02 | Phase 7 | Complete |
+| CUT-03 | Phase 7 | Complete |
+| CUT-04 | Phase 7 | Complete |
+| CUT-05 | Phase 7 | Complete |
 | CUT-06 | Phase 7 | Pending |
-| CUT-07 | Phase 7 | Pending |
+| CUT-07 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 85 total (13 FOUND + 13 SYNC + 10 PRCE + 13 CRM + 12 COMP + 11 AUTO + 6 DASH + 7 CUT)

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-04-notification-centre-weekly-digest-PLAN.md
-last_updated: "2026-04-24T09:39:11.195Z"
+stopped_at: Completed 07-05-cutover-commands-PLAN.md
+last_updated: "2026-04-24T10:06:05.887Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 38
-  completed_plans: 36
-  percent: 95
+  completed_plans: 37
+  percent: 97
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 07 (Dashboard Polish + Cutover) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-04-24
 
@@ -86,6 +86,7 @@ Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG
 | Phase 07 P02 | 9m | 2 tasks | 21 files |
 | Phase 07 P03 | 11m | 2 tasks | 20 files |
 | Phase 07-dashboard-polish-cutover P04 | 30 | 2 tasks | 16 files |
+| Phase 07 P05 | 19m | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,8 @@ Recent decisions affecting current work:
 - [Phase 07-dashboard-polish-cutover]: Notification centre aggregates from existing tables (no new notifications table)
 - [Phase 07-dashboard-polish-cutover]: Weekly digest uses explicit HTML + plain-text Blade views (Mail::markdown rejected per D-09)
 - [Phase 07-dashboard-polish-cutover]: Weekly digest empty-recipient path exits 0 with warning (no false-positive failed-job alert)
+- [Phase 07]: Plan 07-05 ships 6 artisan cutover commands (snapshot-woo-db, divergence-scan, populate-overrides, drill-rollback, disable-legacy-plugins, checklist); D-15 merge-never-clear-pins + D-17/D-18 env-gate --live + D-19 sequence + D-20/D-21 checklist integration. Deptrac Cutover-layer registration deferred to 07-06 per planner permission.
+- [Phase 07]: sync_diffs schema reality (no field/laravel_value/live_value/product_id/detected_at columns) drove payload-JSON encoding — {product_id,sku,field,laravel,live,pin_column} fits existing payload JSON column; no migration required
 
 ### Pending Todos
 
@@ -214,6 +217,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-24T09:39:11.175Z
-Stopped at: Completed 07-04-notification-centre-weekly-digest-PLAN.md
+Last session: 2026-04-24T10:05:53.301Z
+Stopped at: Completed 07-05-cutover-commands-PLAN.md
 Resume file: None

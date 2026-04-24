@@ -319,6 +319,27 @@ class AppServiceProvider extends ServiceProvider
                 // so the Plan 07-02 WeeklyReportStatusWidget picks up last_sent_at +
                 // recipient_count (Plan 07-02 computeWeeklyReportStatus preserves these).
                 \App\Console\Commands\Reports\WeeklyDigestCommand::class,
+                // ── Phase 7 Plan 05 — Cutover commands (CUT-01..07, D-12..D-21) ────
+                // Six artisan commands orchestrating the legacy-plugin → Laravel
+                // cutover. All extend BaseCommand (correlation_id threading) and
+                // route through IntegrationLogger + Auditor. Lives under
+                // app/Console/Commands/Cutover/ so explicit registration required.
+                //
+                // Per D-19 sequence:
+                //   1. cutover:snapshot-woo-db      (CUT-04) pre-cutover safety net
+                //   2. cutover:divergence-scan      (CUT-01) parity baseline
+                //   3. cutover:populate-overrides   (CUT-02) preserve human edits
+                //   4. cutover:drill-rollback       (CUT-05) rollback verification
+                //   5. cutover:disable-legacy-plugins (CUT-03 + CUT-07)
+                //   6. cutover:checklist            (D-21) PASS/PENDING/FAIL report
+                //
+                // --live gates on CUTOVER_DRILL_ALLOWED / CUTOVER_DISABLE_LIVE_ALLOWED
+                // env vars (config keys store NAMES, not values — two-step safety).
+                \App\Console\Commands\Cutover\DivergenceScanCommand::class,
+                \App\Console\Commands\Cutover\PopulateOverridesCommand::class,
+                // Plan 07-05 Task 2 + 3 register the remaining four commands:
+                //   SnapshotWooDbCommand, DrillRollbackCommand,
+                //   DisableLegacyPluginsCommand, CutoverChecklistCommand
             ]);
         }
     }

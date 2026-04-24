@@ -144,3 +144,19 @@ Schedule::command('reports:weekly-digest')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Weekly ops digest — Monday 07:00 Europe/London (DASH-05 / Phase 7 Plan 04)');
+
+// Phase 7 Plan 05 — cutover:divergence-scan daily 01:00 Europe/London.
+// OPT-IN via env CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED=true — ops enables
+// during the parallel-run window (D-19 monitoring phase) and disables again
+// once WOO_WRITE_ENABLED=true has been flipped and the 7-day monitoring window
+// passes cleanly. --live persists SyncDiff rows + writes dashboard_snapshots
+// sync_diffs_parity so the /admin widget reflects real-time parity. Routed on
+// sync-bulk queue so the scan doesn't starve default/sync-woo-push.
+if ((bool) env('CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED', false)) {
+    Schedule::command('cutover:divergence-scan --live')
+        ->dailyAt('01:00')
+        ->withoutOverlapping(120)
+        ->onOneServer()
+        ->timezone('Europe/London')
+        ->description('CUT-01 parallel-run divergence scan (opt-in; ops env-enabled during cutover window)');
+}

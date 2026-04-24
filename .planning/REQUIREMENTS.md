@@ -104,7 +104,7 @@ Categories reflect the 7-phase structure recommended in `research/SUMMARY.md`. B
 - [ ] **DASH-03**: Global search jumps to any product, rule, or CRM push log entry from the admin header
 - [x] **DASH-04**: All tabular views support saved filters and CSV export
 - [x] **DASH-05**: Scheduled reports email the admin distribution list weekly with sync, margin, and CRM metrics
-- [ ] **DASH-06**: A notification centre consolidates failed jobs, stale feeds, pending suggestions, and webhook dead-letters
+- [x] **DASH-06**: A notification centre consolidates failed jobs, stale feeds, pending suggestions, and webhook dead-letters
 
 ### Cutover (CUT) — Module G
 
@@ -259,7 +259,7 @@ Per-REQ-ID phase mapping. Populated by `/gsd-roadmap` at initialisation; `Status
 | DASH-03 | Phase 7 | Pending |
 | DASH-04 | Phase 7 | Complete |
 | DASH-05 | Phase 7 | Complete |
-| DASH-06 | Phase 7 | Pending |
+| DASH-06 | Phase 7 | Complete |
 | CUT-01 | Phase 7 | Pending |
 | CUT-02 | Phase 7 | Pending |
 | CUT-03 | Phase 7 | Pending |

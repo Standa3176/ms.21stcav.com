@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.50.1
 milestone_name: milestone
 status: executing
-stopped_at: Completed 07-03-global-search-csv-saved-filters-PLAN.md
-last_updated: "2026-04-24T09:17:00.000Z"
+stopped_at: Completed 07-04-notification-centre-weekly-digest-PLAN.md
+last_updated: "2026-04-24T09:39:11.195Z"
 last_activity: 2026-04-24
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 38
-  completed_plans: 35
-  percent: 92
+  completed_plans: 36
+  percent: 95
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-18)
 ## Current Position
 
 Phase: 07 (Dashboard Polish + Cutover) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 Last activity: 2026-04-24
 
@@ -85,6 +85,7 @@ Progress: [██████████] 100% (32/32 plans; Phase 6 ships FLAG
 | Phase 07 P01 | 22m | 3 tasks | 16 files |
 | Phase 07 P02 | 9m | 2 tasks | 21 files |
 | Phase 07 P03 | 11m | 2 tasks | 20 files |
+| Phase 07-dashboard-polish-cutover P04 | 30 | 2 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -191,6 +192,9 @@ Recent decisions affecting current work:
 - [Phase 07]: Plan 07-03: HasExportableTable trait + SavedFilterAction Filament action shared across all 6 Resources — one-line opt-in for future Resources; app/Filament/* is cross-cutting (not a Deptrac-tracked layer).
 - [Phase 07]: Plan 07-03: CrmPushLog global search attributes [correlation_id, operation] instead of plan-sketched [correlation_id, woo_order_id, bitrix_deal_id] — the latter live inside request_body JSON (no top-level indexed columns); operators search by correlation_id in practice.
 - [Phase 07]: Plan 07-03: 4 Pest Feature test files (30 cases total) authored; MySQL + PHP CLI + Deptrac all deferred in execution environment (same precedent as Phase 6 + 07-01 + 07-02). Phase 7 Plan 06 verifier backlog now = 12 Phase 7 Feature files.
+- [Phase 07-dashboard-polish-cutover]: Notification centre aggregates from existing tables (no new notifications table)
+- [Phase 07-dashboard-polish-cutover]: Weekly digest uses explicit HTML + plain-text Blade views (Mail::markdown rejected per D-09)
+- [Phase 07-dashboard-polish-cutover]: Weekly digest empty-recipient path exits 0 with warning (no false-positive failed-job alert)
 
 ### Pending Todos
 
@@ -210,6 +214,6 @@ yet. Open items flagged for per-phase planning (from research/SUMMARY.md "Gaps t
 
 ## Session Continuity
 
-Last session: 2026-04-24T09:17:00.000Z
-Stopped at: Completed 07-03-global-search-csv-saved-filters-PLAN.md
+Last session: 2026-04-24T09:39:11.175Z
+Stopped at: Completed 07-04-notification-centre-weekly-digest-PLAN.md
 Resume file: None

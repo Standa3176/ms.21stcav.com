@@ -234,6 +234,15 @@ class AppServiceProvider extends ServiceProvider
         // canAccess() gate + the save() abort_unless consult this binding.
         Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSetting::class,   \App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy::class);
 
+        // ── Phase 7 Plan 01: Dashboard domain policies ─────────────────
+        // D-02 + D-07: dashboard snapshots are admin/pricing/sales/read_only
+        // viewable (ambient ops intel) but create/update DENY for all (the
+        // scheduled dashboard:refresh command is the only writer). User
+        // saved filters are owner-scoped with an admin override on delete.
+        // Pitfall P5-F — hand-written hasRole checks; DO NOT shield:generate.
+        Gate::policy(\App\Domain\Dashboard\Models\DashboardSnapshot::class, \App\Domain\Dashboard\Policies\DashboardSnapshotPolicy::class);
+        Gate::policy(\App\Domain\Dashboard\Models\UserSavedFilter::class,   \App\Domain\Dashboard\Policies\UserSavedFilterPolicy::class);
+
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);

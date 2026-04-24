@@ -7,11 +7,9 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
-use Filament\Widgets;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -34,12 +32,33 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             ->pages([
-                Pages\Dashboard::class,
+                // Phase 7 Plan 02 — HomeDashboardPage overrides the default Filament
+                // dashboard at /admin (D-01, 9-widget grid). Registered first so it
+                // wins the root slug; Pages\Dashboard retained as a safety fallback
+                // but Filament 3 honours the first Dashboard-subclass registration.
+                \App\Filament\Pages\HomeDashboardPage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
-                Widgets\AccountWidget::class,
-                Widgets\FilamentInfoWidget::class,
+                // Phase 7 Plan 02 — 9 home-dashboard widgets (D-01).
+                // Order here doesn't drive render; HomeDashboardPage::getWidgets()
+                // is authoritative for layout. Listing here ensures Filament
+                // resolves classes + applies policy gates (canView) correctly.
+                \App\Filament\Widgets\LastSyncRunWidget::class,
+                \App\Filament\Widgets\CrmPushSuccessRateWidget::class,
+                \App\Filament\Widgets\CompetitorFreshnessWidget::class,
+                \App\Filament\Widgets\PendingReviewsWidget::class,
+                \App\Filament\Widgets\ImportIssuesWidget::class,
+                \App\Filament\Widgets\HorizonFailedJobsWidget::class,
+                \App\Filament\Widgets\SyncDiffsParityWidget::class,
+                \App\Filament\Widgets\ProductCatalogueHealthWidget::class,
+                \App\Filament\Widgets\WeeklyReportStatusWidget::class,
+            ])
+            ->navigationItems([
+                // Phase 7 Plan 02 — D-03 Horizon link. Admin-only; opens /horizon
+                // in a new tab. Visibility closure enforces the role gate so
+                // pricing_manager / sales / read_only never see the affordance.
+                \App\Domain\Dashboard\Support\HorizonLinkNavigationItem::build(),
             ])
             // Per-domain Resource discovery (modules populate in later plans — 01-RESEARCH.md §1):
             ->discoverResources(in: app_path('Domain/Suggestions/Filament/Resources'), for: 'App\\Domain\\Suggestions\\Filament\\Resources')

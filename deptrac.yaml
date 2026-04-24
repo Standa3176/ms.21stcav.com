@@ -46,6 +46,14 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/ProductAutoCreate/.*
+    # Phase 7 Plan 01 scaffolded Dashboard models/policies; Plan 02 activates the
+    # SnapshotAggregator + widgets which aggregate across Sync + CRM + Competitor
+    # + Products + Suggestions + Alerting. Plan 07-06 will finalise; this is the
+    # ship-with-the-dependency registration (07-01 SUMMARY §Known concerns item 3).
+    - name: Dashboard
+      collectors:
+        - type: directory
+          regex: app/Domain/Dashboard/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -128,5 +136,20 @@ parameters:
     # MOVED to ProductAutoCreate in Plan 06-03 (RESEARCH Q4 option b) so
     # Competitor is no longer in the allow-list — one-way arrow preserved.
     ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks]
+    # Phase 7 Plan 02 — Dashboard aggregates metrics from every prior domain
+    # (one-way arrow: other domains MUST NOT depend on Dashboard per
+    # 07-CONTEXT.md §Established Patterns). SnapshotAggregator reads:
+    #   - Sync:            SyncRun (last_sync_run) + ImportIssue (import_issues)
+    #   - CRM:             integration_events rows via Foundation layer (crm_push_success_rate)
+    #   - Competitor:      Competitor (competitor_freshness)
+    #   - Products:        Product (pending_reviews + import_issues + sync_diffs_parity + product_catalogue_health)
+    #   - Suggestions:     Suggestion (pending_reviews)
+    #   - WpDirectDb:      Schema::hasTable + DB::table reads on failed_jobs /
+    #                       sync_diffs / csv_parse_errors / competitor_ingest_runs —
+    #                       these are read-only metrics reads, not WP direct writes
+    #                       (-WpDirectDb ban on Sync is about Woo writes).
+    # Plan 07-06 finalises the allow-list; this is the ship-with-the-dependency
+    # registration mentioned in 07-01 SUMMARY §Known concerns item 3.
+    Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard]

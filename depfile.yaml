@@ -46,6 +46,12 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/ProductAutoCreate/.*
+    # Phase 7 Plan 02 — Dashboard domain (SnapshotAggregator + widgets).
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Dashboard
+      collectors:
+        - type: directory
+          regex: app/Domain/Dashboard/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -123,5 +129,9 @@ parameters:
     # MOVED to ProductAutoCreate in Plan 06-03 (RESEARCH Q4 option b) so
     # Competitor is no longer in the allow-list — one-way arrow preserved.
     ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks]
+    # Phase 7 Plan 02 — Dashboard aggregates metrics from every prior domain
+    # (one-way arrow: other domains MUST NOT depend on Dashboard).
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard]

@@ -105,3 +105,27 @@ Schedule::command('competitor:check-stale')
 //     ->onQueue('sync-bulk')
 //     ->timezone('Europe/London')
 //     ->description('Daily 21stcav.com supplier sync (D-05 — enable post-Phase-7-cutover)');
+
+// Phase 7 Plan 02 (D-02) — dashboard:refresh every 5 minutes.
+// Aggregates the 9 home-dashboard metrics into dashboard_snapshots so widget
+// reads are a single indexed lookup on /admin page load. onOneServer keeps the
+// scheduler safe across multi-worker deployments; withoutOverlapping(5) prevents
+// a slow refresh colliding with the next tick (worst case 5-min skip, which is
+// still within the 15-min snapshot_ttl ceiling before widgets show amber).
+Schedule::command('dashboard:refresh')
+    ->everyFiveMinutes()
+    ->withoutOverlapping(5)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Aggregate home-dashboard metrics into dashboard_snapshots (Phase 7 Plan 02, D-02)');
+
+// Phase 7 Plan 02 — snapshots:prune daily 03:50 (continues the 03:00/03:10/03:20/
+// 03:30/03:40 cascade from Phases 1 + 2 + 5). Retention default is 30 days via
+// config('dashboard.snapshot_retention_days'); --days=0 is an explicit no-op
+// safety guard (Phase 5 CompetitorCsvPrune precedent).
+Schedule::command('snapshots:prune')
+    ->dailyAt('03:50')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune dashboard_snapshots older than 30 days (Phase 7 Plan 02)');

@@ -304,6 +304,14 @@ class AppServiceProvider extends ServiceProvider
                 // so Plan 06-02 ProductImageFetcher / ProductContentBuilder can see the real
                 // image_url / brand / category / description field shape. Manual-run only.
                 \App\Console\Commands\SupplierProbeSingleSkuCommand::class,
+                // Phase 7 Plan 02 — dashboard:refresh + snapshots:prune.
+                // dashboard:refresh (D-02) every 5 min via routes/console.php aggregates
+                // the 9 home-dashboard metrics into dashboard_snapshots so every widget
+                // read is a single indexed lookup. snapshots:prune (daily 03:50) keeps
+                // the snapshot table small + forward-compatible with the deferred
+                // sparkline history split.
+                \App\Console\Commands\Dashboard\DashboardRefreshCommand::class,
+                \App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand::class,
             ]);
         }
     }

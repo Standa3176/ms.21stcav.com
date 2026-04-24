@@ -91,6 +91,15 @@ class AlertRecipientResource extends Resource
                 ->label('Receives Auto-Create Alerts')
                 ->helperText('Email this recipient when CreateWooProductJob / ProcessAutoCreateImageJob exhausts retries (auto_create_failed).')
                 ->default(false),
+            // Phase 7 Plan 04 — weekly digest opt-in (Plan 07-01 column).
+            // Default TRUE (unlike the 4 incident-alert toggles above) because
+            // the weekly digest is an ambient ops summary rather than an
+            // incident notification. Plan 07-01 migration force-updates every
+            // existing row to TRUE so the seeded fallback auto-subscribes.
+            Toggle::make('receives_weekly_digest')
+                ->label('Receives Weekly Digest')
+                ->helperText('Monday 07:00 Europe/London — Sync / Margin / CRM / Auto-Create / Competitor summary email (DASH-05).')
+                ->default(true),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -119,6 +128,10 @@ class AlertRecipientResource extends Resource
                 IconColumn::make('receives_auto_create_alerts')
                     ->boolean()
                     ->label('Auto-create alerts?'),
+                // Phase 7 Plan 04 — weekly digest opt-in status at a glance.
+                IconColumn::make('receives_weekly_digest')
+                    ->boolean()
+                    ->label('Weekly digest?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

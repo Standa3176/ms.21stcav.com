@@ -37,6 +37,10 @@ class AdminPanelProvider extends PanelProvider
                 // wins the root slug; Pages\Dashboard retained as a safety fallback
                 // but Filament 3 honours the first Dashboard-subclass registration.
                 \App\Filament\Pages\HomeDashboardPage::class,
+                // Phase 7 Plan 04 — unified notification centre at /admin/notifications.
+                // 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq)
+                // aggregated by NotificationCentreAggregator; Livewire wire:poll refreshes.
+                \App\Filament\Pages\NotificationCentrePage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

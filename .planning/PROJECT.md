@@ -36,21 +36,42 @@ v1 framework is **built and audited**. 7 phases, 38 plans, 82 tasks, ~15,160 LOC
 
 Full requirement detail + traceability in `.planning/milestones/v1.50.1-REQUIREMENTS.md`.
 
-### Active (none — pending v2 milestone kickoff)
+## Current Milestone: v2.0 Intelligence + B2B
 
-<!-- Current dev scope. Empty between milestones. -->
+**Goal:** Build an AI agent framework on top of v1's suggestions seam + audit log, and open the B2B revenue motion with trade pricing, quote flow, and conversational chat surfaces.
 
-(None — run `/gsd-new-milestone` to define v2 scope.)
+**Target features (7 active + infrastructure):**
+- **C4 Agent Framework** (infrastructure) — registry, Claude SDK tool-use contracts, guardrails, audit trail, suggestions-seam integration
+- **C1 Pricing agent** — LLM-assisted reasoning over v1 competitor_prices + margin data
+- **C2 Ad optimisation agent** — consumes UTM/GA CID on Bitrix Deals
+- **C3 SEO/content agent** — suggestions for low-completeness auto-created products
+- **E1 Trade customer pricing** — extends PricingRule with customer-group scope
+- **E2 Quote request → Bitrix Deal** — new Filament flow + Deal-type routing
+- **E3+E4 Chat surfaces** — WhatsApp Business integration + AI product-finder chatbot
 
-### Future Requirements (v2 — candidate scope)
+**Key context:** All agent outputs flow through v1's existing `suggestions` seam. v1 cutover is ops-executed in parallel with v2 dev. RAMS cross-project integration (E5) and channel feeds (Phase 8) + customer automation (Phase 9) + forecasting (Phase 11) are deferred to future milestones.
 
-<!-- Documented v2 direction from original brief; needs milestone-level discussion via `/gsd-new-milestone` before becoming Active. -->
+### Active (v2.0 scope)
 
-- **Phase 8 — Channel feeds:** Google Merchant Center, Google Ads sync, GA4 revenue, Meta catalog, Google Search Console per-product impressions
-- **Phase 9 — Customer automation:** abandoned-cart recovery via Bitrix24, back-in-stock alerts, price-drop alerts, review aggregation
-- **Phase 10 — AI agent framework:** pricing agent (competitor + GA + margin + stock → suggestions), ad optimisation agent, SEO/content agent
-- **Phase 11 — Forecasting & operational intelligence:** stock-planning agent, sales forecasting, supplier performance dashboard, true profitability per SKU
-- **Phase 12 — B2B & channel expansion:** trade customer pricing, quote request → Bitrix Deal, WhatsApp Business, AI product-finder, RAMS platform integration hook
+<!-- Current dev scope — detail populated in REQUIREMENTS.md by requirements-definition step. -->
+
+- [ ] **C4.** Agent framework infrastructure (registry, tool-use contracts, guardrails, audit)
+- [ ] **C1.** Pricing agent (LLM-assisted margin suggestions)
+- [ ] **C2.** Ad optimisation agent (UTM/GA-driven budget suggestions)
+- [ ] **C3.** SEO/content agent (auto-create content suggestions)
+- [ ] **E1.** Trade customer pricing (PricingRule customer-group scope)
+- [ ] **E2.** Quote request → Bitrix Deal flow
+- [ ] **E3.** WhatsApp Business integration
+- [ ] **E4.** AI product-finder chatbot
+
+### Future Requirements (v2.1+ — deferred from v2.0)
+
+<!-- Post-v2.0 candidate scope; deferred to keep v2.0 tight. -->
+
+- **Channel feeds:** Google Merchant Center, Google Ads sync, GA4 revenue, Meta catalog, Google Search Console per-product impressions
+- **Customer automation:** abandoned-cart recovery via Bitrix24, back-in-stock alerts, price-drop alerts, review aggregation
+- **Forecasting & operational intelligence:** stock-planning agent, sales forecasting, supplier performance dashboard, true profitability per SKU
+- **E5 RAMS integration hook:** cross-project FK from meetingstore-ops-app to rams.21stcav.com for shared AV-installation customers
 
 ### Out of Scope (confirmed after v1.50.1)
 
@@ -142,4 +163,4 @@ Exit code 1 until all gates PASS. Wraps all 3 operator carry-forward gates plus 
 This document evolves at milestone boundaries. Next evolution: `/gsd-new-milestone` for v2 scope.
 
 ---
-*Last updated: 2026-04-24 after v1.50.1 milestone*
+*Last updated: 2026-04-24 — v2.0 Intelligence + B2B milestone kicked off (v1.50.1 shipped same day)*

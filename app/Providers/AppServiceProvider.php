@@ -393,6 +393,12 @@ class AppServiceProvider extends ServiceProvider
                 // correlation_id threads through the entire CLI → Job →
                 // AgentRun → Suggestion pipeline (AGNT-12 acceptance).
                 \App\Domain\Agents\Console\Commands\AgentRunCommand::class,
+                // ── Phase 8 Plan 05 — operational hygiene commands ────────
+                // shield:safe-regenerate (AGNT-11) wraps shield:generate with
+                // automatic P5-F restoration. Phase 10/11/13/14/15 will use
+                // it on every new Resource. Documented in
+                // docs/ops/shield-regeneration.md.
+                \App\Domain\Agents\Console\Commands\ShieldSafeRegenerateCommand::class,
             ]);
         }
     }

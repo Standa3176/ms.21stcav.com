@@ -176,20 +176,26 @@ class AppServiceProvider extends ServiceProvider
                 // PricingRuleObserver fires PricingRuleChanged → Phase 3's
                 // recompute chain picks up the new margin.
                 $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
+
+                // ── Phase 8 Plan 04: EchoApplier — framework smoke-test applier ──
+                // Stub applier for kind='echo_health' — marks the Suggestion
+                // applied with no business side effects. EchoAgent is the
+                // framework health-check, not a business workflow. Phase 10
+                // PricingAgent registers a real applier via the same seam.
+                $resolver->register('echo_health', \App\Domain\Agents\Appliers\EchoApplier::class);
             }
         );
 
-        // ── Phase 8 Plan 03: AgentRegistry resolver hook ─────────────────
-        // Plan 03 ships the empty hook so Plan 04's `EchoAgent` registration
-        // lands here without touching this file again. Same pattern as the
-        // SuggestionApplierResolver block above — keeps producers' wiring
-        // adjacent to their domain rather than bloating AppServiceProvider.
+        // ── Phase 8 Plan 04: AgentRegistry — register EchoAgent ──────────
+        // The afterResolving hook seeded by Plan 03 lands EchoAgent under
+        // kind='echo'. Phase 10 will add 'pricing'; Phase 12 'seo'; etc.
+        // Hook stays adjacent to the SuggestionApplierResolver block above
+        // so registrations cluster by phase rather than by Service Provider
+        // call order.
         $this->app->afterResolving(
             \App\Domain\Agents\Services\AgentRegistry::class,
             function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
-                // Agent registrations land here. Plan 04 adds:
-                //   $registry->register('echo', \App\Domain\Agents\Agents\EchoAgent::class);
-                // Phase 10 adds 'pricing'; Phase 12 adds 'seo'; etc.
+                $registry->register('echo', \App\Domain\Agents\Agents\EchoAgent::class);
             }
         );
 

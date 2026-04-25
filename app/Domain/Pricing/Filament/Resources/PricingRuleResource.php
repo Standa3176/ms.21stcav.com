@@ -58,6 +58,23 @@ class PricingRuleResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
+            // ── Phase 9 Plan 05 (TRDE-04 D-09 additive) ──────────────────
+            // Inserted as the FIRST form field BEFORE scope (D-09 — admin
+            // sees the customer-group context up-front so they understand
+            // the rule applies to a specific B2B segment vs retail). Empty
+            // = retail rule (matches all customers without a group). The
+            // existing scope/brand/category/margin/priority/tier shape is
+            // PRESERVED in full — Phase 3 form behaviour stays intact and
+            // the scope reactive() still drives brand/category visibility.
+            Select::make('customer_group_id')
+                ->label('Customer Group')
+                ->relationship('customerGroup', 'name')
+                ->searchable()
+                ->preload()
+                ->placeholder('— Retail (default) —')
+                ->nullable()
+                ->helperText('Empty = retail rule (matches all customers without a group). Choose a group to make this a trade rule.'),
+
             Select::make('scope')
                 ->label('Scope')
                 ->required()
@@ -181,6 +198,17 @@ class PricingRuleResource extends Resource
                     PricingRule::SCOPE_BRAND_CATEGORY => 'Brand + Category',
                     PricingRule::SCOPE_DEFAULT_TIER => 'Default tier',
                 ]),
+
+                // ── Phase 9 Plan 05 (TRDE-04 D-09 additive) ─────────────
+                // Filter list by customer group; "All groups + retail"
+                // placeholder makes clear that not selecting a group shows
+                // the entire mixed retail+trade rule set. Existing
+                // TernaryFilter('active') and SelectFilter('scope') are
+                // preserved unchanged.
+                SelectFilter::make('customer_group_id')
+                    ->label('Customer Group')
+                    ->relationship('customerGroup', 'name')
+                    ->placeholder('All groups + retail'),
             ])
             ->actions([
                 // Warning 9 defence-in-depth: ->authorize() on every action.

@@ -60,6 +60,50 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $agentPerm, 'guard_name' => 'web']);
         }
 
+        // ── Phase 9 Plan 05 — Customer Group permissions (TRDE-04 D-10) ──
+        // W-05: findByName matches v1 RolePermissionSeeder pattern;
+        // brittleness is accepted v1-parity. CI fails loudly if roles are
+        // missing, which is the desired signal — silent role-permission
+        // drift is worse than a fail-fast Throwable on seed.
+        //
+        // 5 perms scaffolded by shield:safe-regenerate --allow-new=
+        // CustomerGroupPolicy on first install (Plan 05 Task 2 step). The
+        // explicit Permission::firstOrCreate below ensures the perms exist
+        // even on cold-start tests / installations where shield:generate
+        // hasn't run yet (mirrors the AgentRunResource pattern at 2b above).
+        $tradePricingPermissions = [
+            'view_any_customer_group',
+            'view_customer_group',
+            'create_customer_group',
+            'update_customer_group',
+            'delete_customer_group',
+        ];
+
+        foreach ($tradePricingPermissions as $perm) {
+            Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+        }
+
+        // Assignment matrix (D-10):
+        //   - admin           — all 5 perms (covered by Permission::all() sync below)
+        //   - pricing_manager — all 5 perms (explicit givePermissionTo)
+        //   - sales           — view_any + view only (explicit givePermissionTo)
+        //   - read_only       — view_any + view via the view_% LIKE pattern below
+        //
+        // Using givePermissionTo (additive) instead of syncPermissions on
+        // the per-role level so we don't trample the LIKE-pattern role
+        // syncs that follow. Idempotent because Spatie's givePermissionTo
+        // is no-op on already-attached permissions.
+        Role::findByName('pricing_manager')->givePermissionTo($tradePricingPermissions);
+        Role::findByName('sales')->givePermissionTo([
+            'view_any_customer_group',
+            'view_customer_group',
+        ]);
+        // read_only: NO customer_group permissions; the view_% LIKE pattern
+        // at step 4 below WILL pick up view_customer_group + view_any_customer_group
+        // — D-10 says read_only is "locked out entirely", so we explicitly
+        // revoke them after the LIKE-pattern sync. See step 4b below.
+        // (admin gets all 5 via Permission::all() at step 3 below.)
+
         // 3. admin → ALL permissions (idempotent sync).
         //
         // Phase 4 Plan 04 — admin auto-attaches:
@@ -76,6 +120,16 @@ class RolePermissionSeeder extends Seeder
                 ->where('name', 'like', 'view_%')
                 ->get()
         );
+
+        // 4b. Phase 9 Plan 05 (TRDE-04 D-10) — read_only is "locked out
+        // entirely" from customer_groups. The view_% LIKE pattern at step 4
+        // above sweeps in view_any_customer_group + view_customer_group;
+        // explicitly revoke them here so the D-10 role matrix matches.
+        // Idempotent: revokePermissionTo is a no-op when not attached.
+        $readOnly->revokePermissionTo([
+            'view_any_customer_group',
+            'view_customer_group',
+        ]);
 
         // 5. pricing_manager → CRUD on product + pricing_rule; view-only on competitor_price + sync_run
         //    Permissions arrive in later plans (Product in Phase 2, PricingRule in Phase 3, etc.)

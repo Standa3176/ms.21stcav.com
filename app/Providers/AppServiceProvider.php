@@ -307,6 +307,19 @@ class AppServiceProvider extends ServiceProvider
         // is the only Filament surface that renders IntegrationEvent rows.
         Gate::policy(\App\Foundation\Integration\Models\IntegrationEvent::class, \App\Domain\CRM\Policies\CrmPushLogPolicy::class);
 
+        // ── Phase 9 Plan 05: TradePricing — CustomerGroup policy ─────────
+        // CRUD gates for the new CustomerGroupResource (TRDE-04 D-10).
+        // Permission strings (`*_customer_group`) are seeded by
+        // RolePermissionSeeder per Plan 05 Task 2; policy methods consult
+        // them via `$user->can()`. Sales = view-only; read_only = locked
+        // out entirely. Pitfall P5-F — DO NOT regenerate via shield:generate
+        // (use shield:safe-regenerate --allow-new=CustomerGroupPolicy on
+        // first scaffold; subsequent runs drop the --allow-new flag).
+        Gate::policy(
+            \App\Domain\TradePricing\Models\CustomerGroup::class,
+            \App\Domain\TradePricing\Policies\CustomerGroupPolicy::class,
+        );
+
         // ── Phase 8 Plan 01: C4 Agent Framework — AgentRun policy ────────
         // Admin-only viewAny/view; create/update/delete return false
         // unconditionally because AgentRuns are produced by Plan 04's

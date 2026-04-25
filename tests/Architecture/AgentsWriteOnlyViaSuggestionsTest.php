@@ -55,7 +55,17 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // per CONTEXT D-06; everything else in the Agents domain stays gated.
         // Per AgentRun.php docblock: "Writes flow ONLY through Plan 04's
         // RunAgentJob (the framework writer)".
-        ->notPath('Jobs/RunAgentJob.php');
+        ->notPath('Jobs/RunAgentJob.php')
+        // Phase 8 Plan 05 Task 3 — AgentsPruneArchiveCommand IS the
+        // sanctioned writer for the activity_log audit row that records
+        // agent_run_archived prunes (D-07 retention). It also DELETEs aged
+        // AgentRun rows but those are the framework's OWN data, not v1 data.
+        ->notPath('Console/Commands/AgentsPruneArchiveCommand.php')
+        // Phase 8 Plan 05 Task 2 — AgentRunGdprScrubber IS the sanctioned
+        // writer for the gdpr_erasure_log audit row (D-09). It also updates
+        // AgentRun rows to scrub PII in-place; both writes are deliberate
+        // audit-trail writes, not data writes through the Suggestions seam.
+        ->notPath('Services/AgentRunGdprScrubber.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

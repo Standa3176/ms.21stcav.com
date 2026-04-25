@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Agents\Events\AgentRunFailed;
+use App\Domain\Agents\Listeners\NotifyOnAgentRunFailed;
+use App\Domain\Agents\Listeners\NotifyOnGuardrailBlocked;
+use App\Domain\Agents\Listeners\NotifyOnMonthlyBudgetExceeded;
 use App\Domain\Alerting\Listeners\ThrottledFailedJobNotifier;
 use App\Domain\Competitor\Events\CompetitorPriceRecorded;
 use App\Domain\Competitor\Listeners\DispatchMarginAnalyserJob;
@@ -104,6 +108,23 @@ class EventServiceProvider extends ServiceProvider
         // which runs the 3-threshold gate and creates margin_change Suggestions.
         CompetitorPriceRecorded::class => [
             DispatchMarginAnalyserJob::class,
+        ],
+
+        // Phase 8 Plan 05 Task 4 (BLOCKER 2) — AlertRecipient notifications
+        // for the AgentRunFailed event. Three listeners:
+        //   - NotifyOnMonthlyBudgetExceeded: filters status=monthly_budget_blocked
+        //     + first-of-month dedup
+        //   - NotifyOnGuardrailBlocked: filters status=guardrail_blocked +
+        //     first-of-day-per-guardrail dedup
+        //   - NotifyOnAgentRunFailed: catches everything ELSE (failed +
+        //     budget_exceeded) with 5-min dedup; defers to the dedicated
+        //     listeners above for the two specific kinds (no double-notify).
+        // Order: dedicated listeners first (early-exit on non-match), generic
+        // last. Each enforces its own dedup so order doesn't change semantics.
+        AgentRunFailed::class => [
+            NotifyOnMonthlyBudgetExceeded::class,
+            NotifyOnGuardrailBlocked::class,
+            NotifyOnAgentRunFailed::class,
         ],
     ];
 

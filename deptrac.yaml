@@ -137,7 +137,10 @@ parameters:
     #   - Webhooks: subscribes to OrderReceived + CustomerRegistered events (Plan 04-03)
     #   - Suggestions: CrmPushRetryApplier producer for kind='crm_push_failed' (Plan 04-03)
     # Explicitly NOT allowed: Pricing, Products, Competitor, Feeds.
-    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions]
+    # Phase 8 Plan 05 (D-09) — CRM extended with Agents allow-list because
+    # GdprEraseBitrixCustomerCommand now injects AgentRunGdprScrubber via
+    # constructor (extension via DI; v1 logic shape preserved).
+    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents]
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]
@@ -201,7 +204,14 @@ parameters:
     # Explicitly NOT allowed: Webhooks, Sync, Cutover, Feeds, Dashboard,
     # Marketing (v2.1). DeptracAgentsLayerTest enforces these denials.
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
-    Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate]
+    # Phase 8 Plan 05 — Alerting added because Plan 05 Task 4 (BLOCKER 2)
+    # AlertRecipient lookups in NotifyOn{AgentRunFailed,MonthlyBudgetExceeded,
+    # GuardrailBlocked} listeners. WpDirectDb added because the
+    # AgentRunGdprScrubber writes a gdpr_erasure_log audit row via DB facade
+    # (mirrors Phase 4 GdprEraser pattern + Pricing SimulatedImpactCalculator
+    # precedent — narrowly scoped to local meetingstore_ops DB writes; WP
+    # writes remain banned).
+    Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate, Alerting, WpDirectDb]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

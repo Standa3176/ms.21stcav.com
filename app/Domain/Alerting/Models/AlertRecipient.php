@@ -55,6 +55,7 @@ class AlertRecipient extends Model
         'receives_competitor_alerts',
         'receives_auto_create_alerts',
         'receives_weekly_digest',
+        'receives_agent_alerts',
     ];
 
     protected $casts = [
@@ -64,6 +65,7 @@ class AlertRecipient extends Model
         'receives_competitor_alerts' => 'boolean',
         'receives_auto_create_alerts' => 'boolean',
         'receives_weekly_digest' => 'boolean',
+        'receives_agent_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -100,5 +102,11 @@ class AlertRecipient extends Model
     public function scopeReceivesWeeklyDigest(Builder $q): Builder
     {
         return $q->where('receives_weekly_digest', true);
+    }
+
+    /** Scope: only rows opted-in to agent alerts (Phase 8 Plan 01 + Plan 05). */
+    public function scopeReceivesAgentAlerts(Builder $q): Builder
+    {
+        return $q->where('receives_agent_alerts', true);
     }
 }

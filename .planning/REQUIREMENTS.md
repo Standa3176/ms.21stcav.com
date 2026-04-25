@@ -58,8 +58,8 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 - [x] **TRDE-02**: `TradeRuleResolver` service decorates v1 `RuleResolver`. When called with a `customer_group_id`, resolver includes customer-group-scoped rules in specificity sort (`customer_group_id + brand + category` most specific); when null, falls through to v1 behaviour untouched.
 - [x] **TRDE-03**: Golden fixture extended from 50 → 80 triples. Original 50 triples remain byte-identical (regression guardrail `GoldenFixtureV1UnchangedTest`). New 30 triples cover customer-group scenarios including NULL handling, brand + customer-group, category + customer-group, override + customer-group.
 - [x] **TRDE-04**: `PricingRule` Filament Resource form gains optional `customer_group_id` Select field. Empty = retail rule (default). Group-scoped rules default to `priority + 100` so customer-group wins against same-scope retail rule.
-- [ ] **TRDE-05**: Trade-pricing display strategy: admin-configurable (`config/b2b.php => 'anonymous_sees' => 'retail' | 'hidden'`). `retail` (proposed default) = anonymous users see retail prices; after login the Cart + PDP re-resolve using customer_group_id. `hidden` = anonymous users see "Login to see trade pricing". Phase 9 CONTEXT.md confirms operator choice.
-- [ ] **TRDE-06**: Trade-only catalogue visibility NOT supported in v2.0 (all SKUs remain publicly visible). Documented as deferred.
+- [x] **TRDE-05**: Trade-pricing display strategy: admin-configurable (`config/b2b.php => 'anonymous_sees' => 'retail' | 'hidden'`). `retail` (proposed default) = anonymous users see retail prices; after login the Cart + PDP re-resolve using customer_group_id. `hidden` = anonymous users see "Login to see trade pricing". Phase 9 CONTEXT.md confirms operator choice.
+- [x] **TRDE-06**: Trade-only catalogue visibility NOT supported in v2.0 (all SKUs remain publicly visible). Documented as deferred.
 
 ### E2. Quote Request → Bitrix Deal Flow (QUOT) — Phase 11
 
@@ -150,8 +150,8 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 | TRDE-02 | Phase 9 | Complete |
 | TRDE-03 | Phase 9 | Complete |
 | TRDE-04 | Phase 9 | Complete |
-| TRDE-05 | Phase 9 | Pending |
-| TRDE-06 | Phase 9 | Pending |
+| TRDE-05 | Phase 9 | Complete |
+| TRDE-06 | Phase 9 | Complete |
 | PRCAGT-01 | Phase 10 | Pending |
 | PRCAGT-02 | Phase 10 | Pending |
 | PRCAGT-03 | Phase 10 | Pending |

@@ -54,7 +54,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
   6. The Filament `AgentRunResource` (admin-only) shows paginated AgentRun history with filters (kind, status, cost range, date range) and a detail view linking to the Langfuse trace, the produced Suggestion(s), and a token usage / cost breakdown.
 **Plans**: 5 plans (waves 1â€”5; linear chain â€” each wave consumes prior wave's contracts)
   - [x] 08-01-PLAN.md â€” Foundation: AgentRun model + 14-col schema + 4 enums + Deptrac Agents layer (dual-YAML) + agents-supervisor + 3 architecture tests
-  - [ ] 08-02-PLAN.md â€” ClaudeClient + Prism + Langfuse Docker compose + observability runbook (composer adds prism-php/prism + mliviu79/laravel-langfuse-prism â€” zero v1 bumps)
+  - [x] 08-02-PLAN.md â€” ClaudeClient + Prism + Langfuse Docker compose + observability runbook (composer adds prism-php/prism + mliviu79/laravel-langfuse-prism â€” zero v1 bumps)
   - [ ] 08-03-PLAN.md â€” RunsAsAgent contract + AgentRegistry + BudgetGuard (atomic Cache::add) + ToolBus + GuardrailEngine + 3 guardrails + AgentSuggestionWriter + 4 exceptions
   - [ ] 08-04-PLAN.md â€” EchoAgent + ReadHealthCheckTool + RunAgentJob + agent:run CLI + Filament AgentRunResource + Prism::fake() E2E test
   - [ ] 08-05-PLAN.md â€” shield:safe-regenerate + AgentRunGdprScrubber + agents:prune-archive + agents:gdpr-purge-langfuse stub + 08-VERIFICATION.md ship-verdict

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Intelligence + B2B
 status: executing
-stopped_at: "Completed 08-01-PLAN.md (foundation: agent_runs ULID model, agents-supervisor, Deptrac Agents layer, 3 arch tests)"
-last_updated: "2026-04-25T11:04:39.295Z"
+stopped_at: Completed 08-02-PLAN.md (ClaudeClient Prism wrapper + Langfuse Docker stack + observability runbook)
+last_updated: "2026-04-25T11:46:52.538Z"
 last_activity: 2026-04-25
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
-  percent: 20
+  completed_plans: 2
+  percent: 40
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-24 — v2.0 milestone kicked off)
 
 Milestone: v2.0 Intelligence + B2B
 Phase: 08 (C4 Agent Framework) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-04-25
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 
 **v2 phases:** No data yet — v2 planning kicks off with Phase 8.
 | Phase 08-c4-agent-framework P01 | 55min | 3 tasks | 20 files |
+| Phase 08-c4-agent-framework P02 | 36min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,14 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affe
 - E5 RAMS cross-project integration deferred to v2.1+
 - Channel feeds (Phase 8 in candidate list), customer automation, forecasting all deferred to v2.1+
 
+**v2 Plan 08-02 (2026-04-25):**
+
+- ClaudeClient is the SOLE Anthropic call site (Prism wrapper); enforced by Deptrac + AgentsWriteOnlyViaSuggestionsTest
+- Self-hosted Langfuse on lf.ops.meetingstore.co.uk with 127.0.0.1-only port binding; nginx + admin basic auth; mliviu79 shim primary path, custom-OTel fallback documented in observability.md
+- Plan W8 verify regex corrected to `[* ]v?<version>` (handles real `composer show v0.100.1` prefix); future plan-checkers should use this pattern
+- ClaudeResponse maps Prism's 7-case FinishReason enum to local 5-case D-06 enum with default→Error fall-through (future-proofs against Prism enum additions)
+- CostCalculator throws RuntimeException on unknown model (fail-loud — unbudgeted call surfaces as runtime error, not silent zero-cost)
+
 ### Pending Todos
 
 None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
@@ -128,9 +137,10 @@ None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 - Phase 14 (E4): public vs internal SKU split; anonymous chatbot PII storage posture; chatbot 24/7 vs business-hours
 - Phase 15 (C2): GCLID capture in v1 — hotfix on v1 may be required before P15
 - Plan 08-01: AgentRunTest (12 unit tests) + migration verification deferred until MySQL service is running on 127.0.0.1:3306
+- Plan 08-02: 5 Prism::fake() integration tests in tests/Feature/Agents/ClaudeClientTest.php deferred until MySQL service is online (Pest auto-applies RefreshDatabase to tests/Feature). 9 unit tests pass today. Langfuse Docker stack ready for ops to provision per docs/ops/observability.md
 
 ## Session Continuity
 
-Last session: 2026-04-25T11:04:31.132Z
-Stopped at: Completed 08-01-PLAN.md (foundation: agent_runs ULID model, agents-supervisor, Deptrac Agents layer, 3 arch tests)
+Last session: 2026-04-25T11:46:52.527Z
+Stopped at: Completed 08-02-PLAN.md (ClaudeClient Prism wrapper + Langfuse Docker stack + observability runbook)
 Resume: `/gsd-plan-phase 8` (begin C4 Agent Framework planning; research flag YES — run `/gsd-research-phase 8` first if research-before-plan workflow enabled)

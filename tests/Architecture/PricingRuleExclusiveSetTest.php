@@ -161,3 +161,79 @@ it('every pricing_rules row satisfies the exclusive-set invariant across scope t
         assertExclusiveSetInvariant($rule);
     }
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 9 Plan 01 extension — customer_group_id is orthogonal to scope (TRDE-01)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// RESEARCH §Open Questions Q5: customer_group_id is positively nullable on
+// EVERY existing scope. Phase 9 does NOT introduce a new exclusive-set
+// constraint — the column is orthogonal to the brand/category/default_tier
+// invariant. A rule may carry any combination of:
+//   (scope, customer_group_id) ∈ {brand, category, brand_category, default_tier}
+//                              × {NULL, <group.id>}
+//
+// This positive test exercises three of the eight cells (brand_category +
+// NULL, brand_category + group, default_tier + group per Open Q4) to lock
+// the orthogonality. The original 8 exclusivity assertions above stay green
+// because customer_group_id is neither read nor mutated by them.
+
+it('customer_group_id is nullable on every existing scope (Phase 9 Plan 01 — TRDE-01)', function (): void {
+    $group = \App\Domain\TradePricing\Models\CustomerGroup::factory()->create([
+        'slug' => 'orthogonal-test',
+    ]);
+
+    // Cell 1: brand_category scope + customer_group_id=null (existing retail rule).
+    PricingRule::factory()->create([
+        'scope' => PricingRule::SCOPE_BRAND_CATEGORY,
+        'customer_group_id' => null,
+        'brand_id' => 1,
+        'category_id' => 1,
+        'is_default_tier' => false,
+        'tier_min_pennies' => null,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 2500,
+        'priority' => 100,
+        'active' => true,
+    ]);
+
+    // Cell 2: brand_category scope + customer_group_id=<group.id> (trade rule).
+    PricingRule::factory()->create([
+        'scope' => PricingRule::SCOPE_BRAND_CATEGORY,
+        'customer_group_id' => $group->id,
+        'brand_id' => 2,
+        'category_id' => 2,
+        'is_default_tier' => false,
+        'tier_min_pennies' => null,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 3000,
+        'priority' => 200,
+        'active' => true,
+    ]);
+
+    // Cell 3: default_tier scope + customer_group_id=<group.id> (Open Q4 — flat-rate
+    // group rule explicitly allowed; e.g. "all NHS gets 18% margin regardless of
+    // brand or category"). The exclusive-set invariant still holds: brand_id and
+    // category_id remain NULL, tier bounds are set.
+    PricingRule::factory()->create([
+        'scope' => PricingRule::SCOPE_DEFAULT_TIER,
+        'customer_group_id' => $group->id,
+        'brand_id' => null,
+        'category_id' => null,
+        'is_default_tier' => true,
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => 999999,
+        'margin_basis_points' => 1800,
+        'priority' => 100,
+        'active' => true,
+    ]);
+
+    expect(PricingRule::count())->toBe(3);
+
+    // Re-walk all three rows through the existing exclusive-set invariant —
+    // the customer_group_id column is orthogonal, so the original assertions
+    // must remain green.
+    foreach (PricingRule::all() as $rule) {
+        assertExclusiveSetInvariant($rule);
+    }
+});

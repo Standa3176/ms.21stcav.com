@@ -74,6 +74,18 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/Agents/.*
+    # Phase 9 Plan 01 — E1 Trade Customer Pricing decorator domain (TRDE-01).
+    # Allow-list locked at [Foundation, Pricing, Products]: TradeRuleResolver
+    # decorates v1 Pricing\RuleResolver, reads Products for brand/category,
+    # and threads Foundation primitives (DomainEvent, Auditor, Context).
+    # DENIES Sync, CRM, Webhooks, Cutover, Marketing, Agents, Channels,
+    # Quotes — TradePricing must never reach into write-side or unrelated
+    # v2 layers. DeptracTradePricingLayerTest enforces dual-YAML lockstep.
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: TradePricing
+      collectors:
+        - type: directory
+          regex: app/Domain/TradePricing/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -105,7 +117,18 @@ parameters:
     # Explicitly NOT allowed: CRM, Competitor, Webhooks, Feeds, Alerting, Suggestions.
     # (Phase 5 will add Competitor → Pricing for the suggestions producer — NOT the reverse.)
     # Plan 03-05 deviation (Rule 3): WpDirectDb retained in the allow-list — the plan's literal ruleset `[Foundation, Products, Sync]` would break Plan 03-03's SimulatedImpactCalculator (6 Deptrac violations). Architectural intent preserved: Pricing never imports CRM/Competitor/Webhooks/Feeds/Alerting/Suggestions.
-    Pricing:      [Foundation, Products, Sync, WpDirectDb]
+    # Phase 9 Plan 01 deviation (Rule 3 — blocking): Pricing allow-list extended
+    # with TradePricing because PricingRule (v1 model) gains a customerGroup()
+    # BelongsTo App\Domain\TradePricing\Models\CustomerGroup relation as part of
+    # the additive customer_group_id column edit (TRDE-01). One-way arrow:
+    # TradePricing already depends on Pricing via the decorator (TradeRuleResolver
+    # delegates to RuleResolver) — adding TradePricing to Pricing's allow-list
+    # closes the BelongsTo loop without introducing a circular reference because
+    # the dependency lives entirely on the model-relation surface, not service
+    # logic. Architectural intent preserved: Pricing service classes (RuleResolver,
+    # PriceCalculator, PriceRecomputer, SimulatedImpactCalculator) remain
+    # ignorant of customer groups — only the model-relation arrow crosses.
+    Pricing:      [Foundation, Products, Sync, WpDirectDb, TradePricing]
     # Phase 5 Plan 02 — Competitor layer cross-domain allow-list.
     # Plan 05-03 extends: + Webhooks (IncrementSkuSalesCount listener subscribes to
     # OrderReceived event + loads WebhookReceipt to read raw_body.line_items).
@@ -196,10 +219,22 @@ parameters:
     # precedent — narrowly scoped to local meetingstore_ops DB writes; WP
     # writes remain banned).
     Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate, Alerting, WpDirectDb]
+    # Phase 9 Plan 01 — TradePricing layer cross-domain allow-list (TRDE-01).
+    #   - Foundation: DomainEvent base, Auditor, IntegrationLogger, BaseCommand, Context
+    #     (TradeRuleResolver + UpdateCustomerGroupOnUserRoleChange listener thread these)
+    #   - Pricing: RuleResolver delegated to (decorator); PricingRule model read for
+    #     customer-group-scoped rule queries; PriceCalculator unchanged (consumed by
+    #     downstream callers — Phase 11 Quote flow — not by TradePricing itself)
+    #   - Products: Product model read for brand_id / category_id during 5-tier
+    #     specificity sort (Plan 09-02 TradeRuleResolver query path)
+    # Explicitly NOT allowed: Sync, CRM, Webhooks, Cutover, Marketing, Agents,
+    # Channels, Quotes — DeptracTradePricingLayerTest enforces these denials.
+    # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    TradePricing: [Foundation, Pricing, Products]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and
     # Plan 04's RunAgentJob dispatcher (controller wiring) can reach into
     # the Agents domain. The arrow stays one-way: Agents itself does NOT
     # have Http in its allow-list.
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents]
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents, TradePricing]

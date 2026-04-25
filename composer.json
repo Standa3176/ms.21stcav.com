@@ -17,7 +17,9 @@
         "laravel/horizon": "^5.45",
         "laravel/pulse": "^1.4",
         "laravel/tinker": "^2.10.1",
+        "mliviu79/laravel-langfuse-prism": "0.1.0",
         "predis/predis": "^3.4",
+        "prism-php/prism": "0.100.1",
         "rmsramos/activitylog": "^2.0",
         "sentry/sentry-laravel": "^4.17",
         "spatie/image-optimizer": "^1.8",
@@ -87,7 +89,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "php-http/discovery": true
+            "php-http/discovery": true,
+            "tbachert/spi": false
         }
     },
     "minimum-stability": "dev",

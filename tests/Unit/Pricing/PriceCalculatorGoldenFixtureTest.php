@@ -72,11 +72,18 @@ it('matches golden fixture to the penny (Phase 3 ship gate)', function (
     );
 })->with(goldenFixtures());
 
-it('loads exactly 50 golden fixture triples', function (): void {
+it('loads exactly 80 golden fixture triples (50 v1 retail + 30 v2 trade)', function (): void {
+    // Phase 9 Plan 03 — TRDE-03 extended the fixture from 50 → 80 entries.
+    // The original 50 v1 retail triples (fx-001..fx-050) remain byte-identical
+    // (locked by tests/Architecture/GoldenFixtureV1UnchangedTest.php sha256
+    // blob hash). The 30 new v2 trade triples (fx-051..fx-080) carry the same
+    // v1 keys (this test still passes for them) PLUS additional v2-only keys
+    // (customer_group_id, lookup_customer_group_id, expected_resolution_source,
+    // brand_id, category_id, rule_scope) — verified by GoldenFixtureV2TradeTest.
     $path = base_path('tests/Fixtures/Pricing/golden-fixtures.json');
     $fixtures = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
 
-    expect($fixtures)->toHaveCount(50);
+    expect($fixtures)->toHaveCount(80);
 
     foreach ($fixtures as $fx) {
         expect($fx)->toHaveKeys([

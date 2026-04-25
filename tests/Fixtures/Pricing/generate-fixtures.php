@@ -132,3 +132,23 @@ if (count($fixtures) !== 50) {
 }
 
 echo json_encode($fixtures, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE), PHP_EOL;
+
+// ── Phase 9 Plan 03 — 30 v2 trade triples (fx-051..fx-080) ─────────────────────
+// CONTEXT.md D-05 distribution: 5x4=20 basic group + 5 brand+group precedence
+//   + 3 NULL handling + 2 override+group
+// W-02 — those triples are emitted by tests/Fixtures/Pricing/generate-trade-fixtures.php
+// which boots Laravel and computes expected_final_pennies IN-PROCESS via
+// PriceCalculator. No hand math.
+//
+// The split (this script for v1 + generate-trade-fixtures.php for v2) preserves
+// the byte-identical v1 invariant (CONTEXT.md D-05 + tests/Architecture/
+// GoldenFixtureV1UnchangedTest.php sha256 blob hash): regenerating v1 alone
+// never touches v2 entries and vice versa.
+//
+// To regenerate the full 80-triple fixture from scratch:
+//   1. php tests/Fixtures/Pricing/generate-fixtures.php > /tmp/v1.json
+//   2. php tests/Fixtures/Pricing/generate-trade-fixtures.php > /tmp/v2.json
+//   3. Merge v1 + v2 array-merge → tests/Fixtures/Pricing/golden-fixtures.json
+//
+// Expected resulting v1 sha256 (array_slice(0, 50), JSON_PRETTY_PRINT|UNESCAPED_SLASHES):
+//   f222b48912d0d1211a6d8737f9d4fa58fbc452e3b862342af9818e4df200e967

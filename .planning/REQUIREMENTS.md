@@ -24,7 +24,7 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 - [x] **AGNT-08**: `Langfuse` observability via `mliviu79/laravel-langfuse-prism` auto-instrumentation. Every Prism call traces to self-hosted Langfuse Docker instance with `trace_id` persisted on `AgentRun.langfuse_trace_id`. Custom-OTel middleware fallback documented in `docs/ops/observability.md` with cutover runbook.
 - [x] **AGNT-09**: `agents` Horizon queue configured (tries=1, timeout=180s). No retry policy — agent runs are non-idempotent by nature of LLM outputs; failures surface as suggestions for human review via existing Phase 1 `ApplySuggestionJob` → DLQ pattern.
 - [x] **AGNT-10**: Deptrac `Agents` layer added to BOTH `depfile.yaml` AND `deptrac.yaml` with allow-list `[Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate]` (read-only for data layers; writes only via Suggestions). `AgentsWriteOnlyViaSuggestionsTest` Pest architecture test asserts zero `DB::insert`/`update`/`delete` calls from `app/Domain/Agents/**`.
-- [ ] **AGNT-11**: `shield:safe-regenerate` artisan command wraps `shield:generate --all` with automatic P5-F restoration (reads `app/Domain/*/Policies/*` via git checkout post-regen). Documented in `docs/ops/shield-regeneration.md`.
+- [x] **AGNT-11**: `shield:safe-regenerate` artisan command wraps `shield:generate --all` with automatic P5-F restoration (reads `app/Domain/*/Policies/*` via git checkout post-regen). Documented in `docs/ops/shield-regeneration.md`.
 - [x] **AGNT-12**: `AGENT_WRITE_ENABLED` + `AGENT_AUTO_APPLY_ENABLED` env flags default false in `.env.example`. When `AGENT_WRITE_ENABLED=false`, agent runs complete but suggestions are marked `status=shadow` and not surfaced in Filament. When `AGENT_AUTO_APPLY_ENABLED=false`, approved agent suggestions still require human review click (no auto-apply regardless of guardrails).
 - [x] **AGNT-13**: Filament `AgentRunResource` (admin-only) shows paginated AgentRun history with filters (kind, status, cost range, date range). Detail view shows input_hash, output suggestions (linked), Langfuse trace link, token usage, cost breakdown.
 
@@ -143,7 +143,7 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 | AGNT-08 | Phase 8 | Complete |
 | AGNT-09 | Phase 8 | Complete |
 | AGNT-10 | Phase 8 | Complete |
-| AGNT-11 | Phase 8 | Pending |
+| AGNT-11 | Phase 8 | Complete |
 | AGNT-12 | Phase 8 | Complete |
 | AGNT-13 | Phase 8 | Complete |
 | TRDE-01 | Phase 9 | Pending |

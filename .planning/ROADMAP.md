@@ -57,7 +57,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
   - [x] 08-02-PLAN.md â€” ClaudeClient + Prism + Langfuse Docker compose + observability runbook (composer adds prism-php/prism + mliviu79/laravel-langfuse-prism â€” zero v1 bumps)
   - [x] 08-03-PLAN.md â€” RunsAsAgent contract + AgentRegistry + BudgetGuard (atomic Cache::add) + ToolBus + GuardrailEngine + 3 guardrails + AgentSuggestionWriter + 4 exceptions
   - [x] 08-04-PLAN.md â€” EchoAgent + ReadHealthCheckTool + RunAgentJob + agent:run CLI + Filament AgentRunResource + Prism::fake() E2E test
-  - [ ] 08-05-PLAN.md â€” shield:safe-regenerate + AgentRunGdprScrubber + agents:prune-archive + agents:gdpr-purge-langfuse stub + 08-VERIFICATION.md ship-verdict
+  - [x] 08-05-PLAN.md â€” shield:safe-regenerate + AgentRunGdprScrubber + agents:prune-archive + agents:gdpr-purge-langfuse stub + 08-VERIFICATION.md ship-verdict
 **Research flag**: YES â€” Prism API surface verified, Langfuse self-hosted Docker compose verified, shield:safe-regenerate designed (08-RESEARCH.md complete)
 
 ### Phase 9: E1 Trade Customer Pricing

@@ -14,12 +14,12 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 
 ### C4. Agent Framework (AGNT) — Phase 8
 
-- [ ] **AGNT-01**: A `RunsAsAgent` contract defines the agent interface (method signatures: `execute(input): AgentResult`, `tools(): array<Tool>`, `systemPrompt(): string`, `guardrails(): array<Guardrail>`). Every agent implements this contract.
-- [ ] **AGNT-02**: `AgentRegistry` service resolves agent class by kind (`pricing`, `seo`, `chatbot`, `ad_optimisation`). Registered in `AppServiceProvider::register()`.
+- [x] **AGNT-01**: A `RunsAsAgent` contract defines the agent interface (method signatures: `execute(input): AgentResult`, `tools(): array<Tool>`, `systemPrompt(): string`, `guardrails(): array<Guardrail>`). Every agent implements this contract.
+- [x] **AGNT-02**: `AgentRegistry` service resolves agent class by kind (`pricing`, `seo`, `chatbot`, `ad_optimisation`). Registered in `AppServiceProvider::register()`.
 - [x] **AGNT-03**: Every agent run creates an `AgentRun` Eloquent model row with ULID PK, `kind`, `correlation_id`, `started_at`, `completed_at`, `status` enum, `input_hash`, `output_suggestion_ids` array, `langfuse_trace_id`, `token_usage`, `cost_pence`. Retained indefinitely for audit (overrides Phase 1 audit_log 365-day retention).
-- [ ] **AGNT-04**: `BudgetGuard` service enforces per-feature daily ceilings (config/agents.php: `pricing: 500 pence`, `seo: 300 pence`, `chatbot: 200 pence per session`, `ad_optimisation: 300 pence`) via atomic `Cache::add` counters. Exceeded ceiling throws `BudgetExceededException`; does not silently fail.
-- [ ] **AGNT-05**: `ToolBus` service routes agent tool-calls to named tool handlers with per-agent allow-list. Unknown tool names raise `UnauthorisedToolException`. Tool naming convention enforced: every tool starts with `propose*`, `read*`, or `search*` — NEVER `create*` / `update*` / `delete*` (architectural test `AgentToolsNamingTest`).
-- [ ] **AGNT-06**: `GuardrailEngine` chains pre-run guardrails (trust-tier input tagging, prompt-injection XML fencing, sensitive-fields strip) and post-run guardrails (outbound regex filter for internal SKU codes, email PII, internal hostnames). Guardrail failure shorts-circuits the run and writes a `crm_push_failed`-style suggestion with kind `agent_guardrail_blocked`.
+- [x] **AGNT-04**: `BudgetGuard` service enforces per-feature daily ceilings (config/agents.php: `pricing: 500 pence`, `seo: 300 pence`, `chatbot: 200 pence per session`, `ad_optimisation: 300 pence`) via atomic `Cache::add` counters. Exceeded ceiling throws `BudgetExceededException`; does not silently fail.
+- [x] **AGNT-05**: `ToolBus` service routes agent tool-calls to named tool handlers with per-agent allow-list. Unknown tool names raise `UnauthorisedToolException`. Tool naming convention enforced: every tool starts with `propose*`, `read*`, or `search*` — NEVER `create*` / `update*` / `delete*` (architectural test `AgentToolsNamingTest`).
+- [x] **AGNT-06**: `GuardrailEngine` chains pre-run guardrails (trust-tier input tagging, prompt-injection XML fencing, sensitive-fields strip) and post-run guardrails (outbound regex filter for internal SKU codes, email PII, internal hostnames). Guardrail failure shorts-circuits the run and writes a `crm_push_failed`-style suggestion with kind `agent_guardrail_blocked`.
 - [x] **AGNT-07**: Prism-based `ClaudeClient` wraps `prism-php/prism` with default `model=claude-sonnet-4-6`, `temperature=0`, `withMaxSteps(8)`, `withMaxTokens(4000)`. All writes route through this client — no direct `Http::post` to Anthropic API allowed (Deptrac `Agents → Foundation[ClaudeClient]` only).
 - [x] **AGNT-08**: `Langfuse` observability via `mliviu79/laravel-langfuse-prism` auto-instrumentation. Every Prism call traces to self-hosted Langfuse Docker instance with `trace_id` persisted on `AgentRun.langfuse_trace_id`. Custom-OTel middleware fallback documented in `docs/ops/observability.md` with cutover runbook.
 - [x] **AGNT-09**: `agents` Horizon queue configured (tries=1, timeout=180s). No retry policy — agent runs are non-idempotent by nature of LLM outputs; failures surface as suggestions for human review via existing Phase 1 `ApplySuggestionJob` → DLQ pattern.
@@ -133,12 +133,12 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AGNT-01 | Phase 8 | Pending |
-| AGNT-02 | Phase 8 | Pending |
+| AGNT-01 | Phase 8 | Complete |
+| AGNT-02 | Phase 8 | Complete |
 | AGNT-03 | Phase 8 | Complete |
-| AGNT-04 | Phase 8 | Pending |
-| AGNT-05 | Phase 8 | Pending |
-| AGNT-06 | Phase 8 | Pending |
+| AGNT-04 | Phase 8 | Complete |
+| AGNT-05 | Phase 8 | Complete |
+| AGNT-06 | Phase 8 | Complete |
 | AGNT-07 | Phase 8 | Complete |
 | AGNT-08 | Phase 8 | Complete |
 | AGNT-09 | Phase 8 | Complete |

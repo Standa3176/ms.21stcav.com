@@ -403,6 +403,11 @@ class AppServiceProvider extends ServiceProvider
                 // Question Q1 RESOLVED (RESEARCH §Open Questions). v2.1 swaps
                 // to live API once Langfuse retention API stabilises.
                 \App\Domain\Agents\Console\Commands\AgentsGdprPurgeLangfuseCommand::class,
+                // agents:prune-archive (D-07) — annual 5-year retention prune.
+                // Schedule registered in routes/console.php (1 Jan 02:00
+                // Europe/London). Default --days=1825 covers the full D-07
+                // horizon; --dry-run for safe ops verification.
+                \App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand::class,
             ]);
         }
     }

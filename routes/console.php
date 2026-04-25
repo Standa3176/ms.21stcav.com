@@ -145,6 +145,19 @@ Schedule::command('reports:weekly-digest')
     ->timezone('Europe/London')
     ->description('Weekly ops digest — Monday 07:00 Europe/London (DASH-05 / Phase 7 Plan 04)');
 
+// Phase 8 Plan 05 (D-07) — agents:prune-archive annual on 1 Jan 02:00 Europe/London.
+// Exports AgentRun rows where completed_at < NOW() - INTERVAL 5 YEAR to
+// storage/app/agent-archives/agent-runs-{YYYY-MM-DD-HHmmss}.json.gz then
+// DELETEs the rows. Audit row in activity_log. Disk projection ~3GB after
+// 5y of 100 runs/day; archives stay <100MB compressed. Annual cadence
+// keeps cron load minimal — operator can also invoke ad-hoc with --days=N.
+Schedule::command('agents:prune-archive')
+    ->yearlyOn(1, 1, '02:00')
+    ->withoutOverlapping(120)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Phase 8 D-07 — annual AgentRun 5y retention prune (1 Jan 02:00 Europe/London)');
+
 // Phase 7 Plan 05 — cutover:divergence-scan daily 01:00 Europe/London.
 // OPT-IN via env CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED=true — ops enables
 // during the parallel-run window (D-19 monitoring phase) and disables again

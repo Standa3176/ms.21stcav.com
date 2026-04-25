@@ -38,6 +38,7 @@ use Illuminate\Support\Facades\Gate;
 it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', function (): void {
     $paths = [
         app_path('Policies'),
+        app_path('Domain/Agents/Policies'),           // Phase 8 Plan 01 — 1 AgentRunPolicy (admin-only)
         app_path('Domain/Alerting/Policies'),
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
@@ -72,6 +73,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
 it('has at least 9 Policy files under the scanned roots (positive control)', function (): void {
     $paths = [
         app_path('Policies'),
+        app_path('Domain/Agents/Policies'),           // Phase 8 Plan 01 — 1 AgentRunPolicy (admin-only)
         app_path('Domain/Alerting/Policies'),
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
@@ -108,8 +110,10 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     // 26 = above + 2 Dashboard policies (Phase 7 Plan 01:
     //      DashboardSnapshotPolicy + UserSavedFilterPolicy).
     //      Floor bumped 24 → 26.
+    // 27 = above + 1 AgentRunPolicy (Phase 8 Plan 01 — C4 Agent Framework).
+    //      Floor bumped 26 → 27.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(26, 'Expected ≥ 26 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(27, 'Expected ≥ 27 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -148,6 +152,8 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         // Phase 7 Plan 01 — Dashboard domain (D-02 + D-07).
         \App\Domain\Dashboard\Models\DashboardSnapshot::class           => \App\Domain\Dashboard\Policies\DashboardSnapshotPolicy::class,
         \App\Domain\Dashboard\Models\UserSavedFilter::class             => \App\Domain\Dashboard\Policies\UserSavedFilterPolicy::class,
+        // Phase 8 Plan 01 — C4 Agent Framework (admin-only AgentRun viewer).
+        \App\Domain\Agents\Models\AgentRun::class                       => \App\Domain\Agents\Policies\AgentRunPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

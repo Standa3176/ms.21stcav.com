@@ -63,6 +63,18 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/Cutover/.*
+    # Phase 8 Plan 01 — C4 Agent Framework (greenfield agents domain).
+    # Allow-list per AGNT-10: read-only consumption of v1 data domains
+    # (Foundation, Suggestions, Products, Pricing, Competitor, CRM,
+    # ProductAutoCreate). DENIES Webhooks, Sync, Cutover, Marketing.
+    # AgentsWriteOnlyViaSuggestionsTest enforces zero direct DB writes
+    # outside Models/AgentRun.php — agents must produce data exclusively
+    # through the Suggestions seam (AgentSuggestionWriter — Plan 03).
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Agents
+      collectors:
+        - type: directory
+          regex: app/Domain/Agents/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -175,5 +187,25 @@ parameters:
     # Feeds is explicitly EXCLUDED (v2 channel-feed domain).
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     Cutover:      [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, Dashboard, WpDirectDb]
+    # Phase 8 Plan 01 — Agents layer cross-domain allow-list (AGNT-10).
+    #   - Foundation: DomainEvent, BaseCommand, Auditor, IntegrationLogger
+    #     (every agent service extends or threads these)
+    #   - Suggestions: SuggestionApplier contract + Suggestion model — agents
+    #     produce ONLY through this seam (AgentsWriteOnlyViaSuggestionsTest
+    #     enforces). Plan 03's AgentSuggestionWriter is the sole non-AgentRun
+    #     write path.
+    #   - Products / Pricing / Competitor / CRM / ProductAutoCreate: read-only
+    #     consumption for tool implementations (Plan 03+04 read_*/search_*
+    #     tools). Agents never UPDATE these tables; the Suggestions seam is
+    #     the only producer→consumer arrow.
+    # Explicitly NOT allowed: Webhooks, Sync, Cutover, Feeds, Dashboard,
+    # Marketing (v2.1). DeptracAgentsLayerTest enforces these denials.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate]
     Foundation:   []
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover]
+    # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
+    # future Filament AgentRunResource (under app/Filament if added) and
+    # Plan 04's RunAgentJob dispatcher (controller wiring) can reach into
+    # the Agents domain. The arrow stays one-way: Agents itself does NOT
+    # have Http in its allow-list.
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents]

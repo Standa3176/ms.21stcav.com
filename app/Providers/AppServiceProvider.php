@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Agents\Models\AgentRun;
+use App\Domain\Agents\Policies\AgentRunPolicy;
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Alerting\Policies\AlertRecipientPolicy;
 use App\Domain\Pricing\Models\PricingRule;
@@ -249,6 +251,20 @@ class AppServiceProvider extends ServiceProvider
         // all mutations denied. This registration only affects CRM — the Resource
         // is the only Filament surface that renders IntegrationEvent rows.
         Gate::policy(\App\Foundation\Integration\Models\IntegrationEvent::class, \App\Domain\CRM\Policies\CrmPushLogPolicy::class);
+
+        // ── Phase 8 Plan 01: C4 Agent Framework — AgentRun policy ────────
+        // Admin-only viewAny/view; create/update/delete return false
+        // unconditionally because AgentRuns are produced by Plan 04's
+        // RunAgentJob and never edited via Filament. Hand-written hasRole
+        // check per Pitfall K + P5-F — DO NOT regenerate via shield:generate
+        // without porting back the hasRole layer. PolicyTemplateIntegrityTest
+        // floor bumps 26 → 27 with this policy (caught by the architecture
+        // suite on every CI run).
+        //
+        // Filament Resource for AgentRun arrives in Plan 08-04; this policy
+        // ships in Plan 08-01 so the architecture-test floor is in place
+        // before the Filament surface lands.
+        Gate::policy(AgentRun::class, AgentRunPolicy::class);
 
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.

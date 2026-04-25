@@ -77,6 +77,10 @@ return [
         'redis:sync-bulk' => 1800,
         'redis:competitor-csv' => 600,
         'redis:critical' => 30,
+        // Phase 8 Plan 01 — agents queue slow-queue alarm. tries=1 + timeout=180
+        // means a stuck Anthropic call surfaces as a wait threshold, not a
+        // silent retry storm. 60s mirrors the default-queue threshold.
+        'redis:agents' => 60,
     ],
 
     /*
@@ -243,12 +247,49 @@ return [
                 'timeout' => 120,
                 'memory' => 256,
             ],
+
+            // Phase 8 Plan 01 (AGNT-09) — agents-supervisor for the C4 framework.
+            // Research correction #1: this supervisor was NOT pre-allocated in v1
+            // Phase 1 FOUND-09 (CONTEXT.md claim was incorrect; verified against
+            // git history). Plan 01 adds it now so Plan 04's RunAgentJob has a
+            // dedicated queue.
+            //
+            // Concurrency knobs:
+            //   - maxProcesses=2 — Anthropic tier-1 concurrency cap (Pitfall A6).
+            //                       Real production cap is higher but 2 is a safe
+            //                       starting point until ops measures actual rate
+            //                       limits across all agent kinds.
+            //   - tries=1        — AGNT-09 mandate. LLM errors are deterministic
+            //                       (rate limit, prompt-injection, malformed JSON);
+            //                       retry burns tokens without fixing the cause.
+            //                       Plan 04's RunAgentJob::failed() flips status
+            //                       to 'failed' and writes the error message.
+            //   - timeout=180    — 3min upper bound for tool-use loops. Prism's
+            //                       withMaxSteps(8) caps the loop to 8 iterations;
+            //                       even at ~20s/iteration with thinking budget
+            //                       the worst case lands well under 180s.
+            //   - memory=512     — Anthropic SDK + Prism + Langfuse exporter +
+            //                       PHP request lifecycle; 512MB is the same
+            //                       ceiling sync-bulk-supervisor uses.
+            'agents-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['agents'],
+                'balance' => 'simple',
+                'minProcesses' => 1,
+                'maxProcesses' => 2,
+                'tries' => 1,
+                'timeout' => 180,
+                'memory' => 512,
+            ],
         ],
 
         'local' => [
             'all-in-one' => [
                 'connection' => 'redis',
-                'queue' => ['critical', 'webhook-inbound', 'crm-bitrix', 'sync-woo-push', 'sync-bulk', 'competitor-csv', 'default'],
+                // Phase 8 Plan 01 — local dev all-in-one queue extended with 'agents'
+                // so `php artisan horizon` on a single dev machine processes agent
+                // runs alongside every other queue without a separate supervisor.
+                'queue' => ['critical', 'webhook-inbound', 'crm-bitrix', 'sync-woo-push', 'sync-bulk', 'competitor-csv', 'default', 'agents'],
                 'balance' => 'auto',
                 'minProcesses' => 1,
                 'maxProcesses' => 3,

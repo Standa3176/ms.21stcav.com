@@ -98,8 +98,16 @@ class EventServiceProvider extends ServiceProvider
             HandleOrderReceived::class,
             IncrementSkuSalesCount::class,
         ],
+        // Phase 9 Plan 04 Task 3 — UpdateCustomerGroupOnUserRoleChange runs
+        // alongside Phase 4's HandleCustomerRegistered (separate concerns):
+        // Phase 4 pushes the customer to Bitrix CRM, Phase 9 denormalises
+        // the Woo role -> users.customer_group_id for trade-pricing
+        // resolution. UPDATE-ONLY per B-04 — the listener never creates
+        // User rows from webhook payloads (cold-start is the explicit job
+        // of `b2b:backfill-customer-groups` in Plan 09-06).
         CustomerRegistered::class => [
             HandleCustomerRegistered::class,
+            \App\Domain\TradePricing\Listeners\UpdateCustomerGroupOnUserRoleChange::class,
         ],
 
         // Phase 5 Plan 03 Task 2 — DispatchMarginAnalyserJob debounces via

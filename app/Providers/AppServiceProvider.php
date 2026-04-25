@@ -106,6 +106,17 @@ class AppServiceProvider extends ServiceProvider
         // so the container can't auto-resolve the required $driver primitive.
         // Alias ImageManager::class to the pre-built facade binding so DI works.
         $this->app->bind(\Intervention\Image\ImageManager::class, fn ($app) => $app->make('image'));
+
+        // ── Phase 8 Plan 03: C4 Agent Framework runtime services ────────
+        // All four are singletons — the registry is in-memory state and the
+        // budget/tool/guardrail services hold per-request configuration that
+        // benefits from a single shared instance (matches v1
+        // SuggestionApplierResolver pattern). Plan 04 RunAgentJob resolves
+        // them via constructor injection.
+        $this->app->singleton(\App\Domain\Agents\Services\AgentRegistry::class);
+        $this->app->singleton(\App\Domain\Agents\Services\BudgetGuard::class);
+        $this->app->singleton(\App\Domain\Agents\Services\ToolBus::class);
+        $this->app->singleton(\App\Domain\Agents\Services\GuardrailEngine::class);
     }
 
     /**
@@ -165,6 +176,20 @@ class AppServiceProvider extends ServiceProvider
                 // PricingRuleObserver fires PricingRuleChanged → Phase 3's
                 // recompute chain picks up the new margin.
                 $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
+            }
+        );
+
+        // ── Phase 8 Plan 03: AgentRegistry resolver hook ─────────────────
+        // Plan 03 ships the empty hook so Plan 04's `EchoAgent` registration
+        // lands here without touching this file again. Same pattern as the
+        // SuggestionApplierResolver block above — keeps producers' wiring
+        // adjacent to their domain rather than bloating AppServiceProvider.
+        $this->app->afterResolving(
+            \App\Domain\Agents\Services\AgentRegistry::class,
+            function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
+                // Agent registrations land here. Plan 04 adds:
+                //   $registry->register('echo', \App\Domain\Agents\Agents\EchoAgent::class);
+                // Phase 10 adds 'pricing'; Phase 12 adds 'seo'; etc.
             }
         );
 

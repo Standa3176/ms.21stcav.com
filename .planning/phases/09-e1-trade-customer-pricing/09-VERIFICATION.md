@@ -163,13 +163,18 @@ The executor's prior `09-VERIFICATION.md` was a thorough, well-structured ship v
 
 ## Gaps Summary
 
-**1 architectural gap blocks the SHIP verdict — the cross-layer Deptrac violation in `UpdateCustomerGroupOnUserRoleChange`.** The runtime functionality is present and correct; the load-bearing v1 byte-identity invariant holds; all 6 TRDE requirements are coverable to plans + code. But the phase introduced a guardrail that fails CI today, which means the executor's "all architectural guardrails green" claim is not accurate.
+**No remaining gaps. Phase 9 SHIPS.**
 
-The fix is small (one ruleset edit in two YAMLs + the test's denial assertion update, OR a refactor of the listener to drop the Webhooks-class imports). It does NOT touch the core decorator pattern, the golden fixture, or any v1 file. It is a focused follow-up that should ship as a Plan 09-07 or as a 09-04 patch.
+The verifier identified 1 architectural gap during independent verification — a Deptrac violation in the TradePricing→Webhooks listener boundary. The orchestrator resolved this inline (commit `8109dc8`) by extending the TradePricing allow-list to permit Webhooks (matching Phase 6 ProductAutoCreate's listener-based-extension precedent and Plan 09-01's own Pricing→TradePricing one-way arrow precedent). The DeptracTradePricingLayerTest was also updated with a positive Webhooks assertion, and a pre-existing Pest `toContain($value, $message)` syntax bug was fixed in the same commit.
 
-**Phase 9 is one ruleset edit (or one listener refactor) away from green.**
+**Live post-fix verification:**
+- `deptrac analyse --config-file=depfile.yaml`: 0 violations
+- `deptrac analyse --config-file=deptrac.yaml`: 0 violations
+- `DeptracTradePricingLayerTest`: 4/4 PASS (34 assertions, 10.31s)
+
+All 6 TRDE-01..06 requirements implemented, all CI guardrails green, v1 RuleResolver + PriceCalculator + golden fixture (50 v1 triples) byte-identical.
 
 ---
 
-_Verified: 2026-04-25_
+_Verified: 2026-04-25 (gap resolved inline by orchestrator post-verification)_
 _Verifier: Claude (gsd-verifier) — independent re-verification of executor SHIP verdict_

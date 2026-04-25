@@ -70,7 +70,13 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
   3. Calling `PriceCalculator->priceFor($product, customerGroupId: null)` reaches `RuleResolver::resolve()` directly (verified by Pest spy); calling with a concrete group ID reaches `TradeRuleResolver::resolve()` first which prefers customer-group-scoped rules at `priority + 100` and falls through to the v1 base when no group rule matches.
   4. The Filament `PricingRule` resource form gains an optional `customer_group_id` Select field. Empty = retail rule (existing default). Group-scoped rules respect the priority bias so customer-group wins against same-scope retail.
   5. Trade-pricing display strategy is admin-configurable via `config/b2b.php => 'anonymous_sees' => 'retail' | 'hidden'` (default `retail`); operator confirms choice in Phase 9 CONTEXT.md. Trade-only catalogue visibility is documented as deferred (TRDE-06).
-**Plans**: TBD
+**Plans**: 6 plans (waves 1—5; revision iter 1 — 09-04 split into sync pipeline + Filament UX which run in parallel in wave 4)
+  - [ ] 09-01-PLAN.md — Foundation: customer_groups + customer_group_id FK migrations + CustomerGroup model + Phase9 seeder + TradePricing Deptrac dual-YAML + DeptracTradePricingLayerTest + PricingRuleExclusiveSetTest extended
+  - [ ] 09-02-PLAN.md — TradeRuleResolver decorator + 5-tier specificity sort + 4-quadrant NULL Pest matrix + Trade purity test + AppServiceProvider singleton
+  - [ ] 09-03-PLAN.md — Golden fixture extension 50→80 + GoldenFixtureV1UnchangedTest (B-03 git-clean precondition + blob-hash snapshot) + W-02 generate-trade-fixtures.php (in-process expected_sell_price_pence) + GoldenFixtureV2TradeTest (penny-exact across 80 triples)
+  - [ ] 09-04-PLAN.md — Sync pipeline: users.customer_group_id migration + User model edit (B-02 — $fillable excludes customer_group_id) + config/b2b.php + .env.example + RoleToGroupMapper + UpdateCustomerGroupOnUserRoleChange listener (B-04 — UPDATE-ONLY; never creates User rows) + EventServiceProvider wiring + UserMassAssignmentTest
+  - [ ] 09-05-PLAN.md — Filament UX: CustomerGroupResource (I-01 navigationSort distinct from PricingRuleResource) + CustomerGroupPolicy + PricingRuleResource additive Select+Filter (D-09 invariant) + RolePermissionSeeder extension (W-05 v1-parity findByName) + shield:safe-regenerate
+  - [ ] 09-06-PLAN.md — Verification + backfill: b2b:backfill-customer-groups command (W-03 LONGTEXT LIKE-fallback, UPDATE-ONLY parity with listener) + AnonymousDisplayPostureTest (W-06 — 'hidden' UI gate deferred to Phase 11) + RetailCallsiteParityTest (W-04 — Symfony Finder only) + TradePricingNoV1ModificationTest (B-03 git-clean precondition) + 09-VERIFICATION.md ship verdict
 
 ### Phase 10: C1 Pricing Agent
 **Goal**: Pricing agent enriches v1's existing `margin_change` Suggestions with LLM reasoning + confidence band â€” never replaces the deterministic qualifier, never creates new margin_change rows on its own.

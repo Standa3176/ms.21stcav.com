@@ -388,6 +388,11 @@ class AppServiceProvider extends ServiceProvider
                 \App\Console\Commands\Cutover\DrillRollbackCommand::class,
                 \App\Console\Commands\Cutover\DisableLegacyPluginsCommand::class,
                 \App\Console\Commands\Cutover\CutoverChecklistCommand::class,
+                // Phase 8 Plan 04 — agent:run {kind} [--dry-run] CLI entry
+                // point for the C4 framework. Extends BaseCommand so the
+                // correlation_id threads through the entire CLI → Job →
+                // AgentRun → Suggestion pipeline (AGNT-12 acceptance).
+                \App\Domain\Agents\Console\Commands\AgentRunCommand::class,
             ]);
         }
     }

@@ -48,7 +48,14 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // write path from Agents → Suggestions (AGNT-12 + AGNT-13). It calls
         // Suggestion::create with the proposed_by morph activation; the architecture
         // contract permits exactly this one writer outside Models/AgentRun.php.
-        ->notPath('Services/AgentSuggestionWriter.php');
+        ->notPath('Services/AgentSuggestionWriter.php')
+        // Phase 8 Plan 04 — Jobs/RunAgentJob.php IS the framework orchestrator
+        // and the sole framework writer for AgentRun rows (AGNT-12). Its
+        // AgentRun::create / $run->update calls persist agent forensics state
+        // per CONTEXT D-06; everything else in the Agents domain stays gated.
+        // Per AgentRun.php docblock: "Writes flow ONLY through Plan 04's
+        // RunAgentJob (the framework writer)".
+        ->notPath('Jobs/RunAgentJob.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

@@ -1001,27 +1001,19 @@ LANGFUSE_SECRET_KEY=sk-lf-...      # generated post-bootstrap
 - 08-VERIFICATION.md: 6 success criteria mapped to Pest tests + manual checks
 - AlertRecipient `receives_agent_alerts=true` notifications wired (first monthly_budget_blocked of month, agent run failed, first guardrail_blocked of guardrail kind per day)
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Langfuse self-hosted retention API** — How is per-project retention threshold actually configured? (UI works; confirm API endpoint shape for `agents:gdpr-purge-langfuse` to call.)
-   - What we know: nightly automatic prune; UI configurable; minimum 3 days
-   - What's unclear: API path + auth posture for programmatic per-project retention
-   - Recommendation: Plan 05 ships a stub `agents:gdpr-purge-langfuse` that probes the deployed Langfuse instance's `/api/public/projects/{id}` PATCH support; if missing, fall back to direct ClickHouse SQL via the worker container's connection string (documented in observability.md as MEDIUM-confidence path).
+1. **Langfuse self-hosted retention API** — How is per-project retention threshold actually configured?
+   - **RESOLVED:** Plan 05 Task 2 ships `agents:gdpr-purge-langfuse` as a STUB command (TODO-V21-LANGFUSE-API marker). Stub probes the deployed Langfuse instance's `/api/public/projects/{id}` PATCH support at runtime; falls back to direct ClickHouse SQL via the worker container's connection string. Documented in `docs/ops/observability.md` as MEDIUM-confidence v2.1-followup path. Phase 8 ships the safety hook; v2.1 wires real retention enforcement once Langfuse API surface stabilises.
 
-2. **Prism's correlation between `withMaxSteps()` and Langfuse trace shape** — Does each step land as a separate Langfuse generation/span or are they nested under one trace?
-   - What we know: mliviu79 shim auto-instruments at the Prism call boundary
-   - What's unclear: whether tool-use steps are 1 trace with N child generations OR N separate traces
-   - Recommendation: Plan 02 integration test asserts Langfuse receives N generations for an N-step run by hitting the Langfuse `/api/public/traces` endpoint after a fake Prism run with 3 steps. If shape is wrong, configure shim or fall back to OTel exporter manually managing trace context.
+2. **Prism's correlation between `withMaxSteps()` and Langfuse trace shape** — 1 trace with N child generations OR N separate traces?
+   - **RESOLVED:** Plan 02 Task 3 integration test asserts the mliviu79 shim populates `Context::get('langfuse_trace_id')` after a fake Prism run with 3 steps AND queries the Langfuse `/api/public/traces` endpoint to verify N child generations under a single root trace. If shape is wrong, fallback documented: extract trace_id from the `X-Langfuse-Trace-Id` response header via Prism HTTP middleware hook (~30 LOC). Plan 04 Filament Resource depends on this contract for the trace deep-link.
 
-3. **STACK.md drift vs composer.json** — STACK.md says `spatie/laravel-permission ^7.2` and phpredis but `composer.json` has `^6.0` and `predis/predis ^3.4`.
-   - What we know: composer.json is canonical (active dependency); STACK.md is research aspiration
-   - What's unclear: whether v2 should bump permission to 7.2 or pin to 6.0
-   - Recommendation: STAY on `spatie/laravel-permission ^6.0` per "no version bumps to v1's stack" invariant. Phase 8 uses 6.0 idioms (no `Permission::PivotPolicy` etc — those landed in 7.x). predis stays.
+3. **STACK.md drift vs composer.json** — STACK.md aspirational versions vs canonical composer.json.
+   - **RESOLVED:** STAY on `spatie/laravel-permission ^6.0` AND `predis/predis ^3.4` per "no v1 version bumps" v2.0 invariant. Phase 8 uses 6.0 idioms only (no `Permission::PivotPolicy` features that landed in 7.x). STACK.md has been corrected to reflect canonical composer.json reality. BudgetGuard uses the `Cache` facade so predis-vs-phpredis client choice is invisible — no code path differs.
 
-4. **Phase 8 EchoAgent system prompt — SOC2 ick test** — should the EchoAgent's prompt mention "21st Century AV" or be generic?
-   - What we know: EchoAgent is for framework validation, deleted in Phase 10
-   - What's unclear: whether prompt context-leaks anything via the Langfuse trace
-   - Recommendation: Make EchoAgent's prompt content-free: *"Confirm framework health by calling the read_health_check tool exactly once and summarising the response in one sentence."* No company/product mentions.
+4. **Phase 8 EchoAgent system prompt — SOC2 ick test** — Mention "21st Century AV" or generic?
+   - **RESOLVED:** Content-free prompt. `resources/views/agents/echo/system.blade.php` reads: *"Confirm framework health by calling the read_health_check tool exactly once and summarising the response in one sentence."* No company/product/business mentions. Avoids context-leak via Langfuse trace data; survives as canonical "framework smoke test" prompt fixture even after Phase 10 deletes the EchoAgent code (the prompt template fixture stays in tests/).
 
 ## Environment Availability
 

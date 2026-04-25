@@ -47,6 +47,22 @@ class AppServiceProvider extends ServiceProvider
         // repeat DI resolution cost during a 15k-SKU bulk batch.
         $this->app->singleton(\App\Domain\Pricing\Services\PriceRecomputer::class);
 
+        // ── Phase 9 Plan 02: TradeRuleResolver decorator (TRDE-02) ───────
+        // Decorator wraps v1's RuleResolver via constructor injection.
+        // When $customerGroupId is null|0 it delegates verbatim to v1 (retail
+        // byte-identical fast-path); when set, it walks the 5-tier specificity
+        // sort then falls through to v1 on miss. v1 retail callers
+        // (PriceRecomputer, SimulatedImpactCalculator, RuleExplorer,
+        // ComputeMarginSuggestionJob, CreateWooProductJob) keep resolving via
+        // RuleResolver directly — they don't know customer groups exist.
+        // Singleton so $app->make(TradeRuleResolver::class) returns the same
+        // instance per request (matches v1 PriceRecomputer pattern).
+        $this->app->singleton(\App\Domain\TradePricing\Services\TradeRuleResolver::class, function ($app) {
+            return new \App\Domain\TradePricing\Services\TradeRuleResolver(
+                $app->make(\App\Domain\Pricing\Services\RuleResolver::class),
+            );
+        });
+
         // ── Phase 2 Plan 02: Woo REST + Supplier API clients ─────────────
         // Automattic's WooCommerce SDK binding — single shared instance per request
         // (cURL handle + consumer key/secret are stable across calls).

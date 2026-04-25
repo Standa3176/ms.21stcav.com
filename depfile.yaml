@@ -227,10 +227,18 @@ parameters:
     #     downstream callers — Phase 11 Quote flow — not by TradePricing itself)
     #   - Products: Product model read for brand_id / category_id during 5-tier
     #     specificity sort (Plan 09-02 TradeRuleResolver query path)
-    # Explicitly NOT allowed: Sync, CRM, Webhooks, Cutover, Marketing, Agents,
+    #   - Webhooks: Plan 09-04 deviation (Rule 3 — blocking). The
+    #     UpdateCustomerGroupOnUserRoleChange listener subscribes to
+    #     Webhooks\Events\CustomerRegistered and reads Webhooks\Models\WebhookReceipt
+    #     to extract Woo role from the raw_body payload. ONE-WAY ARROW: Webhooks
+    #     does NOT depend on TradePricing. Same listener-based extension precedent
+    #     as Phase 6 ProductAutoCreate subscribing to v1 events. Architectural
+    #     intent preserved: TradeRuleResolver service class remains ignorant of
+    #     Webhooks — only the listener crosses the boundary.
+    # Explicitly NOT allowed: Sync, CRM, Cutover, Marketing, Agents,
     # Channels, Quotes — DeptracTradePricingLayerTest enforces these denials.
     # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
-    TradePricing: [Foundation, Pricing, Products]
+    TradePricing: [Foundation, Pricing, Products, Webhooks]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

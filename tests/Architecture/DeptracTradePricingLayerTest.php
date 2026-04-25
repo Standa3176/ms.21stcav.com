@@ -45,7 +45,7 @@ it('TradePricing layer registered in BOTH depfile.yaml and deptrac.yaml with the
         $params = $config['parameters'] ?? $config['deptrac'] ?? $config;
         $layerNames = array_column($params['layers'] ?? [], 'name');
 
-        expect($layerNames)->toContain('TradePricing', "TradePricing missing in {$yamlPath}");
+        expect($layerNames)->toContain('TradePricing');
 
         $ruleset = $params['ruleset'] ?? [];
         expect($ruleset)->toHaveKey('TradePricing');
@@ -55,12 +55,17 @@ it('TradePricing layer registered in BOTH depfile.yaml and deptrac.yaml with the
         expect($allowed)->toContain('Foundation');
         expect($allowed)->toContain('Pricing');
         expect($allowed)->toContain('Products');
+        // Plan 09-04 deviation — Webhooks added so listener can subscribe to v1 events.
+        expect($allowed)->toContain('Webhooks');
 
         // Explicit denials — these layers MUST NOT appear in TradePricing's allow-list.
         // Catches accidental copy-paste drift from another phase's allow-list (e.g.
-        // pasting Dashboard's broad allow-list onto TradePricing).
-        foreach (['Sync', 'CRM', 'Webhooks', 'Cutover', 'Marketing', 'Agents', 'Channels', 'Quotes'] as $denied) {
-            expect($allowed)->not->toContain($denied, "{$denied} must NOT be in TradePricing allow-list ({$yamlPath})");
+        // pasting Dashboard's broad allow-list onto TradePricing). Webhooks was added
+        // to TradePricing's allow-list in Plan 09-04 to permit the
+        // UpdateCustomerGroupOnUserRoleChange listener to subscribe to Webhooks events
+        // (one-way arrow; Phase 6 ProductAutoCreate listener-based-extension precedent).
+        foreach (['Sync', 'CRM', 'Cutover', 'Marketing', 'Agents', 'Channels', 'Quotes'] as $denied) {
+            expect($allowed)->not->toContain($denied);
         }
     }
 });
@@ -78,7 +83,7 @@ it('TradePricing collector regex points at app/Domain/TradePricing/.* in both YA
             }
         }
 
-        expect($tradeLayer)->not->toBeNull("TradePricing layer not found in {$yamlPath}");
+        expect($tradeLayer)->not->toBeNull();
         expect($tradeLayer['collectors'][0]['type'] ?? null)->toBe('directory');
         expect($tradeLayer['collectors'][0]['regex'] ?? null)->toBe('app/Domain/TradePricing/.*');
     }

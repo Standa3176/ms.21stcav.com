@@ -37,6 +37,11 @@ class DatabaseSeeder extends Seeder
             // yield exactly 3 rows. Registered explicitly (NOT glob) per Phase 5
             // 05-04a MySQL `_` LIKE wildcard lesson.
             AutoCreateSkipRuleSeeder::class,
+            // Phase 9 Plan 01 — 4 customer groups (trade=10, reseller=20,
+            // education=30, nhs=40). Idempotent firstOrCreate keyed on slug.
+            // Admin adds/deactivates groups via Filament CustomerGroupResource
+            // (Plan 09-04); seeder only fills the D-01 baseline.
+            \Database\Seeders\Phase9\CustomerGroupSeeder::class,
         ]);
 
         // Phase 5 Plan 04a — belt-and-braces promotion of the Pitfall M fallback

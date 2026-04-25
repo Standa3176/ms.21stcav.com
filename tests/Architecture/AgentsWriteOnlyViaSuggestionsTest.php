@@ -43,7 +43,12 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         ->files()
         // Models/AgentRun.php IS the framework-write seam — its $table = 'agent_runs'
         // is the legitimate exception. Factory writes are also legitimate.
-        ->notPath('Models/AgentRun.php');
+        ->notPath('Models/AgentRun.php')
+        // Phase 8 Plan 03 — Services/AgentSuggestionWriter.php IS the sanctioned
+        // write path from Agents → Suggestions (AGNT-12 + AGNT-13). It calls
+        // Suggestion::create with the proposed_by morph activation; the architecture
+        // contract permits exactly this one writer outside Models/AgentRun.php.
+        ->notPath('Services/AgentSuggestionWriter.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

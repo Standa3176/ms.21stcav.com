@@ -399,6 +399,10 @@ class AppServiceProvider extends ServiceProvider
                 // it on every new Resource. Documented in
                 // docs/ops/shield-regeneration.md.
                 \App\Domain\Agents\Console\Commands\ShieldSafeRegenerateCommand::class,
+                // agents:gdpr-purge-langfuse (D-09 sibling) — STUB per Open
+                // Question Q1 RESOLVED (RESEARCH §Open Questions). v2.1 swaps
+                // to live API once Langfuse retention API stabilises.
+                \App\Domain\Agents\Console\Commands\AgentsGdprPurgeLangfuseCommand::class,
             ]);
         }
     }

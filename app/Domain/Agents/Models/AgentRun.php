@@ -105,21 +105,6 @@ final class AgentRun extends Model
             ->logOnlyDirty();
     }
 
-    /**
-     * Phase 8 Plan 05 stub — GDPR scrub-in-place (D-09). Plan 05's
-     * `AgentRunGdprScrubber` ships the real implementation that:
-     *   - replaces `tool_calls` PII with REDACTED-{sha256-prefix} tokens
-     *   - replaces `agent_reasoning_summary` with `[scrubbed per GDPR erasure {gdpr_log_ulid}]`
-     *   - preserves cost_pence + token counts + kind + timestamps
-     *   - preserves langfuse_trace_id (separate erasure pathway via agents:gdpr-purge-langfuse)
-     *
-     * @throws \LogicException always — Plan 05 implements.
-     */
-    public function gdprScrubInPlace(string $gdprLogUlid): void
-    {
-        throw new \LogicException('AgentRun::gdprScrubInPlace is implemented in Phase 8 Plan 05 (AgentRunGdprScrubber).');
-    }
-
     protected static function newFactory(): AgentRunFactory
     {
         return AgentRunFactory::new();

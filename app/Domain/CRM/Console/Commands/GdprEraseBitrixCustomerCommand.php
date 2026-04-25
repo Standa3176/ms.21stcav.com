@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\CRM\Console\Commands;
 
 use App\Console\Commands\BaseCommand;
+use App\Domain\Agents\Services\AgentRunGdprScrubber;
 use App\Domain\CRM\Jobs\EraseBitrixContactJob;
 use App\Domain\CRM\Models\BitrixEntityMap;
 use Illuminate\Support\Facades\Context;
@@ -32,6 +33,20 @@ final class GdprEraseBitrixCustomerCommand extends BaseCommand
         {--dry-run : Show what would be erased without mutating}';
 
     protected $description = 'GDPR right-to-erasure for a Bitrix customer. Scrubs PII in place; preserves financial records (HMRC retention).';
+
+    /**
+     * Phase 8 Plan 05 Task 2 — extension via DI of AgentRunGdprScrubber (D-09).
+     *
+     * The Phase 4 erasure logic shape is preserved verbatim; this constructor
+     * adds the scrubber as an optional collaborator that runs AFTER the
+     * existing Bitrix erasure dispatch (listener-style extension). See
+     * AgentRunGdprScrubber's docblock for the cross-table audit pattern.
+     */
+    public function __construct(
+        private readonly AgentRunGdprScrubber $agentRunScrubber,
+    ) {
+        parent::__construct();
+    }
 
     protected function perform(): int
     {
@@ -87,6 +102,15 @@ final class GdprEraseBitrixCustomerCommand extends BaseCommand
         $this->info('GDPR erasure job dispatched. Check gdpr_erasure_log for confirmation.');
         $this->line('  email_hash     : '.$hash);
         $this->line('  correlation_id : '.($correlationId !== '' ? $correlationId : '(none)'));
+
+        // Phase 8 Plan 05 Task 2 — D-09 extension via DI: scrub agent_runs PII
+        // alongside CRM data. v1 erasure logic shape unchanged; the scrubber is
+        // appended as a parallel side-effect with its own gdpr_erasure_log row.
+        $gdprLogUlid = $correlationId !== '' ? $correlationId : (string) \Illuminate\Support\Str::uuid();
+        $scrubbedRunIds = $this->agentRunScrubber->scrubForCustomer($normalised, $gdprLogUlid);
+        if (! empty($scrubbedRunIds)) {
+            $this->info('  Scrubbed '.count($scrubbedRunIds).' agent run(s)');
+        }
 
         return SymfonyCommand::SUCCESS;
     }

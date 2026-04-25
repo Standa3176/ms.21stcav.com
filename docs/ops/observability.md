@@ -228,6 +228,73 @@ These mitigations address the Plan 02 STRIDE register:
   `127.0.0.1:` — verified by Task 3 architectural test (grep against `0.0.0.0:`
   in the compose file fails the build if found).
 
+## GDPR purge of Langfuse traces (Q1 RESOLVED)
+
+**Phase 8 Plan 05 Task 2** — Open Question Q1 from `08-RESEARCH.md` is RESOLVED:
+the deployed Langfuse OSS image's per-trace deletion API is undocumented as of
+research date (2026-04-24). Phase 8 ships `agents:gdpr-purge-langfuse` as a
+STUB with a v2.1 TODO; below documents the upgrade paths.
+
+### v2.0 stub behaviour
+
+The command currently logs the trace IDs that would be flagged for deletion to
+`storage/logs/laravel.log` with key `agents:gdpr-purge-langfuse: flagged for
+deletion`. No upstream API call is made. Operators run it after every
+`gdpr:erase-bitrix-customer` invocation to capture the trace-id list for
+manual follow-up:
+
+```bash
+php artisan agents:gdpr-purge-langfuse \
+    --customer-email=alice@example.com \
+    --gdpr-log-ulid={uuid-from-gdpr_erasure_log} \
+    --dry-run
+```
+
+### v2.1 upgrade path (TODO-V21-LANGFUSE-API)
+
+Three options under evaluation (in priority order):
+
+1. **Langfuse REST API** — inspect the deployed image's actual endpoint:
+   - `PATCH /api/public/projects/{id}` (retention override)
+   - `DELETE /api/public/traces/{id}` (when stable)
+   - Validate against the `lf.ops.meetingstore.co.uk` deploy with a probe
+     request before swapping the stub command's `Log::info` for a Guzzle
+     POST/DELETE call.
+
+2. **Direct ClickHouse SQL** — MEDIUM-confidence fallback if the REST surface
+   never stabilises:
+
+   ```bash
+   docker compose -f docker-compose.langfuse.yml exec clickhouse \
+       clickhouse-client --query \
+       "DELETE FROM traces WHERE id IN ({list-of-trace-ids})"
+   ```
+
+   Caveats: bypasses Langfuse's own audit trail; requires container shell
+   access (only ops with VPS root can run); CASCADES into observations table
+   via FK so trace summaries vanish too.
+
+3. **Manual UI workaround** — for one-off GDPR requests, ops navigates to the
+   Langfuse trace view at `https://lf.ops.meetingstore.co.uk/project/{id}/traces/{trace_id}`
+   and clicks the delete icon. Tedious for >5 traces; acceptable for the
+   v2.0 GDPR-erasure-frequency baseline (estimated ≤ 1 customer/quarter).
+
+### Current operator runbook (until v2.1 lands)
+
+After running `gdpr:erase-bitrix-customer --email=alice@example.com`:
+
+1. Run `agents:gdpr-purge-langfuse --customer-email=alice@example.com
+   --gdpr-log-ulid={correlation_id from above command}` to capture the
+   trace-ID list.
+2. Inspect `storage/logs/laravel.log` for the `flagged for deletion` entries.
+3. For each trace_id, navigate to the Langfuse UI and delete by hand, OR
+   if more than 5 traces, use the ClickHouse SQL path (option 2 above).
+4. Document the manual cleanup in `gdpr_erasure_log.notes` for the
+   corresponding row (operator-facing audit trail).
+
+The stub command writes the list to logs precisely so this manual cleanup is
+traceable; v2.1 closes the loop.
+
 ## Appendix: Quick links
 
 - Prism: <https://prismphp.com>

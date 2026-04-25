@@ -63,6 +63,14 @@ class AppServiceProvider extends ServiceProvider
             );
         });
 
+        // ── Phase 9 Plan 04: RoleToGroupMapper (TRDE-04 D-07) ─────────────
+        // Reads config('b2b.role_to_group_map') on every resolve() so operator
+        // can hot-swap mappings via .env / config:clear without restarting
+        // workers. Singleton because the service is stateless and the
+        // listener (UpdateCustomerGroupOnUserRoleChange) + future backfill
+        // command (Plan 09-06) both consume the same instance per request.
+        $this->app->singleton(\App\Domain\TradePricing\Services\RoleToGroupMapper::class);
+
         // ── Phase 2 Plan 02: Woo REST + Supplier API clients ─────────────
         // Automattic's WooCommerce SDK binding — single shared instance per request
         // (cURL handle + consumer key/secret are stable across calls).

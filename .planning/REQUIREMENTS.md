@@ -55,7 +55,7 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 ### E1. Trade Customer Pricing (TRDE) — Phase 9
 
 - [ ] **TRDE-01**: Migration adds nullable `pricing_rules.customer_group_id BIGINT` column + new `customer_groups` table (id, name, slug, is_active). Seeded with Trade / Reseller / Education / NHS (default); seed list is ops-confirmable before Phase 9 planning.
-- [ ] **TRDE-02**: `TradeRuleResolver` service decorates v1 `RuleResolver`. When called with a `customer_group_id`, resolver includes customer-group-scoped rules in specificity sort (`customer_group_id + brand + category` most specific); when null, falls through to v1 behaviour untouched.
+- [x] **TRDE-02**: `TradeRuleResolver` service decorates v1 `RuleResolver`. When called with a `customer_group_id`, resolver includes customer-group-scoped rules in specificity sort (`customer_group_id + brand + category` most specific); when null, falls through to v1 behaviour untouched.
 - [ ] **TRDE-03**: Golden fixture extended from 50 → 80 triples. Original 50 triples remain byte-identical (regression guardrail `GoldenFixtureV1UnchangedTest`). New 30 triples cover customer-group scenarios including NULL handling, brand + customer-group, category + customer-group, override + customer-group.
 - [ ] **TRDE-04**: `PricingRule` Filament Resource form gains optional `customer_group_id` Select field. Empty = retail rule (default). Group-scoped rules default to `priority + 100` so customer-group wins against same-scope retail rule.
 - [ ] **TRDE-05**: Trade-pricing display strategy: admin-configurable (`config/b2b.php => 'anonymous_sees' => 'retail' | 'hidden'`). `retail` (proposed default) = anonymous users see retail prices; after login the Cart + PDP re-resolve using customer_group_id. `hidden` = anonymous users see "Login to see trade pricing". Phase 9 CONTEXT.md confirms operator choice.
@@ -147,7 +147,7 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 | AGNT-12 | Phase 8 | Complete |
 | AGNT-13 | Phase 8 | Complete |
 | TRDE-01 | Phase 9 | Pending |
-| TRDE-02 | Phase 9 | Pending |
+| TRDE-02 | Phase 9 | Complete |
 | TRDE-03 | Phase 9 | Pending |
 | TRDE-04 | Phase 9 | Pending |
 | TRDE-05 | Phase 9 | Pending |

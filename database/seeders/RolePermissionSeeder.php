@@ -50,6 +50,16 @@ class RolePermissionSeeder extends Seeder
         $sales = Role::firstOrCreate(['name' => 'sales', 'guard_name' => 'web']);
         $readOnly = Role::firstOrCreate(['name' => 'read_only', 'guard_name' => 'web']);
 
+        // 2b. Phase 8 Plan 04 — manually create the AgentRunResource Shield
+        // permissions because shield:safe-regenerate doesn't ship until Plan 05.
+        // The admin sync below picks them up via Permission::all(); read_only
+        // sync picks them up via the `view_%` LIKE pattern. AgentRunPolicy
+        // (Plan 01) is the load-bearing auth layer either way — Shield perms
+        // are belt; the policy is braces.
+        foreach (['view_any_agent_run', 'view_agent_run'] as $agentPerm) {
+            Permission::firstOrCreate(['name' => $agentPerm, 'guard_name' => 'web']);
+        }
+
         // 3. admin → ALL permissions (idempotent sync).
         //
         // Phase 4 Plan 04 — admin auto-attaches:

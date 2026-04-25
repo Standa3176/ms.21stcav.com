@@ -81,6 +81,12 @@ class AdminPanelProvider extends PanelProvider
             // Phase 6 Plan 04 — ProductAutoCreate Resources (Review inbox + Skip Rules) + AutoCreateSettingsPage singleton.
             ->discoverResources(in: app_path('Domain/ProductAutoCreate/Filament/Resources'), for: 'App\\Domain\\ProductAutoCreate\\Filament\\Resources')
             ->discoverPages(in: app_path('Domain/ProductAutoCreate/Filament/Pages'), for: 'App\\Domain\\ProductAutoCreate\\Filament\\Pages')
+            // Phase 8 Plan 04 — C4 Agent Framework AgentRunResource (admin-only,
+            // read-only) under /admin/agent-runs. Lists AgentRun forensics rows
+            // with kind/status/cost/date filters; detail view renders 7 sections
+            // including the "Guardrail Failures" JSON viewer (BLOCKER 1) +
+            // Langfuse trace deep-link + linked Suggestions summary.
+            ->discoverResources(in: app_path('Domain/Agents/Filament/Resources'), for: 'App\\Domain\\Agents\\Filament\\Resources')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

@@ -39,6 +39,12 @@ class User extends Authenticatable implements FilamentUser
     /**
      * Get the attributes that should be cast.
      *
+     * Phase 9 B-02 — customer_group_id is intentionally NOT in $fillable.
+     * Listener + backfill use forceFill(). This eliminates the mass-assignment
+     * vector via Breeze ProfileController + RegisteredUserController + future
+     * API forms. The cast is still required so reads return int (DB drivers
+     * can return strings for BIGINT columns).
+     *
      * @return array<string, string>
      */
     protected function casts(): array
@@ -46,7 +52,21 @@ class User extends Authenticatable implements FilamentUser
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'customer_group_id' => 'integer',
         ];
+    }
+
+    /**
+     * Phase 9 Plan 04 — BelongsTo CustomerGroup (D-08 denormalised FK).
+     *
+     * Resolves the user's B2B customer group membership. null = retail
+     * (default for any user not synced from a Woo trade role per D-07).
+     * Used by Phase 11 quote flow and any order-time price resolver to
+     * call TradeRuleResolver::resolve($product, $user->customer_group_id).
+     */
+    public function customerGroup(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(\App\Domain\TradePricing\Models\CustomerGroup::class);
     }
 
     /**

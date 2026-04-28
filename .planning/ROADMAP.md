@@ -78,6 +78,16 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
   - [x] 09-05-PLAN.md — Filament UX: CustomerGroupResource (I-01 navigationSort distinct from PricingRuleResource) + CustomerGroupPolicy + PricingRuleResource additive Select+Filter (D-09 invariant) + RolePermissionSeeder extension (W-05 v1-parity findByName) + shield:safe-regenerate
   - [x] 09-06-PLAN.md — Verification + backfill: b2b:backfill-customer-groups command (W-03 LONGTEXT LIKE-fallback, UPDATE-ONLY parity with listener) + AnonymousDisplayPostureTest (W-06 — 'hidden' UI gate deferred to Phase 11) + RetailCallsiteParityTest (W-04 — Symfony Finder only) + TradePricingNoV1ModificationTest (B-03 git-clean precondition) + 09-VERIFICATION.md ship verdict
 
+### Phase 09.1: Integration Connections Admin (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 9
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 09.1 to break down)
+
 ### Phase 10: C1 Pricing Agent
 **Goal**: Pricing agent enriches v1's existing `margin_change` Suggestions with LLM reasoning + confidence band â€” never replaces the deterministic qualifier, never creates new margin_change rows on its own.
 **Depends on**: Phase 8 (agent framework â€” registry, ToolBus, GuardrailEngine, ClaudeClient, BudgetGuard, AGENT_WRITE_ENABLED gate)

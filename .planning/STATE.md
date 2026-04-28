@@ -123,6 +123,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affe
 - ClaudeResponse maps Prism's 7-case FinishReason enum to local 5-case D-06 enum with default→Error fall-through (future-proofs against Prism enum additions)
 - CostCalculator throws RuntimeException on unknown model (fail-loud — unbudgeted call surfaces as runtime error, not silent zero-cost)
 
+### Roadmap Evolution
+
+- Phase 09.1 inserted after Phase 9: Integration Connections Admin (URGENT) — Filament admin page for Supplier API + WooCommerce REST + Bitrix + Langfuse + Anthropic credentials with per-integration "Test connection" actions; closes the env-only-credentials ops gap before Phase 10 PricingAgent ships and burns Anthropic budget against potentially-misconfigured upstreams
+
 ### Pending Todos
 
 None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.

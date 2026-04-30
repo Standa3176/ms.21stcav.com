@@ -32,7 +32,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 
 - [ ] **Phase 8: C4 Agent Framework** â€” Greenfield agent infrastructure (registry, ToolBus, GuardrailEngine, ClaudeClient, AgentRun model, agents queue, suggestion provenance morph, shield:safe-regenerate). Blocks all agent work.
 - [ ] **Phase 9: E1 Trade Customer Pricing** â€” Decorator-pattern `TradeRuleResolver` extending v1 RuleResolver. Adds `pricing_rules.customer_group_id` + `customer_groups` table. Golden fixture extended 50â†’80 triples (original 50 byte-identical).
-- [ ] **Phase 10: C1 Pricing Agent** â€” First concrete agent. Enriches existing `margin_change` Suggestions with LLM reasoning + confidence band. Validates the Phase 8 framework end-to-end with low blast radius.
+- [x] **Phase 10: C1 Pricing Agent** â€” First concrete agent. Enriches existing `margin_change` Suggestions with LLM reasoning + confidence band. Validates the Phase 8 framework end-to-end with low blast radius. (completed 2026-04-30)
 - [ ] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE.
 - [ ] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns.
 - [ ] **Phase 13: E3 WhatsApp Business Channel** â€” Inbound webhook (Meta HMAC) + 24h-window outbound free-form + template registry. Marketing-template broadcasts deferred to v2.1. New `whatsapp-inbound` queue.
@@ -103,7 +103,7 @@ Plans:
   - [x] 10-02-PLAN.md — TruncatingTool base + 4 read_* implementations + ProposeMarginBand no-op + 5 unit tests + arch gate
   - [x] 10-03-PLAN.md — System prompt Blade view + Prism::fake calibration + prompt-hash determinism + ops runbook
   - [x] 10-04-PLAN.md — RunPricingAgentJob (Path A sibling) + PricingAgentResultMapper + Filament UX + Phase 5 contract tests
-  - [ ] 10-05-PLAN.md — RejectionInboxPage + structured rejection feedback + Shield run_pricing_agent + 10-VERIFICATION.md
+  - [x] 10-05-PLAN.md — RejectionInboxPage + structured rejection feedback + Shield run_pricing_agent + 10-VERIFICATION.md
 **Research flag**: YES â€” prompt design, deterministic temp=0 calibration, token budget across input contexts, Langfuse trace shape
 
 ### Phase 11: E2 Quote Request â†’ Bitrix Deal Flow
@@ -195,7 +195,7 @@ Plans:
 | 7. Dashboard Polish + Cutover | v1.50.1 | 6/6 | Complete | 2026-04-24 |
 | 8. C4 Agent Framework | v2.0 | 0/TBD | Not started | - |
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
-| 10. C1 Pricing Agent | v2.0 | 4/5 | In Progress|  |
+| 10. C1 Pricing Agent | v2.0 | 5/5 | Complete   | 2026-04-30 |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 0/TBD | Not started | - |
 | 12. C3 SEO / Content Agent | v2.0 | 0/TBD | Not started | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |

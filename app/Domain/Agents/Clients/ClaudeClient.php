@@ -8,7 +8,7 @@ use App\Domain\Agents\Services\CostCalculator;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Support\Facades\Context;
 use Prism\Prism\Enums\Provider;
-use Prism\Prism\Prism;
+use Prism\Prism\Facades\Prism;
 
 /**
  * Phase 8 Plan 02 (AGNT-07) — sole wrapper around prism-php/prism for Anthropic

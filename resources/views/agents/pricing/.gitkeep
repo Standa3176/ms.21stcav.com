@@ -1,0 +1,17 @@
+# Phase 10 Plan 01 — placeholder for resources/views/agents/pricing/
+
+Plan 10-03 ships `system.blade.php` here (PromptRenderer reads
+`agents.{kind}.system` view). The directory is created in Plan 10-01 so:
+
+  - PricingAgent::systemPrompt() does NOT silently break view-cache lookups
+    when the directory doesn't exist
+  - Plan 10-02's tool unit tests can run without triggering the
+    "System prompt view missing" RuntimeException from PromptRenderer
+    (the systemPrompt() method is not invoked during tool-only tests, but
+    keeping the directory present is the cheap safety belt)
+
+Plan 10-03 will:
+  - Add `system.blade.php` here with the persona / workflow / confidence
+    rubric / output contract / 2 few-shot examples per CONTEXT D-07 +
+    Claude's Discretion §System Prompt Design
+  - Delete this `.gitkeep` (Plan 10-03 SUMMARY documents)

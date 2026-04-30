@@ -213,14 +213,26 @@ class AppServiceProvider extends ServiceProvider
             }
         );
 
-        // ── Phase 10 Plan 01 Task 1: EchoAgent registration deleted ─────
-        // EchoAgent (kind='echo') was the Phase 8 framework smoke-test
-        // fixture; the P10-H sweep removed it. The framework-integrity
-        // contract now lives in tests/Feature/Agents/FrameworkSmokeTest.php
-        // (inline fixture stub agent). Plan 10-01 Task 3 will repopulate
-        // this seam with PricingAgent — the first REAL RunsAsAgent
-        // consumer (PRCAGT-01 / PRCAGT-02 / PRCAGT-05). Phase 12/14/15
-        // will add 'seo' / 'chatbot' / 'ad_optimisation' here too.
+        // ── Phase 10 Plan 01: AgentRegistry — register PricingAgent ──────
+        // EchoAgent (kind='echo') was deleted in the Plan 10-01 P10-H sweep
+        // (it was Phase 8 framework smoke-test scaffolding, not a business
+        // consumer). PricingAgent is the first REAL RunsAsAgent
+        // implementation (PRCAGT-01 / PRCAGT-02 / PRCAGT-05). Phase 12/14/15
+        // will add 'seo' / 'chatbot' / 'ad_optimisation' through the same
+        // afterResolving hook. Block stays adjacent to the
+        // SuggestionApplierResolver block above so registrations cluster
+        // by phase rather than by Service Provider call order.
+        //
+        // The framework-integrity contract that EchoAgent's smoke test used
+        // to assert is now preserved by tests/Feature/Agents/FrameworkSmokeTest.php
+        // via an inline fixture stub agent class (no production registration
+        // needed for the smoke test).
+        $this->app->afterResolving(
+            \App\Domain\Agents\Services\AgentRegistry::class,
+            function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
+                $registry->register('pricing', \App\Domain\Agents\Agents\PricingAgent::class);
+            }
+        );
 
         // Admin-only gate on Suggestion model — defence-in-depth on top of Shield
         // permission assignment (Pitfall K).

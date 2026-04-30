@@ -201,27 +201,26 @@ class AppServiceProvider extends ServiceProvider
                 // recompute chain picks up the new margin.
                 $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
 
-                // ── Phase 8 Plan 04: EchoApplier — framework smoke-test applier ──
-                // Stub applier for kind='echo_health' — marks the Suggestion
-                // applied with no business side effects. EchoAgent is the
-                // framework health-check, not a business workflow. Phase 10
-                // PricingAgent registers a real applier via the same seam.
-                $resolver->register('echo_health', \App\Domain\Agents\Appliers\EchoApplier::class);
+                // ── Phase 10 Plan 01: EchoApplier deleted (P10-H sweep) ──────
+                // EchoApplier (kind='echo_health') was the Phase 8 framework
+                // smoke-test fixture. Phase 10 deletes it because PricingAgent
+                // is the first REAL framework consumer; the Phase 8 framework
+                // smoke contract migrates to tests/Feature/Agents/FrameworkSmokeTest.php
+                // (inline fixture stub — no production applier needed).
+                // Phase 10 Plan 04 ships PricingAgentResultMapper as the real
+                // mapper for kind='margin_change' enrichment (no new applier
+                // — MarginChangeApplier above stays the approve seam).
             }
         );
 
-        // ── Phase 8 Plan 04: AgentRegistry — register EchoAgent ──────────
-        // The afterResolving hook seeded by Plan 03 lands EchoAgent under
-        // kind='echo'. Phase 10 will add 'pricing'; Phase 12 'seo'; etc.
-        // Hook stays adjacent to the SuggestionApplierResolver block above
-        // so registrations cluster by phase rather than by Service Provider
-        // call order.
-        $this->app->afterResolving(
-            \App\Domain\Agents\Services\AgentRegistry::class,
-            function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
-                $registry->register('echo', \App\Domain\Agents\Agents\EchoAgent::class);
-            }
-        );
+        // ── Phase 10 Plan 01 Task 1: EchoAgent registration deleted ─────
+        // EchoAgent (kind='echo') was the Phase 8 framework smoke-test
+        // fixture; the P10-H sweep removed it. The framework-integrity
+        // contract now lives in tests/Feature/Agents/FrameworkSmokeTest.php
+        // (inline fixture stub agent). Plan 10-01 Task 3 will repopulate
+        // this seam with PricingAgent — the first REAL RunsAsAgent
+        // consumer (PRCAGT-01 / PRCAGT-02 / PRCAGT-05). Phase 12/14/15
+        // will add 'seo' / 'chatbot' / 'ad_optimisation' here too.
 
         // Admin-only gate on Suggestion model — defence-in-depth on top of Shield
         // permission assignment (Pitfall K).

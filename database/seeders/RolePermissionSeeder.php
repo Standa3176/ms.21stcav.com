@@ -60,6 +60,23 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $agentPerm, 'guard_name' => 'web']);
         }
 
+        // 2c. Phase 10 Plan 05 — run_pricing_agent permission (PRCAGT-05).
+        //
+        // Authorises the "Run pricing agent" Filament action on margin_change
+        // Suggestions (Plan 10-04 RunPricingAgentAction) AND access to the
+        // /admin/agent-runs/rejection-inbox triage page (Plan 10-05 Task 2
+        // AgentRunRejectionInboxPage::canAccess soft-checks role; this perm
+        // is the Shield-side gate paired with that role check).
+        //
+        // Assignment matrix per CONTEXT Claude's Discretion §"Admin permission":
+        //   admin           — yes (covered by Permission::all() sync at step 3)
+        //   pricing_manager — yes (explicit givePermissionTo at step 5b below)
+        //   sales           — no  (NOT in the LIKE-pattern + NOT in the
+        //                          explicit whereIn whitelist at step 6)
+        //   read_only       — no  (NOT a `view_%` perm — outside the LIKE
+        //                          pattern at step 4)
+        Permission::firstOrCreate(['name' => 'run_pricing_agent', 'guard_name' => 'web']);
+
         // ── Phase 9 Plan 05 — Customer Group permissions (TRDE-04 D-10) ──
         // W-05: findByName matches v1 RolePermissionSeeder pattern;
         // brittleness is accepted v1-parity. CI fails loudly if roles are
@@ -254,6 +271,14 @@ class RolePermissionSeeder extends Seeder
                     'create_user::saved::filter',
                     'update_user::saved::filter',
                     'delete_user::saved::filter',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 10 Plan 05 — pricing_manager gets run_pricing_agent
+                    // (PRCAGT-05). Authorises the "Run pricing agent" Filament
+                    // action on margin_change Suggestions + the /admin/agent-runs/
+                    // rejection-inbox triage page. Sales + read_only do NOT
+                    // get this perm (CONTEXT Claude's Discretion §"Admin permission").
+                    // ═══════════════════════════════════════════════════════════
+                    'run_pricing_agent',
                 ]);
             })
             ->pluck('name')

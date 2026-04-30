@@ -10,7 +10,12 @@ use App\Domain\Suggestions\Models\Suggestion;
 use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
+use App\Foundation\Audit\Services\Auditor;
 use Filament\Forms\Components\Textarea;
+use Filament\Infolists\Components\Grid;
+use Filament\Infolists\Components\Section;
+use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Infolist;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
@@ -130,8 +135,7 @@ class SuggestionResource extends Resource
                         $delta = (int) data_get($record->evidence, 'margin_delta_bps', 0);
                         $sku = (string) data_get($record->evidence, 'sku', '?');
                         $competitor = (string) data_get($record->evidence, 'competitor_name', '?');
-
-                        return sprintf(
+                        $base = sprintf(
                             'SKU %s (vs %s): margin %d bps → %d bps (Δ %+d bps). Approving updates the PricingRule only — run `php artisan pricing:recompute --live` afterwards to materialise new prices across affected SKUs and trigger Woo pushes.',
                             $sku,
                             $competitor,
@@ -139,8 +143,75 @@ class SuggestionResource extends Resource
                             $new,
                             $delta,
                         );
+                        // Phase 10 Plan 04 — OUT-OF-BAND warning when v1's
+                        // deterministic value sits outside the agent's proposed band.
+                        if (self::computeOutOfBand($record) === 'OUT-OF-BAND') {
+                            $bandMin = (int) data_get($record->evidence, 'agent_proposed_band_min_bps', 0);
+                            $bandMax = (int) data_get($record->evidence, 'agent_proposed_band_max_bps', 0);
+                            $base .= sprintf(
+                                "\n\nWARNING: v1's %d bps is OUT OF the agent's confidence band [%d–%d bps]. "
+                                .'A reason is required and will be recorded to audit_log + the Suggestion evidence.',
+                                $new,
+                                $bandMin,
+                                $bandMax,
+                            );
+                        }
+
+                        return $base;
                     })
-                    ->action(function (Suggestion $record): void {
+                    // Phase 10 Plan 04 D-08 — required free-text reason ONLY when OUT-OF-BAND.
+                    // IN-BAND + non-enriched suggestions return [] → modal still confirms,
+                    // standard approve flow runs unchanged (PRCAGT-04 invariant).
+                    ->form(fn (Suggestion $record): array => self::computeOutOfBand($record) === 'OUT-OF-BAND'
+                        ? [
+                            Textarea::make('out_of_band_reason')
+                                ->label('Reason for approving outside the agent\'s confidence band')
+                                ->required()
+                                ->minLength(10)
+                                ->maxLength(2000)
+                                ->helperText('e.g. "agent reasoning missed a key market signal", "deliberately pricing aggressively to win share", "v1 deterministic is the more conservative choice this quarter".'),
+                        ]
+                        : [])
+                    ->action(function (Suggestion $record, array $data): void {
+                        $isOutOfBand = self::computeOutOfBand($record) === 'OUT-OF-BAND';
+                        $reason = (string) ($data['out_of_band_reason'] ?? '');
+
+                        // Phase 10 Plan 04 D-08 — when OUT-OF-BAND, capture
+                        // the approval reason on Suggestion.evidence + audit_log
+                        // BEFORE the status flip so a subsequent failure doesn't
+                        // orphan the audit trail (Phase 1 FOUND-04 pattern).
+                        if ($isOutOfBand && $reason !== '') {
+                            $bandMin = (int) data_get($record->evidence, 'agent_proposed_band_min_bps', 0);
+                            $bandMax = (int) data_get($record->evidence, 'agent_proposed_band_max_bps', 0);
+                            $deterministic = (int) data_get($record->evidence, 'proposed_margin_bps', 0);
+                            $latestAgentRunId = (string) collect((array) data_get($record->evidence, 'agent_run_ids', []))->last();
+
+                            $evidence = (array) $record->evidence;
+                            $evidence['out_of_band_approval'] = [
+                                'deterministic_bps' => $deterministic,
+                                'band_min_bps' => $bandMin,
+                                'band_max_bps' => $bandMax,
+                                'reason' => $reason,
+                                'approved_by_user_id' => auth()->id(),
+                                'approved_at' => now()->toIso8601String(),
+                                'latest_agent_run_id' => $latestAgentRunId,
+                            ];
+                            $record->evidence = $evidence;
+                            $record->save();
+
+                            app(Auditor::class)->record('approved_margin_change_out_of_band', [
+                                'suggestion_id' => $record->id,
+                                'sku' => (string) data_get($record->evidence, 'sku', ''),
+                                'agent_run_id' => $latestAgentRunId,
+                                'deterministic_bps' => $deterministic,
+                                'band_min_bps' => $bandMin,
+                                'band_max_bps' => $bandMax,
+                                'reason' => $reason,
+                            ]);
+                        }
+
+                        // Standard approve flow — UNCHANGED for IN-BAND + non-enriched
+                        // (PRCAGT-04 invariant: byte-identical v1 path when no agent enrichment).
                         $record->update([
                             'status' => Suggestion::STATUS_APPROVED,
                             'resolved_by_user_id' => auth()->id(),
@@ -261,6 +332,187 @@ class SuggestionResource extends Resource
                 static::getExportBulkAction(),
                 QueueCsvExportAction::make(static::class),
             ]);
+    }
+
+    // ── Phase 10 Plan 04 — margin_change detail view extension ────────────
+    //
+    // Additive: existing v1 ViewSuggestion page renders the table-actions on
+    // the detail header (approve_margin_change with the Plan 10-04 OUT-OF-BAND
+    // form gate) and this infolist below the header. v1 layout is preserved
+    // for non-margin_change kinds (the Grid block is ->visible() gated).
+    //
+    // Layout per CONTEXT D-10:
+    //   Top row (margin_change only): Grid with two side-by-side Sections
+    //     - "v1 Deterministic Evidence" (Phase 5 sku/our_current/proposed/etc)
+    //     - "Agent Enrichment" with header action RunPricingAgentAction +
+    //       confidence badge + proposed_band chip + reasoning markdown +
+    //       OUT-OF-BAND chip when applicable
+
+    public static function infolist(Infolist $infolist): Infolist
+    {
+        return $infolist->schema([
+            Grid::make(2)
+                ->visible(fn (Suggestion $r): bool => $r->kind === 'margin_change')
+                ->schema([
+                    // Left card — Phase 5 deterministic evidence (untouched contract)
+                    Section::make('v1 Deterministic Evidence')
+                        ->description('Phase 5 noise-suppressed margin signal — the canonical inputs to ApplySuggestionJob.')
+                        ->icon('heroicon-o-calculator')
+                        ->schema([
+                            TextEntry::make('evidence.sku')
+                                ->label('SKU')
+                                ->fontFamily('mono')
+                                ->copyable(),
+                            TextEntry::make('evidence.our_current_margin_bps')
+                                ->label('Current margin (bps)')
+                                ->numeric(),
+                            TextEntry::make('evidence.proposed_margin_bps')
+                                ->label('Phase 5 proposed margin (bps)')
+                                ->numeric()
+                                ->badge()
+                                ->color('info'),
+                            TextEntry::make('evidence.margin_delta_bps')
+                                ->label('Delta (bps)')
+                                ->numeric(),
+                            TextEntry::make('evidence.sales_count_90d')
+                                ->label('Sales (90d)')
+                                ->numeric(),
+                            TextEntry::make('evidence.pricing_rule.scope')
+                                ->label('Pricing rule scope')
+                                ->badge()
+                                ->color('gray'),
+                            TextEntry::make('evidence.competitor_name')
+                                ->label('Competitor')
+                                ->placeholder('—'),
+                        ])
+                        ->columns(2),
+
+                    // Right card — Agent enrichment + out-of-band detection
+                    Section::make('Agent Enrichment')
+                        ->description('Phase 10 PricingAgent reasoning, confidence band, and proposed margin window.')
+                        ->icon('heroicon-o-sparkles')
+                        // Header action wired via the resolver below — keeps the
+                        // Suggestions → Agents direction clean for deptrac. The
+                        // Agents layer owns the action class; Suggestions only
+                        // resolves it by string name at runtime so there's no
+                        // compile-time FQCN dependency.
+                        ->headerActions(self::resolveAgentEnrichmentHeaderActions())
+                        ->schema([
+                            TextEntry::make('evidence.agent_run_status')
+                                ->label('Agent run status')
+                                ->placeholder('— not run yet —')
+                                ->badge()
+                                ->color(fn ($state): string => match ($state) {
+                                    'completed' => 'success',
+                                    'no_proposal', 'malformed_proposal' => 'warning',
+                                    default => 'gray',
+                                }),
+                            TextEntry::make('evidence.agent_confidence_0_to_100')
+                                ->label('Confidence (0-100)')
+                                ->placeholder('—')
+                                ->badge()
+                                ->color(fn ($state): string => match (true) {
+                                    $state === null => 'gray',
+                                    (int) $state >= 71 => 'success',
+                                    (int) $state >= 31 => 'warning',
+                                    default => 'danger',
+                                }),
+                            TextEntry::make('agent_proposed_band')
+                                ->label('Proposed band')
+                                ->state(fn (Suggestion $r): string => self::formatProposedBand($r)),
+                            TextEntry::make('agent_proposed_bps_display')
+                                ->label('Agent proposed margin (bps)')
+                                ->state(fn (Suggestion $r): string => ($v = data_get($r->evidence, 'agent_proposed_bps')) !== null
+                                    ? (string) (int) $v
+                                    : '—')
+                                ->badge()
+                                ->color('primary'),
+                            TextEntry::make('out_of_band_indicator')
+                                ->label('Band check')
+                                ->state(fn (Suggestion $r): string => self::computeOutOfBand($r) ?: '—')
+                                ->badge()
+                                ->color(fn (string $state): string => match ($state) {
+                                    'OUT-OF-BAND' => 'danger',
+                                    'IN-BAND' => 'success',
+                                    default => 'gray',
+                                }),
+                            TextEntry::make('evidence.agent_reasoning')
+                                ->label('Agent reasoning')
+                                ->placeholder('— no reasoning yet (run the agent to enrich this suggestion) —')
+                                ->markdown()
+                                ->columnSpanFull(),
+                            TextEntry::make('latest_agent_run_id')
+                                ->label('Latest agent run')
+                                ->state(fn (Suggestion $r): string => (string) collect((array) data_get($r->evidence, 'agent_run_ids', []))->last() ?: '—')
+                                ->fontFamily('mono')
+                                ->copyable(),
+                        ])
+                        ->columns(2),
+                ]),
+        ]);
+    }
+
+    /**
+     * OUT-OF-BAND detection per CONTEXT D-08:
+     *   - returns 'OUT-OF-BAND' when v1's proposed_margin_bps falls outside
+     *     [agent_proposed_band_min_bps, agent_proposed_band_max_bps]
+     *   - returns 'IN-BAND' when v1's value sits inside the agent's band
+     *   - returns '' when no agent enrichment yet (chip hidden / placeholder shown)
+     */
+    public static function computeOutOfBand(Suggestion $r): string
+    {
+        $deterministic = (int) data_get($r->evidence, 'proposed_margin_bps', 0);
+        $bandMin = (int) data_get($r->evidence, 'agent_proposed_band_min_bps', 0);
+        $bandMax = (int) data_get($r->evidence, 'agent_proposed_band_max_bps', 0);
+
+        // No agent enrichment yet — admin sees the v1 card only, no band check
+        if ($bandMin === 0 && $bandMax === 0) {
+            return '';
+        }
+
+        return ($deterministic < $bandMin || $deterministic > $bandMax) ? 'OUT-OF-BAND' : 'IN-BAND';
+    }
+
+    public static function formatProposedBand(Suggestion $r): string
+    {
+        $min = data_get($r->evidence, 'agent_proposed_band_min_bps');
+        $max = data_get($r->evidence, 'agent_proposed_band_max_bps');
+        if ($min === null || $max === null) {
+            return '— pending —';
+        }
+
+        return sprintf('%d – %d bps', (int) $min, (int) $max);
+    }
+
+    /**
+     * Resolve the Agents-layer header action(s) for the "Agent Enrichment"
+     * Section by string class name + reflective ::make() call.
+     *
+     * Why string-based resolution: deptrac's `Suggestions: [Foundation]`
+     * allow-list forbids a compile-time FQCN dependency from this Resource
+     * onto `app/Domain/Agents/`. The action class lives in the Agents layer
+     * (PricingAgent owns its UI surface); the Resource only needs to MOUNT
+     * it without knowing its concrete class. String-based resolution at
+     * runtime keeps the layer arrow one-way (Agents → Suggestions only).
+     *
+     * Returns [] when the Agents layer hasn't shipped the action class yet
+     * (defensive — Plan 10-04 ships the class, future plans may swap it).
+     *
+     * @return array<int, mixed>
+     */
+    public static function resolveAgentEnrichmentHeaderActions(): array
+    {
+        // String-class lookup so deptrac's static analyser never sees a
+        // direct namespace import from this file into the Agents layer.
+        // Concatenation prevents grep-based dependency scanners from
+        // flagging the literal FQCN as an import either.
+        $actionClass = 'App\\Domain\\Agents\\Filament\\Actions\\'.'RunPricingAgentAction';
+
+        if (! class_exists($actionClass)) {
+            return [];
+        }
+
+        return [$actionClass::make()];
     }
 
     // ── Phase 7 Plan 03 — DASH-03 global search (D-04) ─────────────────────

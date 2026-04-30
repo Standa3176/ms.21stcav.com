@@ -65,7 +65,15 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // writer for the gdpr_erasure_log audit row (D-09). It also updates
         // AgentRun rows to scrub PII in-place; both writes are deliberate
         // audit-trail writes, not data writes through the Suggestions seam.
-        ->notPath('Services/AgentRunGdprScrubber.php');
+        ->notPath('Services/AgentRunGdprScrubber.php')
+        // Phase 10 Plan 04 — PricingAgentResultMapper IS the sanctioned
+        // writer for Suggestion.evidence agent_* enrichment keys (CONTEXT
+        // D-02 + D-06 + D-11). It writes to existing Suggestion rows
+        // (created earlier by Phase 5 ComputeMarginSuggestionJob) — never
+        // creates new Suggestion rows. Mapper-as-writer pattern keeps
+        // persistence side-effects testable independently of the LLM
+        // round-trip; ProposeMarginBandTool stays a no-op writer per D-06.
+        ->notPath('Services/PricingAgentResultMapper.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

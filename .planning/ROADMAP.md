@@ -101,7 +101,7 @@ Plans:
 **Plans**: 5 plans (waves 1-5; linear chain with checkpoint:human-verify in 10-05)
   - [x] 10-01-PLAN.md — PricingAgent skeleton + 5 tool stubs + EchoAgent deletion + FrameworkSmokeTest
   - [x] 10-02-PLAN.md — TruncatingTool base + 4 read_* implementations + ProposeMarginBand no-op + 5 unit tests + arch gate
-  - [ ] 10-03-PLAN.md — System prompt Blade view + Prism::fake calibration + prompt-hash determinism + ops runbook
+  - [x] 10-03-PLAN.md — System prompt Blade view + Prism::fake calibration + prompt-hash determinism + ops runbook
   - [ ] 10-04-PLAN.md — RunPricingAgentJob (Path A sibling) + PricingAgentResultMapper + Filament UX + Phase 5 contract tests
   - [ ] 10-05-PLAN.md — RejectionInboxPage + structured rejection feedback + Shield run_pricing_agent + 10-VERIFICATION.md
 **Research flag**: YES â€” prompt design, deterministic temp=0 calibration, token budget across input contexts, Langfuse trace shape
@@ -195,7 +195,7 @@ Plans:
 | 7. Dashboard Polish + Cutover | v1.50.1 | 6/6 | Complete | 2026-04-24 |
 | 8. C4 Agent Framework | v2.0 | 0/TBD | Not started | - |
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
-| 10. C1 Pricing Agent | v2.0 | 2/5 | In Progress|  |
+| 10. C1 Pricing Agent | v2.0 | 3/5 | In Progress|  |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 0/TBD | Not started | - |
 | 12. C3 SEO / Content Agent | v2.0 | 0/TBD | Not started | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |

@@ -32,7 +32,7 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 
 - [x] **PRCAGT-01**: `PricingAgent implements RunsAsAgent` triggered when v1 `MarginAnalyser` produces a `margin_change` Suggestion with status `pending` AND agent hasn't run on that suggestion (`suggestions.evidence.agent_run_id` null). Agent enriches existing suggestion — never creates new margin_change rows.
 - [x] **PRCAGT-02**: Agent tools (all `read*` or `propose*`): `read_margin_history(sku)`, `read_competitor_prices(sku)`, `read_supplier_price_trend(sku)`, `read_sales_volume_90d(sku)`, `propose_margin_band(sku, proposed_bps, reasoning)`.
-- [ ] **PRCAGT-03**: Agent output enriches the existing suggestion's `evidence` JSON with `agent_reasoning` (text), `agent_confidence_0_to_100`, `agent_proposed_band_min_bps`, `agent_proposed_band_max_bps`. Human approval workflow (existing Phase 5 `MarginChangeApplier`) unchanged.
+- [x] **PRCAGT-03**: Agent output enriches the existing suggestion's `evidence` JSON with `agent_reasoning` (text), `agent_confidence_0_to_100`, `agent_proposed_band_min_bps`, `agent_proposed_band_max_bps`. Human approval workflow (existing Phase 5 `MarginChangeApplier`) unchanged.
 - [ ] **PRCAGT-04**: Filament `SuggestionResource` margin_change detail view shows `agent_reasoning` + confidence badge + proposed band alongside v1's deterministic evidence. Approve action unchanged; rejection captures admin's note on whether agent reasoning was misleading (feeds back into prompt iteration).
 - [x] **PRCAGT-05**: Agent runs on `agents` queue. Budget ceiling `pricing_agent.daily_pence_cap=500`. Guardrails: trust-tier=`trusted` (admin-triggered only), no customer input, no external HTTP tools.
 

@@ -27,3 +27,24 @@ PricingAgent skeleton work but should be tracked.
 **Why deferred:** These failures are caused by running tests against SQLite (`DB_CONNECTION=sqlite DB_DATABASE=:memory:`) instead of the canonical MySQL `meetingstore_ops_testing` DB. The test suite was authored against MySQL where the migration includes the `pin_price` column. Plan 10-02 changes (4 tool implementations + 5 unit tests + 1 architecture test) are wholly unrelated to product_overrides / sync / pinned fields.
 
 **Recommended fix:** Bring up MySQL on `127.0.0.1:3306` and re-run the architecture suite — failures should clear. Or refactor the test to skip cleanly when the schema is incomplete (sqlite portability). Either way: out of Phase 10 scope.
+
+## AgentRunGdprScrubberTest — JSON_SEARCH not available in SQLite (7 failures)
+
+**Discovered:** Plan 10-03 verification suite (running Feature/Agents tests against SQLite local-dev DB; MySQL `meetingstore_ops_testing` was offline)
+**Status:** Pre-existing test-infrastructure issue — MySQL-only SQL function (`JSON_SEARCH`) used by `AgentRunGdprScrubber` query
+**Test:** `tests/Feature/Agents/AgentRunGdprScrubberTest.php` — all 7 tests in the file
+**Failure observed under SQLite:**
+- `SQLSTATE[HY000]: General error: 1 no such function: JSON_SEARCH (Connection: sqlite, Database: :memory:, SQL: select * from "agent_runs" where (JSON_SEARCH(LOWER(tool_calls), one, alice@example.com) IS NOT NULL or "agent_reasoning_summary" like %alice@example.com%))`
+
+**Why deferred:** SQLite does not implement MySQL's `JSON_SEARCH` function. The Phase 8 Plan 05 GDPR scrubber service was authored against MySQL and uses native JSON functions for performance. Plan 10-03 changes (system prompt Blade view + 4-fixture calibration test + prompt-hash test + ops runbook) are wholly unrelated to GDPR scrubbing. All tests pass on MySQL where the production query is portable.
+
+**Recommended fix:** Bring up MySQL on `127.0.0.1:3306` and re-run — should clear all 7 failures. Or refactor `AgentRunGdprScrubber` to use a portable LIKE-only search path with `whereJsonContains` (slower on MySQL but works on both engines). Either way: out of Plan 10-03 scope; logged for a Phase 8 hot-fix plan or post-MySQL-restore verification pass.
+
+## Phase 8 ClaudeClient — wrong Prism import (FIXED in Plan 10-03 commit f166428)
+
+**Discovered:** Plan 10-03 Task 2 (running PricingAgentCalibrationTest against SQLite)
+**Status:** RESOLVED — one-line import swap; documented as Plan 10-03 Rule 3 deviation
+**File:** `app/Domain/Agents/Clients/ClaudeClient.php`
+**Issue:** Phase 8 Plan 02 imported `Prism\Prism\Prism` (the class) but called `Prism::text()` statically. PHP throws `Non-static method Prism\Prism\Prism::text() cannot be called statically`. The intended import was `Prism\Prism\Facades\Prism` (the Laravel Facade), which exposes `text()` via `__callStatic`. Phase 8 Plan 02's own `ClaudeClientTest.php` correctly imports the Facade — only ClaudeClient itself had the wrong import. Phase 8 Plan 02 SUMMARY deferred ClaudeClientTest pending MySQL availability, masking the bug at ship time.
+**Fix:** `use Prism\Prism\Prism;` → `use Prism\Prism\Facades\Prism;` (1-line swap; commit f166428)
+**Bonus:** Unblocks 8 of 11 ClaudeClientTest cases (the remaining 3 still fail on the `integration_events.correlation_id NOT NULL` SQLite gap — separate Phase 8 test-infra issue).

@@ -195,7 +195,7 @@ Plans:
 | 7. Dashboard Polish + Cutover | v1.50.1 | 6/6 | Complete | 2026-04-24 |
 | 8. C4 Agent Framework | v2.0 | 0/TBD | Not started | - |
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
-| 10. C1 Pricing Agent | v2.0 | 5/5 | Complete   | 2026-04-30 |
+| 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 0/TBD | Not started | - |
 | 12. C3 SEO / Content Agent | v2.0 | 0/TBD | Not started | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |

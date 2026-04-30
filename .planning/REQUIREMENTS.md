@@ -30,11 +30,11 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 
 ### C1. Pricing Agent (PRCAGT) — Phase 10
 
-- [ ] **PRCAGT-01**: `PricingAgent implements RunsAsAgent` triggered when v1 `MarginAnalyser` produces a `margin_change` Suggestion with status `pending` AND agent hasn't run on that suggestion (`suggestions.evidence.agent_run_id` null). Agent enriches existing suggestion — never creates new margin_change rows.
-- [ ] **PRCAGT-02**: Agent tools (all `read*` or `propose*`): `read_margin_history(sku)`, `read_competitor_prices(sku)`, `read_supplier_price_trend(sku)`, `read_sales_volume_90d(sku)`, `propose_margin_band(sku, proposed_bps, reasoning)`.
+- [x] **PRCAGT-01**: `PricingAgent implements RunsAsAgent` triggered when v1 `MarginAnalyser` produces a `margin_change` Suggestion with status `pending` AND agent hasn't run on that suggestion (`suggestions.evidence.agent_run_id` null). Agent enriches existing suggestion — never creates new margin_change rows.
+- [x] **PRCAGT-02**: Agent tools (all `read*` or `propose*`): `read_margin_history(sku)`, `read_competitor_prices(sku)`, `read_supplier_price_trend(sku)`, `read_sales_volume_90d(sku)`, `propose_margin_band(sku, proposed_bps, reasoning)`.
 - [ ] **PRCAGT-03**: Agent output enriches the existing suggestion's `evidence` JSON with `agent_reasoning` (text), `agent_confidence_0_to_100`, `agent_proposed_band_min_bps`, `agent_proposed_band_max_bps`. Human approval workflow (existing Phase 5 `MarginChangeApplier`) unchanged.
 - [ ] **PRCAGT-04**: Filament `SuggestionResource` margin_change detail view shows `agent_reasoning` + confidence badge + proposed band alongside v1's deterministic evidence. Approve action unchanged; rejection captures admin's note on whether agent reasoning was misleading (feeds back into prompt iteration).
-- [ ] **PRCAGT-05**: Agent runs on `agents` queue. Budget ceiling `pricing_agent.daily_pence_cap=500`. Guardrails: trust-tier=`trusted` (admin-triggered only), no customer input, no external HTTP tools.
+- [x] **PRCAGT-05**: Agent runs on `agents` queue. Budget ceiling `pricing_agent.daily_pence_cap=500`. Guardrails: trust-tier=`trusted` (admin-triggered only), no customer input, no external HTTP tools.
 
 ### C2. Ad Optimisation Agent (ADAGT) — Phase 15 (LATE — gates on post-cutover UTM data)
 
@@ -152,43 +152,43 @@ Populated by `/gsd-roadmap` at milestone initialisation; status advances as plan
 | TRDE-04 | Phase 9 | Complete |
 | TRDE-05 | Phase 9 | Complete |
 | TRDE-06 | Phase 9 | Complete |
-| PRCAGT-01 | Phase 10 | Pending |
-| PRCAGT-02 | Phase 10 | Pending |
-| PRCAGT-03 | Phase 10 | Pending |
-| PRCAGT-04 | Phase 10 | Pending |
-| PRCAGT-05 | Phase 10 | Pending |
-| QUOT-01 | Phase 11 | Pending |
-| QUOT-02 | Phase 11 | Pending |
-| QUOT-03 | Phase 11 | Pending |
-| QUOT-04 | Phase 11 | Pending |
-| QUOT-05 | Phase 11 | Pending |
-| QUOT-06 | Phase 11 | Pending |
-| QUOT-07 | Phase 11 | Pending |
-| QUOT-08 | Phase 11 | Pending |
-| SEOAGT-01 | Phase 12 | Pending |
-| SEOAGT-02 | Phase 12 | Pending |
-| SEOAGT-03 | Phase 12 | Pending |
-| SEOAGT-04 | Phase 12 | Pending |
-| SEOAGT-05 | Phase 12 | Pending |
-| CHAT-01 | Phase 13 | Pending |
-| CHAT-02 | Phase 13 | Pending |
-| CHAT-03 | Phase 13 | Pending |
-| CHAT-04 | Phase 13 | Pending |
-| CHAT-05 | Phase 13 | Pending |
-| CHAT-06 | Phase 13 | Pending |
-| CHAT-07 | Phase 13 | Pending |
-| CHAT-08 | Phase 13 | Pending |
-| FIND-01 | Phase 14 | Pending |
-| FIND-02 | Phase 14 | Pending |
-| FIND-03 | Phase 14 | Pending |
-| FIND-04 | Phase 14 | Pending |
-| FIND-05 | Phase 14 | Pending |
-| FIND-06 | Phase 14 | Pending |
-| ADAGT-01 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
-| ADAGT-02 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
-| ADAGT-03 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
-| ADAGT-04 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
-| ADAGT-05 | Phase 15 | Pending (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| PRCAGT-01 | Phase 10 | Complete |
+| PRCAGT-02 | Phase 10 | Complete |
+| PRCAGT-03 | Phase 10 | Complete |
+| PRCAGT-04 | Phase 10 | Complete |
+| PRCAGT-05 | Phase 10 | Complete |
+| QUOT-01 | Phase 11 | Complete |
+| QUOT-02 | Phase 11 | Complete |
+| QUOT-03 | Phase 11 | Complete |
+| QUOT-04 | Phase 11 | Complete |
+| QUOT-05 | Phase 11 | Complete |
+| QUOT-06 | Phase 11 | Complete |
+| QUOT-07 | Phase 11 | Complete |
+| QUOT-08 | Phase 11 | Complete |
+| SEOAGT-01 | Phase 12 | Complete |
+| SEOAGT-02 | Phase 12 | Complete |
+| SEOAGT-03 | Phase 12 | Complete |
+| SEOAGT-04 | Phase 12 | Complete |
+| SEOAGT-05 | Phase 12 | Complete |
+| CHAT-01 | Phase 13 | Complete |
+| CHAT-02 | Phase 13 | Complete |
+| CHAT-03 | Phase 13 | Complete |
+| CHAT-04 | Phase 13 | Complete |
+| CHAT-05 | Phase 13 | Complete |
+| CHAT-06 | Phase 13 | Complete |
+| CHAT-07 | Phase 13 | Complete |
+| CHAT-08 | Phase 13 | Complete |
+| FIND-01 | Phase 14 | Complete |
+| FIND-02 | Phase 14 | Complete |
+| FIND-03 | Phase 14 | Complete |
+| FIND-04 | Phase 14 | Complete |
+| FIND-05 | Phase 14 | Complete |
+| FIND-06 | Phase 14 | Complete |
+| ADAGT-01 | Phase 15 | Complete (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-02 | Phase 15 | Complete (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-03 | Phase 15 | Complete (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-04 | Phase 15 | Complete (LATE — gates on v1 cutover + ~4 weeks UTM data) |
+| ADAGT-05 | Phase 15 | Complete (LATE — gates on v1 cutover + ~4 weeks UTM data) |
 
 **Coverage:**
 - v2 requirements: 56 total (13 AGNT + 5 PRCAGT + 5 ADAGT + 5 SEOAGT + 6 TRDE + 8 QUOT + 8 CHAT + 6 FIND)

@@ -11,6 +11,7 @@ use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Audit\Services\Auditor;
+use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\Section;
@@ -280,19 +281,99 @@ class SuggestionResource extends Resource
                             ->body('Check the Auto-Create Review inbox after a few seconds.')
                             ->send();
                     }),
+                // Phase 10 Plan 05 Task 1 — D-09 structured rejection feedback.
+                //
+                // The reject action's ->form() callable conditionally augments
+                // the standard `rejection_reason` Textarea with two extra
+                // fields when the Suggestion is a margin_change row that has
+                // been enriched by the PricingAgent (i.e. evidence.agent_run_ids[]
+                // is non-empty):
+                //
+                //   - "Was the agent reasoning misleading?" radio — yes/no/partial
+                //   - "Notes" textarea — required, min 10 chars, max 2000
+                //
+                // The structured payload writes to the top-level
+                // `agent_rejection_feedback` JSON column (column-canonical per
+                // Plan 10-05 Step B; NOT `evidence.agent_rejection_feedback`)
+                // so the AgentRunRejectionInboxPage can `whereNotNull('agent_rejection_feedback')`
+                // for indexable filter.
+                //
+                // For non-margin_change kinds OR margin_change rows with no
+                // agent enrichment, the form returns just the standard
+                // rejection_reason field — v1 reject behaviour is byte-identical
+                // (PRCAGT-04 invariant).
                 Action::make('reject')
                     ->icon('heroicon-o-x-circle')
                     ->color('danger')
-                    ->form([Textarea::make('rejection_reason')->required()->maxLength(2000)])
+                    ->form(function (Suggestion $record): array {
+                        $hasAgentRun = ! empty((array) data_get($record->evidence, 'agent_run_ids', []));
+                        $isMarginChangeWithAgent = $record->kind === 'margin_change' && $hasAgentRun;
+
+                        if (! $isMarginChangeWithAgent) {
+                            // Standard reject path — UNCHANGED from pre-Plan 10-05
+                            // for non-agent-enriched + non-margin_change kinds.
+                            return [
+                                Textarea::make('rejection_reason')->required()->maxLength(2000),
+                            ];
+                        }
+
+                        // Phase 10 D-09 — structured rejection feedback for
+                        // prompt-iteration triage (rejection inbox source rows).
+                        return [
+                            Radio::make('misleading')
+                                ->label('Was the agent reasoning misleading?')
+                                ->options([
+                                    'yes' => 'Yes',
+                                    'no' => 'No',
+                                    'partial' => 'Partially',
+                                ])
+                                ->required()
+                                ->helperText('Drives prompt iteration — pick "Yes" if the agent\'s reasoning led you toward the wrong answer; "Partially" if it was directionally right but missed something; "No" if reasoning was sound but you\'re rejecting for a different reason.'),
+                            Textarea::make('notes')
+                                ->label('Notes (visible in the Rejection Inbox)')
+                                ->required()
+                                ->minLength(10)
+                                ->maxLength(2000)
+                                ->helperText('e.g. "agent missed the supplier price spike last week", "confidence was too high given only 2 competitors", "agent reasoning was correct but I have insider context".'),
+                        ];
+                    })
                     ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
                     ->visible(fn (Suggestion $r) => $r->status === Suggestion::STATUS_PENDING)
                     ->action(function (Suggestion $record, array $data): void {
-                        $record->update([
+                        $hasAgentRun = ! empty((array) data_get($record->evidence, 'agent_run_ids', []));
+                        $isMarginChangeWithAgent = $record->kind === 'margin_change' && $hasAgentRun;
+
+                        // For the structured-feedback path, `notes` carries the
+                        // rejection reason; for the standard path the user filled
+                        // in `rejection_reason` directly.
+                        $rejectionReasonForRecord = $isMarginChangeWithAgent
+                            ? (string) ($data['notes'] ?? '')
+                            : (string) ($data['rejection_reason'] ?? '');
+
+                        $payload = [
                             'status' => Suggestion::STATUS_REJECTED,
-                            'rejection_reason' => $data['rejection_reason'],
+                            'rejection_reason' => $rejectionReasonForRecord,
                             'resolved_by_user_id' => auth()->id(),
                             'resolved_at' => now(),
-                        ]);
+                        ];
+
+                        // Phase 10 D-09 — write the dedicated column ONLY for
+                        // the agent-enriched margin_change path (column-canonical
+                        // per Plan 10-05 Step B). NULL for non-agent rejections
+                        // = "no structured feedback captured" (legacy default).
+                        if ($isMarginChangeWithAgent
+                            && ! empty($data['misleading'])
+                            && ! empty($data['notes'])
+                        ) {
+                            $payload['agent_rejection_feedback'] = [
+                                'misleading' => (string) $data['misleading'],
+                                'notes' => (string) $data['notes'],
+                                'rejected_by_user_id' => (int) auth()->id(),
+                                'rejected_at' => now()->toIso8601String(),
+                            ];
+                        }
+
+                        $record->update($payload);
                     }),
                 // Phase 4 Plan 04 — replay action for crm_push_failed suggestions.
                 // Dispatches ApplySuggestionJob which resolves CrmPushRetryApplier

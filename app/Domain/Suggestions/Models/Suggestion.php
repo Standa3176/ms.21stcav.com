@@ -46,6 +46,9 @@ class Suggestion extends Model
         'resolved_at',
         'rejection_reason',
         'applied_at',
+        // Phase 10 Plan 05 D-09 — structured rejection feedback (top-level
+        // column; column-canonical resolution per Plan 10-05 Step B).
+        'agent_rejection_feedback',
     ];
 
     protected $casts = [
@@ -54,6 +57,12 @@ class Suggestion extends Model
         'proposed_at' => 'datetime',
         'resolved_at' => 'datetime',
         'applied_at' => 'datetime',
+        // Phase 10 Plan 05 D-09 — structured rejection feedback shape:
+        //   { misleading: yes|no|partial, notes: string,
+        //     rejected_by_user_id: int, rejected_at: ISO 8601,
+        //     triaged_at?: ISO 8601, triage_note?: string,
+        //     triaged_by_user_id?: int }
+        'agent_rejection_feedback' => 'array',
     ];
 
     public function proposedBy(): MorphTo

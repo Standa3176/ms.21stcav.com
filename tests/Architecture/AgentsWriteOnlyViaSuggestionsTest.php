@@ -56,6 +56,13 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // Per AgentRun.php docblock: "Writes flow ONLY through Plan 04's
         // RunAgentJob (the framework writer)".
         ->notPath('Jobs/RunAgentJob.php')
+        // Phase 10 Plan 04 — Jobs/RunPricingAgentJob.php is the Path A SIBLING
+        // of Phase 8 RunAgentJob (RESEARCH §Pattern 1). It is the second
+        // sanctioned writer of AgentRun rows (kind='pricing' specifically) —
+        // mirrors RunAgentJob's AgentRun::create + $run->update lifecycle so
+        // the framework's forensic invariants hold for PricingAgent runs.
+        // Suggestion writes flow through PricingAgentResultMapper (also exempt).
+        ->notPath('Jobs/RunPricingAgentJob.php')
         // Phase 8 Plan 05 Task 3 — AgentsPruneArchiveCommand IS the
         // sanctioned writer for the activity_log audit row that records
         // agent_run_archived prunes (D-07 retention). It also DELETEs aged

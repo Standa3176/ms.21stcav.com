@@ -98,7 +98,12 @@ Plans:
   3. The existing Suggestion's `evidence` JSON is enriched with `agent_reasoning` (text), `agent_confidence_0_to_100`, `agent_proposed_band_min_bps`, `agent_proposed_band_max_bps`. The Filament `SuggestionResource` margin_change detail view renders the agent reasoning + confidence badge + proposed band alongside v1's deterministic evidence.
   4. The existing Phase 5 `MarginChangeApplier` approve/reject workflow is unchanged â€” admin still approves the v1-deterministic suggestion; rejection captures admin's note on whether agent reasoning was misleading (feeds back into prompt iteration).
   5. The `pricing_agent.daily_pence_cap=500` ceiling holds in production: a synthetic test triggering 6 runs (each ~100p) on the same day causes the 6th to fail with `BudgetExceededException`; the operator sees the breach in the Filament `AgentRunResource`.
-**Plans**: TBD
+**Plans**: 5 plans (waves 1-5; linear chain with checkpoint:human-verify in 10-05)
+  - [ ] 10-01-PLAN.md — PricingAgent skeleton + 5 tool stubs + EchoAgent deletion + FrameworkSmokeTest
+  - [ ] 10-02-PLAN.md — TruncatingTool base + 4 read_* implementations + ProposeMarginBand no-op + 5 unit tests + arch gate
+  - [ ] 10-03-PLAN.md — System prompt Blade view + Prism::fake calibration + prompt-hash determinism + ops runbook
+  - [ ] 10-04-PLAN.md — RunPricingAgentJob (Path A sibling) + PricingAgentResultMapper + Filament UX + Phase 5 contract tests
+  - [ ] 10-05-PLAN.md — RejectionInboxPage + structured rejection feedback + Shield run_pricing_agent + 10-VERIFICATION.md
 **Research flag**: YES â€” prompt design, deterministic temp=0 calibration, token budget across input contexts, Langfuse trace shape
 
 ### Phase 11: E2 Quote Request â†’ Bitrix Deal Flow

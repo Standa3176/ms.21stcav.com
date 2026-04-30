@@ -48,3 +48,14 @@ PricingAgent skeleton work but should be tracked.
 **Issue:** Phase 8 Plan 02 imported `Prism\Prism\Prism` (the class) but called `Prism::text()` statically. PHP throws `Non-static method Prism\Prism\Prism::text() cannot be called statically`. The intended import was `Prism\Prism\Facades\Prism` (the Laravel Facade), which exposes `text()` via `__callStatic`. Phase 8 Plan 02's own `ClaudeClientTest.php` correctly imports the Facade — only ClaudeClient itself had the wrong import. Phase 8 Plan 02 SUMMARY deferred ClaudeClientTest pending MySQL availability, masking the bug at ship time.
 **Fix:** `use Prism\Prism\Prism;` → `use Prism\Prism\Facades\Prism;` (1-line swap; commit f166428)
 **Bonus:** Unblocks 8 of 11 ClaudeClientTest cases (the remaining 3 still fail on the `integration_events.correlation_id NOT NULL` SQLite gap — separate Phase 8 test-infra issue).
+
+## TradeRuleResolverTest — SQLite gap (Plan 10-04 verification observation; ~25 failures)
+
+**Discovered:** Plan 10-04 final Unit suite verification (full `php artisan test --testsuite=Unit` against SQLite local-dev DB)
+**Status:** Pre-existing Phase 9 test-infrastructure issue — failures are SQLite portability gaps in the Trade pricing rule resolver layer; NOT Plan 10-04 regressions
+**Tests:** ~25 failures concentrated in `tests/Unit/TradePricing/Services/TradeRuleResolverTest.php`
+**Failure shape:** Assertions like `expect($resolution->marginBasisPoints)->toBe(3500)` fail with `Failed asserting that 1500 is identical to 3500` — SQLite's NULL-handling + ORDER BY semantics differ from MySQL on the resolver's tie-break + fallthrough queries.
+
+**Why deferred:** Plan 10-04 changes (PricingAgentResultMapper / RunPricingAgentJob / Filament SuggestionResource extension / contract tests) do NOT touch `app/Domain/TradePricing/`. `git diff` confirms zero TradePricing changes. The 25 failures all fail identically before AND after Plan 10-04 commits — they are Phase 9 SQLite-portability issues (Phase 9 test files were authored against MySQL `meetingstore_ops_testing`).
+
+**Recommended fix:** Bring up MySQL on `127.0.0.1:3306` and re-run `php artisan test tests/Unit/TradePricing` — should clear all failures. Or refactor TradeRuleResolver query chain to use SQLite-portable patterns (whereJsonContains over whereJsonContainsKey, COALESCE over IFNULL, etc.). Either way: out of Plan 10-04 scope; logged for a Phase 9 hot-fix plan or post-MySQL-restore verification pass.

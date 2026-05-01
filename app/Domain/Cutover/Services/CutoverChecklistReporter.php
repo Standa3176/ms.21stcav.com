@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Cutover\Services;
 
+use App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand;
 use App\Domain\Dashboard\Models\DashboardSnapshot;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Phase 7 Plan 05 Task 3 — CUT-05 readiness + D-21 checklist reporter.
@@ -151,6 +153,21 @@ class CutoverChecklistReporter
                 'action' => 'See Plan 07-06; '
                     .'then cutover:checklist --update-status=handover-docs:pass',
             ],
+            // ── Phase 11 Plan 05 — bitrix:quotes-bootstrap pre-flight gate ────
+            // Gates the QUOTE_BITRIX_PUSH_ENABLED=true flip. Operator runs
+            // `php artisan bitrix:quotes-bootstrap` which writes the cache
+            // marker on success; SKIP semantics if quote.bitrix_push_enabled
+            // is false at-rest (gate doesn't apply when shadow-mode is locked
+            // off — Plan 11-04 routing already protects Bitrix from leakage).
+            // T-11-05-02 mitigation: prevents accidental flip of
+            // QUOTE_BITRIX_PUSH_ENABLED=true without dealtype verification.
+            [
+                'id' => 'bitrix_quote_type_id_verified',
+                'title' => 'Phase 11 QUOT-08: Bitrix Deal TYPE_ID=QUOTE verified + UF_CRM_WOO_QUOTE_ID created',
+                'status' => $state['bitrix_quote_type_id_verified'] ?? $this->checkBitrixQuoteTypeVerified(),
+                'action' => 'Run: php artisan bitrix:quotes-bootstrap (creates UF_CRM_WOO_QUOTE_ID + sets cache marker); '
+                    .'then cutover:checklist --update-status=bitrix_quote_type_id_verified:pass',
+            ],
         ];
     }
 
@@ -244,6 +261,27 @@ class CutoverChecklistReporter
         $path = base_path('docs/ops/cutover-handover.md');
 
         return file_exists($path) ? self::STATUS_PASS : self::STATUS_PENDING;
+    }
+
+    /**
+     * Phase 11 Plan 05 — bitrix:quotes-bootstrap pre-flight gate.
+     *
+     * Returns:
+     *   - PASS  if Cache::has(BitrixQuotesBootstrapCommand::CACHE_KEY_VERIFIED)
+     *           — operator ran bitrix:quotes-bootstrap and the dealtype
+     *           verification succeeded (30-day TTL marker).
+     *   - PENDING otherwise — operator should run the bootstrap before
+     *           flipping QUOTE_BITRIX_PUSH_ENABLED=true.
+     *
+     * Cache key constant lives on BitrixQuotesBootstrapCommand to keep the
+     * single source of truth in the command that writes it (Plan 11-04
+     * Pitfall 2 mitigation).
+     */
+    protected function checkBitrixQuoteTypeVerified(): string
+    {
+        return Cache::has(BitrixQuotesBootstrapCommand::CACHE_KEY_VERIFIED)
+            ? self::STATUS_PASS
+            : self::STATUS_PENDING;
     }
 
     // ══════════════════════════════════════════════════════════════════════

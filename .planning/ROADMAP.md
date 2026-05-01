@@ -33,7 +33,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 - [ ] **Phase 8: C4 Agent Framework** â€” Greenfield agent infrastructure (registry, ToolBus, GuardrailEngine, ClaudeClient, AgentRun model, agents queue, suggestion provenance morph, shield:safe-regenerate). Blocks all agent work.
 - [ ] **Phase 9: E1 Trade Customer Pricing** â€” Decorator-pattern `TradeRuleResolver` extending v1 RuleResolver. Adds `pricing_rules.customer_group_id` + `customer_groups` table. Golden fixture extended 50â†’80 triples (original 50 byte-identical).
 - [x] **Phase 10: C1 Pricing Agent** â€” First concrete agent. Enriches existing `margin_change` Suggestions with LLM reasoning + confidence band. Validates the Phase 8 framework end-to-end with low blast radius. (completed 2026-04-30)
-- [ ] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE.
+- [x] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE. (completed 2026-05-01)
 - [ ] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns.
 - [ ] **Phase 13: E3 WhatsApp Business Channel** â€” Inbound webhook (Meta HMAC) + 24h-window outbound free-form + template registry. Marketing-template broadcasts deferred to v2.1. New `whatsapp-inbound` queue.
 - [ ] **Phase 14: E4 AI Product-Finder Chatbot** â€” Public REST endpoint (`/api/chat/message`) + `ProductFinderAgent` over MySQL FULLTEXT (~5k SKUs assumption). Anonymous PII posture: phone/email captured only on explicit quote request, hashed at rest.
@@ -122,7 +122,7 @@ Plans:
   - [x] 11-02-PLAN.md â€” PriceSnapshotter + QuoteLineWriter + 2 observers (immutability + total recompute) + TradeRuleResolver::resolveForQuote additive + TradeRuleResolverByteIdentityTest + PinnedQuotePricesSurviveRuleEditTest (QUOT-02 SHIP GATE)
   - [x] 11-03-PLAN.md â€” Filament QuoteResource (Sales nav group) + 4 Pages + QuoteLinesRelationManager (search-and-add SKU picker) + 4 state-machine actions (Approve/Revert/MarkAccepted/MarkRejected) + RolePermissionSeeder 9 perms + shield:safe-regenerate + checkpoint:human-verify
   - [x] 11-04-PLAN.md â€” composer install spatie/laravel-pdf:^2.8 + dompdf/dompdf:^3.0 + quote.blade.php (UK B2B ex-VAT itemised) + QuotePdfRenderer + QuoteSentMail + QuoteApproved event (ShouldDispatchAfterCommit) + PushQuoteToBitrix listener (CRM domain) + PushQuoteToBitrixDealJob + BitrixClient::dealProductRowsSet + bitrix:quotes-bootstrap + cutover runbook
-  - [ ] 11-05-PLAN.md â€” quotes:expire command + QuotePushRetryApplier (kind=quote_push_failed) + ImportQuoteAction (Phase 14 forward-compat) + CutoverChecklistService bitrix_quote_type_id_verified gate + final architecture regression re-runs + 11-VERIFICATION.md ship verdict
+  - [x] 11-05-PLAN.md â€” quotes:expire command + QuotePushRetryApplier (kind=quote_push_failed) + ImportQuoteAction (Phase 14 forward-compat) + CutoverChecklistService bitrix_quote_type_id_verified gate + final architecture regression re-runs + 11-VERIFICATION.md ship verdict
 **Research flag**: YES (resolved 2026-05-01) â€” Bitrix Deal line-item modelling resolved (Approach A: crm.deal.productrows.set verified via vendor SDK); 9 assumptions A1-A9 + 5 OQs documented in 11-RESEARCH.md
 **UI hint**: yes
 
@@ -201,7 +201,7 @@ Plans:
 | 8. C4 Agent Framework | v2.0 | 0/TBD | Not started | - |
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
 | 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
-| 11. E2 Quote â†’ Bitrix Deal | v2.0 | 4/5 | In Progress|  |
+| 11. E2 Quote â†’ Bitrix Deal | v2.0 | 5/5 | Complete   | 2026-05-01 |
 | 12. C3 SEO / Content Agent | v2.0 | 0/TBD | Not started | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |

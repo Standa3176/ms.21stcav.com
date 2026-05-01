@@ -39,6 +39,11 @@ use Illuminate\Notifications\Notifiable;
  * Phase 7 Plan 01 migration also force-updates all existing rows to TRUE
  * so the seeded fallback starts receiving the digest without ops touching
  * the Filament form.
+ *
+ * Plan 11-01: receives_quote_alerts is opt-in for quote-flow alerts
+ * (Plan 11-04 push-failed DLQ + Plan 11-05 expiry exceptions). Default
+ * FALSE; seeded fallback (ops@meetingstore.co.uk) force-updated TRUE so
+ * the Pitfall M "no active recipient" outage cannot strand quote alerts.
  */
 class AlertRecipient extends Model
 {
@@ -56,6 +61,7 @@ class AlertRecipient extends Model
         'receives_auto_create_alerts',
         'receives_weekly_digest',
         'receives_agent_alerts',
+        'receives_quote_alerts',
     ];
 
     protected $casts = [
@@ -66,6 +72,7 @@ class AlertRecipient extends Model
         'receives_auto_create_alerts' => 'boolean',
         'receives_weekly_digest' => 'boolean',
         'receives_agent_alerts' => 'boolean',
+        'receives_quote_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -108,5 +115,11 @@ class AlertRecipient extends Model
     public function scopeReceivesAgentAlerts(Builder $q): Builder
     {
         return $q->where('receives_agent_alerts', true);
+    }
+
+    /** Scope: only rows opted-in to quote-flow alerts (Phase 11 Plan 01). */
+    public function scopeReceivesQuoteAlerts(Builder $q): Builder
+    {
+        return $q->where('receives_quote_alerts', true);
     }
 }

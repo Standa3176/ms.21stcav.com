@@ -87,6 +87,22 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/TradePricing/.*
+    # Phase 11 Plan 01 — E2 Quote Request → Bitrix Deal Flow (QUOT-01..08).
+    # Allow-list per CONTEXT.md §Decisions Claude's Discretion:
+    #   [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks].
+    # Quotes domain reads TradeRuleResolver via the resolveForQuote() decorator
+    # (Plan 11-02), reads Products taxonomy for line snapshots, threads
+    # Foundation primitives. CRM is allowed as a read-only arrow (Quotes domain
+    # emits QuoteApproved event; CRM-domain PushQuoteToBitrix listener
+    # consumes — see CRM allow-list below for the reverse arrow).
+    # DENIES Agents, Competitor, ProductAutoCreate, Sync, Cutover, Marketing,
+    # Channels — Quotes is a thin v2 domain, NOT a v1 write-side participant.
+    # DeptracQuotesLayerTest enforces dual-YAML lockstep.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Quotes
+      collectors:
+        - type: directory
+          regex: app/Domain/Quotes/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -164,7 +180,14 @@ parameters:
     # Phase 8 Plan 05 (D-09) — CRM extended with Agents allow-list because
     # GdprEraseBitrixCustomerCommand now injects AgentRunGdprScrubber via
     # constructor (extension via DI; v1 logic shape preserved).
-    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents]
+    # Phase 11 Plan 01 (Plan 11-04 listener-based extension) — CRM extended
+    # with Quotes because PushQuoteToBitrix listener (in CRM domain) reads
+    # the Quote model + emits PushQuoteToBitrixDealJob. ONE-WAY ARROW:
+    # Quotes domain MUST NOT have CRM in its allow-list (Quotes emits
+    # QuoteApproved event; CRM consumes via listener). Architectural intent
+    # preserved: BitrixClient + BitrixEntityMap + bitrix wiring stays inside
+    # CRM domain; Quotes only ever produces events.
+    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes]
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]
@@ -256,10 +279,41 @@ parameters:
     # Channels, Quotes — DeptracTradePricingLayerTest enforces these denials.
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     TradePricing: [Foundation, Pricing, Products, Webhooks]
+    # Phase 11 Plan 01 — Quotes layer cross-domain allow-list (QUOT-01..08).
+    #   - Foundation: DomainEvent base, Auditor, IntegrationLogger, BaseCommand,
+    #     Context (every Quotes service threads these — Plan 11-02 PriceSnapshotter,
+    #     Plan 11-04 QuoteApproved event, Plan 11-05 QuotesExpireCommand).
+    #   - Products: Product model read for line snapshots (sku → product_snapshot
+    #     JSON {name, brand, category, image_url} at line creation time).
+    #   - Pricing: PriceCalculator::stripVat for PDF VAT-block math (D-11);
+    #     PricingRule read by TradeRuleResolver decorator on the customer-group
+    #     resolution path (Plan 09 D-04).
+    #   - TradePricing: TradeRuleResolver::resolveForQuote(sku, customer_group_id)
+    #     thin delegate added in Plan 11-02 — primary input for PriceSnapshotter.
+    #   - Suggestions: Plan 11-04 QuotePushRetryApplier (kind='quote_push_failed')
+    #     parallels Phase 4 CrmPushRetryApplier; failed pushes write Suggestion
+    #     rows for ops Replay action.
+    #   - CRM: read-only — Quotes domain MAY reference CRM\Models\BitrixEntityMap
+    #     in tests / future debug Filament widgets. The PRIMARY arrow is
+    #     CRM → Quotes (CRM listener reads Quote model); Quotes → CRM is
+    #     restricted to model-relation reads (no BitrixClient import, no
+    #     PushQuoteToBitrixDealJob dispatch from Quotes — that lives in CRM).
+    #   - Webhooks: forward-compat for Plan 13/14 inbound chatbot/WhatsApp
+    #     `propose_quote` tool that creates a Quote from an inbound webhook.
+    # Explicitly NOT allowed: Agents, Competitor, ProductAutoCreate, Sync,
+    # Cutover, Marketing, Channels — Quotes is a thin v2 domain, NOT a
+    # v1 write-side participant. DeptracQuotesLayerTest enforces these denials.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Quotes:       [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and
     # Plan 04's RunAgentJob dispatcher (controller wiring) can reach into
     # the Agents domain. The arrow stays one-way: Agents itself does NOT
     # have Http in its allow-list.
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents, TradePricing]
+    # Phase 11 Plan 01 — Http allow-list extended with Quotes so Plan 11-03's
+    # Filament QuoteResource (under app/Domain/Quotes/Filament/Resources or
+    # app/Filament if scaffolded there) can reach into the Quotes domain.
+    # The arrow stays one-way: Quotes itself does NOT have Http in its
+    # allow-list.
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents, TradePricing, Quotes]

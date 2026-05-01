@@ -345,6 +345,19 @@ class AppServiceProvider extends ServiceProvider
         // before the Filament surface lands.
         Gate::policy(AgentRun::class, AgentRunPolicy::class);
 
+        // ── Phase 11 Plan 01: E2 Quote Request → Bitrix Deal Flow policies ──
+        // QuotePolicy enforces D-04 separation-of-duties: sales role cannot
+        // approve own quote (T-11-01-03 mitigation). QuoteLinePolicy enforces
+        // D-13 line snapshot immutability: line edits forbidden after parent
+        // Quote.status leaves draft. Both policies are hand-written per
+        // Pitfall K + P5-F — DO NOT regenerate via shield:generate.
+        // PolicyTemplateIntegrityTest floor bumps 27 → 29 to cover the two
+        // new policies (caught by the architecture suite on every CI run).
+        // Filament QuoteResource arrives in Plan 11-03; these policies ship
+        // in Plan 11-01 so the gate is in place before the UI lands.
+        Gate::policy(\App\Domain\Quotes\Models\Quote::class,     \App\Domain\Quotes\Policies\QuotePolicy::class);
+        Gate::policy(\App\Domain\Quotes\Models\QuoteLine::class, \App\Domain\Quotes\Policies\QuoteLinePolicy::class);
+
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.
         // Our command lives under app/Domain/Sync/Commands/, so we register it

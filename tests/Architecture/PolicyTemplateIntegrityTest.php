@@ -46,6 +46,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
+        app_path('Domain/Quotes/Policies'),           // Phase 11 Plan 01 — 2 Quote policies
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
     ];
@@ -81,6 +82,7 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
+        app_path('Domain/Quotes/Policies'),           // Phase 11 Plan 01 — 2 Quote policies
         app_path('Domain/Suggestions/Policies'),
         app_path('Domain/Sync/Policies'),
     ];
@@ -112,8 +114,11 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     //      Floor bumped 24 → 26.
     // 27 = above + 1 AgentRunPolicy (Phase 8 Plan 01 — C4 Agent Framework).
     //      Floor bumped 26 → 27.
+    // 29 = above + 2 Quote policies (Phase 11 Plan 01 — QuotePolicy +
+    //      QuoteLinePolicy with D-04 separation-of-duties + D-13 line
+    //      immutability gates). Floor bumped 27 → 29.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(27, 'Expected ≥ 27 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(29, 'Expected ≥ 29 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -154,6 +159,10 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         \App\Domain\Dashboard\Models\UserSavedFilter::class             => \App\Domain\Dashboard\Policies\UserSavedFilterPolicy::class,
         // Phase 8 Plan 01 — C4 Agent Framework (admin-only AgentRun viewer).
         \App\Domain\Agents\Models\AgentRun::class                       => \App\Domain\Agents\Policies\AgentRunPolicy::class,
+        // Phase 11 Plan 01 — Quote + QuoteLine policies
+        // (D-04 separation-of-duties + D-13 line immutability gates).
+        \App\Domain\Quotes\Models\Quote::class                          => \App\Domain\Quotes\Policies\QuotePolicy::class,
+        \App\Domain\Quotes\Models\QuoteLine::class                      => \App\Domain\Quotes\Policies\QuoteLinePolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

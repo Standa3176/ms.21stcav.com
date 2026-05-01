@@ -358,6 +358,25 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\Quotes\Models\Quote::class,     \App\Domain\Quotes\Policies\QuotePolicy::class);
         Gate::policy(\App\Domain\Quotes\Models\QuoteLine::class, \App\Domain\Quotes\Policies\QuoteLinePolicy::class);
 
+        // ── Phase 11 Plan 02: QuoteLine observer chain (D-13 + OQ-1) ─────
+        // ORDER MATTERS — the array-form ::observe() preserves registration
+        // order across Eloquent's saving / saved hooks:
+        //   1. QuoteLineImmutabilityObserver (saving) — gate-keeper. Throws
+        //      QuoteLineImmutableException when status != draft AND any
+        //      forbidden column is dirty (T-11-02-01 mitigation).
+        //   2. QuoteTotalRecomputeObserver (saved + deleted) — runs only
+        //      when the immutability gate passed. Recomputes parent
+        //      Quote.total_pence_at_quote = SUM(quote_lines.line_total)
+        //      while status == draft; locked alongside lines after sent.
+        //
+        // PriceSnapshotter + QuoteLineWriter (Plan 11-02 Task 1) are the
+        // sole legitimate creation path; the immutability observer no-ops
+        // on creation (! $line->exists) so initial snapshot writes succeed.
+        \App\Domain\Quotes\Models\QuoteLine::observe([
+            \App\Domain\Quotes\Observers\QuoteLineImmutabilityObserver::class,
+            \App\Domain\Quotes\Observers\QuoteTotalRecomputeObserver::class,
+        ]);
+
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.
         // Our command lives under app/Domain/Sync/Commands/, so we register it

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Intelligence + B2B
-status: verifying
-stopped_at: Phase 11 context gathered
-last_updated: "2026-04-30T17:31:42.879Z"
-last_activity: 2026-04-30
+status: executing
+stopped_at: "Completed Plan 11-01 — Foundation: schema + models + enums + policies + Quotes Deptrac layer (dual-YAML)"
+last_updated: "2026-05-01T13:20:23.751Z"
+last_activity: 2026-05-01
 progress:
   total_phases: 9
   completed_phases: 3
-  total_plans: 16
-  completed_plans: 16
-  percent: 100
+  total_plans: 21
+  completed_plans: 17
+  percent: 81
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24 — v2.0 milestone kicked off)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 10 — C1 Pricing Agent
+**Current focus:** Phase 11 — E2 Quote Request → Bitrix Deal Flow
 
 ## Current Position
 
 Milestone: v2.0 Intelligence + B2B
-Phase: 11
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-04-30
+Phase: 11 (E2 Quote Request → Bitrix Deal Flow) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-05-01
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
 
@@ -86,6 +86,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | Phase 10-c1-pricing-agent P03 | 13min | 3 tasks | 7 files |
 | Phase 10-c1-pricing-agent P04 | 17min | 3 tasks | 11 files |
 | Phase 10-c1-pricing-agent P05 | 21min | 4 tasks | 8 files |
+| Phase 11-e2-quote-request-bitrix-deal-flow P11-01 | 28min | 2 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -129,6 +130,17 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affe
 - ClaudeResponse maps Prism's 7-case FinishReason enum to local 5-case D-06 enum with default→Error fall-through (future-proofs against Prism enum additions)
 - CostCalculator throws RuntimeException on unknown model (fail-loud — unbudgeted call surfaces as runtime error, not silent zero-cost)
 
+**v2 Plan 11-01 (2026-05-01) — Phase 11 Foundation:**
+
+- OQ-2 RESOLVED: BitrixEntityMap dedup ledger extended with nullable `quote_id` ULID + composite UNIQUE(entity_type, quote_id) coexisting with existing UNIQUE(entity_type, woo_id) for orders. Plan 11-04 EntityDeduper queries via two parallel scope methods (scopeForWooOrder + scopeForQuote)
+- A2 RESOLVED (Rule 1 deviation): bitrix_entity_map.entity_type was MySQL ENUM (not VARCHAR as plan A2 assumed). Migration MODIFIES the ENUM allow-list to include 'quote_deal' — preserves the Phase 4 DB-level enum guarantee. SQLite no-op via `DB::getDriverName() === 'mysql'` guard.
+- A1 LOCKED: VAT-INCLUSIVE pence storage convention encoded at column-comment + model-docblock level (Pitfall 1). PDF strips VAT at render time via PriceCalculator::stripVat in Plan 11-04. Pest test asserts integer cast preserves 1999 sentinel value.
+- OQ-1 RESOLVED: quotes.total_pence_at_quote cached UNSIGNED BIGINT column added; recompute observer ships in Plan 11-02 (draft-only writes; locked alongside lines after status=sent).
+- D-04 separation-of-duties enforced at QuotePolicy::approve gate — sales role explicitly DENIED (T-11-01-03 mitigation). 4-eyes pattern in place before Filament UI lands in Plan 11-03.
+- D-06 reserved enum cases: QuoteStatus ships PendingApproval + Approved cases for v1.x non-breaking extension; v1.0 transitions never branch on them. NO `withdrawn` case (D-06 deferred — sales overwrites by editing draft).
+- PolicyTemplateIntegrityTest floor bumped 27 → 29 covering QuotePolicy + QuoteLinePolicy.
+- A9 LOCKED: customer_group_name_at_quote VARCHAR(255) denormalised on quotes table (CONTEXT.md Claude's Discretion).
+
 ### Roadmap Evolution
 
 - Phase 09.1 inserted after Phase 9: Integration Connections Admin (URGENT) — Filament admin page for Supplier API + WooCommerce REST + Bitrix + Langfuse + Anthropic credentials with per-integration "Test connection" actions; closes the env-only-credentials ops gap before Phase 10 PricingAgent ships and burns Anthropic budget against potentially-misconfigured upstreams
@@ -161,6 +173,6 @@ None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 
 ## Session Continuity
 
-Last session: 2026-04-30T17:31:42.866Z
-Stopped at: Phase 11 context gathered
+Last session: 2026-05-01T13:20:23.735Z
+Stopped at: Completed Plan 11-01 — Foundation: schema + models + enums + policies + Quotes Deptrac layer (dual-YAML)
 Resume: `/gsd-plan-phase 8` (begin C4 Agent Framework planning; research flag YES — run `/gsd-research-phase 8` first if research-before-plan workflow enabled)

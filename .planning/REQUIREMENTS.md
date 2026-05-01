@@ -63,8 +63,8 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 
 ### E2. Quote Request → Bitrix Deal Flow (QUOT) — Phase 11
 
-- [ ] **QUOT-01**: `Quote` Eloquent model (ULID PK) with `customer_group_id`, `customer_email`, `customer_name`, `billing_address` JSON, `status` enum(`draft`, `pending_approval`, `approved`, `sent`, `accepted`, `rejected`, `expired`), `expires_at` (default today + 14 days), timestamps.
-- [ ] **QUOT-02**: `QuoteLine` Eloquent model with `quote_id` FK, `sku`, `quantity_int`, `unit_price_pence_at_quote` (immutable snapshot at quote creation), `line_total_pence_at_quote`, `product_snapshot` JSON (title, brand, category at quote moment).
+- [x] **QUOT-01**: `Quote` Eloquent model (ULID PK) with `customer_group_id`, `customer_email`, `customer_name`, `billing_address` JSON, `status` enum(`draft`, `pending_approval`, `approved`, `sent`, `accepted`, `rejected`, `expired`), `expires_at` (default today + 14 days), timestamps.
+- [x] **QUOT-02**: `QuoteLine` Eloquent model with `quote_id` FK, `sku`, `quantity_int`, `unit_price_pence_at_quote` (immutable snapshot at quote creation), `line_total_pence_at_quote`, `product_snapshot` JSON (title, brand, category at quote moment).
 - [ ] **QUOT-03**: Filament `QuoteResource` (admin + pricing_manager + sales CRUD). Creating a quote selects customer + customer_group → resolves prices via `TradeRuleResolver` → snapshots each line. Line prices frozen on creation; subsequent PricingRule edits don't affect saved quotes.
 - [ ] **QUOT-04**: `spatie/laravel-pdf` renders a quote PDF from `resources/views/pdf/quote.blade.php` with branded header, itemised lines, totals, expiry date, customer signature block (optional). PDF reads `unit_price_pence_at_quote` snapshots, never recomputes.
 - [ ] **QUOT-05**: On quote approval (admin clicks Approve → Send), a `QuoteApproved` domain event fires. New listener `PushQuoteToBitrix` in v1 CRM domain dispatches `PushQuoteToBitrixDealJob` (onto `crm-bitrix` queue) that creates a Bitrix Deal of `TYPE_ID=QUOTE` with line items mapped via existing BitrixClient.

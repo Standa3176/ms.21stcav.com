@@ -14,7 +14,9 @@ use App\Domain\Competitor\Listeners\DispatchMarginAnalyserJob;
 use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
+use App\Domain\CRM\Listeners\PushQuoteToBitrix;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
+use App\Domain\Quotes\Events\QuoteApproved;
 use App\Domain\ProductAutoCreate\Listeners\ApplyPinsDuringSync;
 use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
 use App\Domain\ProductAutoCreate\Listeners\RecomputeCompletenessOnSupplierChange;
@@ -133,6 +135,18 @@ class EventServiceProvider extends ServiceProvider
             NotifyOnMonthlyBudgetExceeded::class,
             NotifyOnGuardrailBlocked::class,
             NotifyOnAgentRunFailed::class,
+        ],
+
+        // Phase 11 Plan 04 — QuoteApproved → CRM-domain listener that
+        // dispatches PushQuoteToBitrixDealJob on the crm-bitrix queue.
+        // SINGLE listener — email dispatch (QuoteSentMail) lives in
+        // ApproveQuoteAction (Plan 11-03) inside the same DB::transaction
+        // boundary so this listener handles ONLY the Bitrix push.
+        // Listener placement is in CRM domain (NOT Quotes) per CONTEXT.md
+        // one-way arrow: Quotes emits, CRM consumes (BitrixClient stays
+        // inside CRM domain; Quotes never imports it).
+        QuoteApproved::class => [
+            PushQuoteToBitrix::class,
         ],
     ];
 

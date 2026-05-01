@@ -187,7 +187,11 @@ parameters:
     # QuoteApproved event; CRM consumes via listener). Architectural intent
     # preserved: BitrixClient + BitrixEntityMap + bitrix wiring stays inside
     # CRM domain; Quotes only ever produces events.
-    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes]
+    # Phase 11 Plan 04 — CRM extended with Pricing because
+    # PushQuoteToBitrixDealJob (in CRM) calls PriceCalculator::stripVat to
+    # compute ex-VAT amounts for crm.deal.productrows.set line items
+    # (RESEARCH §11 verified). Pricing is read-only from CRM.
+    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes, Pricing]
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]

@@ -953,32 +953,37 @@ Skipped — `workflow.nyquist_validation` is `false` in `.planning/config.json`.
 | A8 | The `crm.dealtype.list` REST endpoint exists OR equivalent (`crm.status.list` with `ENTITY_ID=DEAL_TYPE`) | §Pitfall 2 | Bitrix uses `crm.status.list` for status enums; deal types may surface via `crm.dealcategory.list` (which IS in the SDK at vendor/.../DealCategory.php). Plan 11-04 must verify the exact endpoint. |
 | A9 | `customer_group_name_at_quote` is needed as a denormalised string column | §Schema Design + §Pitfall 6 | If renaming a CustomerGroup is rare, the FK + JOIN may be acceptable. CONTEXT.md "Claude's Discretion" recommends denormalisation; planner can drop if rename is provably never going to happen. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Quote total column placement.**
    - What we know: D-13 mandates line snapshot immutability; CONTEXT.md doesn't explicitly add a `quotes.total_pence_at_quote` column.
    - What's unclear: Do we cache total on Quote, or always SUM at read time?
    - Recommendation: Add `total_pence_at_quote` column + Quote model observer that recomputes on save (draft only). After `status=sent` it's frozen alongside lines. Avoids N+1 SUM queries on the QuoteResource list view.
+   - RESOLVED: Plan 11-01 ships quotes.total_pence_at_quote cached integer column with draft-only recompute observer (Plan 11-02).
 
 2. **`BitrixEntityMap` schema extension shape.**
    - What we know: Phase 4's existing schema uses `entity_type` + `woo_id` (INT) as the dedup key.
    - What's unclear: Quote.id is a ULID (CHAR(26)), not an INT. How do we wedge ULID into the INT column? Options: (a) add nullable `quote_id` CHAR(26) column with composite `(entity_type, quote_id)` unique key; (b) use a hash of ULID as the INT woo_id (collision-prone); (c) reuse `bitrix_id` column as the lookup key (semantic mess).
    - Recommendation: **Option (a) — add nullable `quote_id` ULID column** in Plan 11-01 migration. The existing `(entity_type, woo_id)` UNIQUE stays for orders; new `(entity_type, quote_id)` UNIQUE is added for quote_deal rows. Cleanest separation; minimal v1 disruption.
+   - RESOLVED: Plan 11-01 Option (a) — added nullable quote_id CHAR(26) ULID column + composite UNIQUE(entity_type, quote_id) coexists with existing UNIQUE(entity_type, woo_id) for orders.
 
 3. **PDF storage on push retry.**
    - What we know: D-04 emails the rendered PDF on approve; CONTEXT.md says PDF is generated on-demand (not stored).
    - What's unclear: If the email fails (SMTP outage), do we re-render the PDF on retry? Or store it once + reuse?
    - Recommendation: Re-render on retry (deterministic — snapshot integrity guarantees identical output). Storage adds disk lifecycle complexity for a problem that doesn't exist in v1.
+   - RESOLVED: Plan 11-04 QuotePdfRenderer re-renders deterministically per snapshot guarantee (no PDF persistence — regenerate on every push attempt).
 
 4. **Bitrix Deal contact_id resolution.**
    - What we know: Phase 4 PushOrderToBitrixJob resolves Contact via `EntityDeduper::findOrCreateContact(wooCustomerId, ...)` from order's billing email.
    - What's unclear: Quote may have NO `user_id` (anonymous lead per D-01) — what Contact is attached to the Bitrix Deal?
    - Recommendation: Plan 11-04 calls `EntityDeduper::findOrCreateContact(0, [email => $quote->customer_email, ...])` with `wooCustomerId=0` sentinel. Phase 4 EntityDeduper already handles missing wooCustomerId by deduping on email. Verify in plan.
+   - RESOLVED: Plan 11-04 PushQuoteToBitrixDealJob resolves contact via EntityDeduper::findOrCreateContact(0, [email => quote.customer_email]) — anonymous lead path with sentinel woo_customer_id=0.
 
 5. **`quote_push_failed` Suggestion auto-retry policy.**
    - What we know: `quote_push_failed` Suggestion is written on push exhaustion / 4xx fail-fast.
    - What's unclear: Should `QuotePushRetryApplier` retry once and then escalate, or unlimited retries until admin intervention?
    - Recommendation: Match `CrmPushRetryApplier` shape — admin clicks Approve on the Suggestion → applier dispatches a fresh `PushQuoteToBitrixDealJob`. No auto-retry from the Suggestion itself. Operator-driven recovery loop.
+   - RESOLVED: Plan 11-05 ships QuotePushRetryApplier (clones Phase 4 CrmPushRetryApplier shape) — operator-driven Replay action only; no auto-retry from Suggestion itself.
 
 ## Project Constraints (from CLAUDE.md)
 

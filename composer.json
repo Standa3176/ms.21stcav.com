@@ -10,6 +10,7 @@
         "automattic/woocommerce": "3.1",
         "bezhansalleh/filament-shield": "^3.3",
         "bitrix24/b24phpsdk": "1.10.0",
+        "dompdf/dompdf": "3.0",
         "filament/filament": "^3.3",
         "intervention/image": "^3.11",
         "intervention/image-laravel": "^1.5",
@@ -25,6 +26,7 @@
         "spatie/image-optimizer": "^1.8",
         "spatie/laravel-activitylog": "^4.12",
         "spatie/laravel-failed-job-monitor": "^4.4",
+        "spatie/laravel-pdf": "2.8",
         "spatie/laravel-permission": "^6.0",
         "spatie/simple-excel": "3.9"
     },

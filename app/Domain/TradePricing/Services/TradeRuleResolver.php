@@ -9,6 +9,7 @@ use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Services\PricingResolution;
 use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\Products\Models\Product;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 /**
  * Phase 9 Plan 02 — TRDE-02 decorator over v1 RuleResolver.
@@ -172,5 +173,33 @@ final class TradeRuleResolver
 
         // ── Layer 5 — fall through to v1 retail (byte-identical) ──────────────
         return $this->base->resolve($product);
+    }
+
+    /**
+     * Phase 11 Plan 02 D-13 — explicit "snapshot at quote-creation" entry point.
+     *
+     * Additive thin delegate to resolve() — DOES NOT modify the existing resolve()
+     * body or signature. Phase 9 B-03 byte-identity invariant of resolve() is
+     * locked by tests/Architecture/TradeRuleResolverByteIdentityTest (sha256 of
+     * the resolve() method body must match the Phase 9 baseline).
+     *
+     * Returns the full PricingResolution DTO (margin BPS + source + matched
+     * rule id + chain). The Phase 11 Quotes\Services\PriceSnapshotter then
+     * runs PriceCalculator::compute() to produce the integer-pennies VAT-
+     * INCLUSIVE retail price (A1 LOCKED) and stores it into the QuoteLine
+     * row alongside matchedRuleId + chain[] for auditability.
+     *
+     * Looks up the Product by SKU + delegates. If the SKU does not exist
+     * the underlying firstOrFail throws ModelNotFoundException — caller
+     * (PriceSnapshotter) treats this as a hard failure (the line cannot be
+     * priced without a product row).
+     *
+     * @throws ModelNotFoundException when SKU does not match any product
+     */
+    public function resolveForQuote(string $sku, ?int $customerGroupId): PricingResolution
+    {
+        $product = Product::query()->where('sku', $sku)->firstOrFail();
+
+        return $this->resolve($product, $customerGroupId);
     }
 }

@@ -119,7 +119,7 @@ Plans:
   6. The `quotes:expire` scheduled command flips `status=expired` for quotes past `expires_at` (default `created_at + 14d`); an optional config-gated email notifies the customer. The status transition is auditable in `activity_log`.
 **Plans**: 5 plans (waves 1â€”5; linear chain â€” each wave consumes prior wave's contracts)
   - [x] 11-01-PLAN.md â€” Foundation: Quote/QuoteLine schema (ULID PKs) + 4 migrations + 2 models + 2 enums + 2 policies + BitrixEntityMap quote_id extension + AlertRecipient.receives_quote_alerts + config/quote.php + .env.example + Quotes Deptrac layer (dual-YAML) + DeptracQuotesLayerTest
-  - [ ] 11-02-PLAN.md â€” PriceSnapshotter + QuoteLineWriter + 2 observers (immutability + total recompute) + TradeRuleResolver::resolveForQuote additive + TradeRuleResolverByteIdentityTest + PinnedQuotePricesSurviveRuleEditTest (QUOT-02 SHIP GATE)
+  - [x] 11-02-PLAN.md â€” PriceSnapshotter + QuoteLineWriter + 2 observers (immutability + total recompute) + TradeRuleResolver::resolveForQuote additive + TradeRuleResolverByteIdentityTest + PinnedQuotePricesSurviveRuleEditTest (QUOT-02 SHIP GATE)
   - [ ] 11-03-PLAN.md â€” Filament QuoteResource (Sales nav group) + 4 Pages + QuoteLinesRelationManager (search-and-add SKU picker) + 4 state-machine actions (Approve/Revert/MarkAccepted/MarkRejected) + RolePermissionSeeder 9 perms + shield:safe-regenerate + checkpoint:human-verify
   - [ ] 11-04-PLAN.md â€” composer install spatie/laravel-pdf:^2.8 + dompdf/dompdf:^3.0 + quote.blade.php (UK B2B ex-VAT itemised) + QuotePdfRenderer + QuoteSentMail + QuoteApproved event (ShouldDispatchAfterCommit) + PushQuoteToBitrix listener (CRM domain) + PushQuoteToBitrixDealJob + BitrixClient::dealProductRowsSet + bitrix:quotes-bootstrap + cutover runbook
   - [ ] 11-05-PLAN.md â€” quotes:expire command + QuotePushRetryApplier (kind=quote_push_failed) + ImportQuoteAction (Phase 14 forward-compat) + CutoverChecklistService bitrix_quote_type_id_verified gate + final architecture regression re-runs + 11-VERIFICATION.md ship verdict
@@ -201,7 +201,7 @@ Plans:
 | 8. C4 Agent Framework | v2.0 | 0/TBD | Not started | - |
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
 | 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
-| 11. E2 Quote â†’ Bitrix Deal | v2.0 | 1/5 | In Progress|  |
+| 11. E2 Quote â†’ Bitrix Deal | v2.0 | 2/5 | In Progress|  |
 | 12. C3 SEO / Content Agent | v2.0 | 0/TBD | Not started | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |

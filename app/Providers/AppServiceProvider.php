@@ -201,6 +201,18 @@ class AppServiceProvider extends ServiceProvider
                 // recompute chain picks up the new margin.
                 $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
 
+                // Phase 11 Plan 05 Task 1 — DLQ recovery applier for kind='quote_push_failed'.
+                // PushQuoteToBitrixDealJob (Plan 11-04) writes the failed Suggestion in
+                // two paths: (a) handle()-catch on BitrixPermanentException 4xx fail-fast,
+                // (b) failed() hook after retries exhausted. Admin clicks Replay in the
+                // Filament Suggestions inbox → ApplySuggestionJob → THIS applier →
+                // fresh PushQuoteToBitrixDealJob with original quote_id + correlation_id.
+                // Operator-driven recovery loop per RESEARCH OQ-5 (no auto-retry).
+                $resolver->register(
+                    'quote_push_failed',
+                    \App\Domain\CRM\Appliers\QuotePushRetryApplier::class,
+                );
+
                 // ── Phase 10 Plan 01: EchoApplier deleted (P10-H sweep) ──────
                 // EchoApplier (kind='echo_health') was the Phase 8 framework
                 // smoke-test fixture. Phase 10 deletes it because PricingAgent
@@ -416,6 +428,13 @@ class AppServiceProvider extends ServiceProvider
                 // QUOTE_BITRIX_PUSH_ENABLED=true. Standalone command (NOT an
                 // extension of BitrixBootstrapCommand per B-03 byte-identity).
                 \App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand::class,
+                // Phase 11 Plan 05 (QUOT-08) — quotes:expire scheduled command.
+                // Dry-run-default per cross-cutting invariant 3; --live opt-in.
+                // Scheduled at 00:30 daily Europe/London via routes/console.php;
+                // ad-hoc operator runs default to dry-run for safety. Lives
+                // under app/Domain/Quotes/Console/Commands/ so explicit
+                // registration is required.
+                \App\Domain\Quotes\Console\Commands\QuotesExpireCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
                 // Phase 5 Plan 03 Task 3 — nightly 02:00 sales-counter recache.

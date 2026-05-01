@@ -173,3 +173,19 @@ if ((bool) env('CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED', false)) {
         ->timezone('Europe/London')
         ->description('CUT-01 parallel-run divergence scan (opt-in; ops env-enabled during cutover window)');
 }
+
+// Phase 11 Plan 05 (QUOT-08) — quotes:expire daily 00:30 Europe/London.
+// Flips status=sent → status=expired for quotes whose expires_at has passed.
+// --live opt-in is REQUIRED here (the command itself defaults to dry-run per
+// cross-cutting invariant 3); the scheduler invokes the live mutation path
+// because the cron is the production trigger. Optional customer email is
+// gated by config('quote.email_on_expiry') — operator opts in post-cutover.
+// onOneServer + withoutOverlapping(30) prevents double-flips across multi-
+// worker scheduler deployments; the (status, expires_at) composite index
+// from Plan 11-01 keeps the query index-covered.
+Schedule::command('quotes:expire --live')
+    ->dailyAt('00:30')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('QUOT-08 — flip status=sent → expired for quotes past expires_at (Phase 11 Plan 05)');

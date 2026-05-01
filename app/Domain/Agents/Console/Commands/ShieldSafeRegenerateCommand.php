@@ -51,9 +51,21 @@ final class ShieldSafeRegenerateCommand extends BaseCommand
         $policies = $this->capturePoliciesFromGit();
         $this->info('  Captured '.count($policies).' policy file(s)');
 
-        // ── 3. Run shield:generate --all --force ──
-        $this->info('Step 2: Running shield:generate --all --force...');
-        $exitCode = $this->call('shield:generate', ['--all' => true, '--force' => true]);
+        // ── 3. Run shield:generate --all --panel=admin --option=policies_and_permissions ──
+        //      filament-shield ^3.x has no `--force`; both `--panel` AND
+        //      `--option` are mandatory in non-interactive mode (the command
+        //      uses Laravel\Prompts\Select() with no fallback value otherwise
+        //      — TypeError "null returned"). Plan 11-03 deviation — previous
+        //      wrapper used `--force` which doesn't exist + omitted `--panel`
+        //      which interactively prompts. Hand-written policy preservation
+        //      happens via the post-step `git checkout --` restoration loop
+        //      below (P5-F discipline).
+        $this->info('Step 2: Running shield:generate --all --panel=admin --option=policies_and_permissions...');
+        $exitCode = $this->call('shield:generate', [
+            '--all' => true,
+            '--panel' => 'admin',
+            '--option' => 'policies_and_permissions',
+        ]);
         if ($exitCode !== 0) {
             $this->error("shield:generate failed with exit code {$exitCode}");
 
@@ -87,11 +99,22 @@ final class ShieldSafeRegenerateCommand extends BaseCommand
             $this->info('Step 3: Skipping restoration (--restore=false)');
         }
 
-        // ── 5. PolicyTemplateIntegrityTest gate ──
+        // ── 5. PolicyTemplateIntegrityTest gate (Plan 11-03 deviation:
+        //      use exec() to spawn a clean child artisan process so the
+        //      `--allow-new` / `--force` flags from THIS command don't
+        //      leak into the test command's input parser via Laravel's
+        //      Command::call() option-inheritance behaviour). ──
         $this->info('Step 4: Running PolicyTemplateIntegrityTest...');
-        $testExit = $this->call('test', ['--filter' => 'PolicyTemplateIntegrityTest']);
+        $output = [];
+        $testExit = 0;
+        // PHP_BINARY + base_path() so the wrapper works on Windows-Herd + Linux CI alike.
+        $cmd = escapeshellarg(PHP_BINARY)
+            .' '.escapeshellarg(base_path('artisan'))
+            .' test --filter=PolicyTemplateIntegrityTest 2>&1';
+        exec($cmd, $output, $testExit);
         if ($testExit !== 0) {
             $this->error('PolicyTemplateIntegrityTest FAILED — Shield {{ Placeholder }} leak detected.');
+            $this->line(implode(PHP_EOL, $output));
 
             return 1;
         }
@@ -110,12 +133,22 @@ final class ShieldSafeRegenerateCommand extends BaseCommand
         return $rc === 0 && count(array_filter($output, fn ($l) => trim((string) $l) !== '')) > 0;
     }
 
-    /** @return array<int, string> absolute paths to tracked policy files */
+    /**
+     * @return array<int, string> absolute paths to tracked policy files
+     *
+     * Captures TWO policy roots (Plan 11-03 deviation — original capture only
+     * scanned `app/Domain/{slash}{star}{slash}Policies/{star}.php` and missed
+     * `app/Policies/RolePolicy.php` which Shield re-generates on every run;
+     * the leak surfaced when PolicyTemplateIntegrityTest tripped post-regen
+     * on a Shield `{{ Placeholder }}` literal in app/Policies/RolePolicy.php):
+     *   1. `app/Policies/{star}.php` — Phase 1 root policies (RolePolicy)
+     *   2. `app/Domain/{star}/Policies/{star}.php` — Phase 2+ domain policies
+     */
     private function capturePoliciesFromGit(): array
     {
         $output = [];
         $rc = 0;
-        exec('git ls-files app/Domain/*/Policies/*.php 2>&1', $output, $rc);
+        exec('git ls-files app/Policies/*.php app/Domain/*/Policies/*.php 2>&1', $output, $rc);
         if ($rc !== 0) {
             return [];
         }

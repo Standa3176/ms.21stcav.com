@@ -287,7 +287,12 @@ parameters:
     # Cutover, Marketing, Channels — Quotes is a thin v2 domain, NOT a
     # v1 write-side participant. DeptracQuotesLayerTest enforces these denials.
     # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
-    Quotes:       [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks]
+    # Phase 11 Plan 03 — WpDirectDb added: ApproveQuoteAction wraps the
+    # status flip + event dispatch + email queue in DB::transaction (atomic
+    # commit + ShouldDispatchAfterCommit semantics). Mirrors Pricing +
+    # Dashboard + Agents which add WpDirectDb for narrowly-scoped DB facade
+    # use (NOT Wordpress writes — the SYNC-04 ban applies to Sync only).
+    Quotes:       [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks, WpDirectDb]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

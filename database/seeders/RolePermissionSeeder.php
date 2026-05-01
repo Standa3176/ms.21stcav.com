@@ -60,6 +60,43 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $agentPerm, 'guard_name' => 'web']);
         }
 
+        // 2d. Phase 11 Plan 03 — Quote permissions (QUOT-03 + D-04 + D-07).
+        //
+        // 9 quote_* permissions seeded explicitly so role assignments work
+        // even on cold-start tests / installations where shield:safe-regenerate
+        // hasn't run yet (mirrors AgentRunResource + CustomerGroup pattern).
+        //
+        // RBAC matrix (per Plan 11-03 <behavior>):
+        //   Permission              admin   pricing_manager   sales   read_only
+        //   view_any_quote          ✓       ✓                 ✓       ✓
+        //   view_quote              ✓       ✓                 ✓       ✓
+        //   create_quote            ✓       ✓                 ✓       ✗
+        //   update_quote            ✓       ✓                 ✓       ✗
+        //   delete_quote            ✓       ✗                 ✗       ✗
+        //   approve_quote           ✓       ✓                 ✗       ✗   (D-04 separation-of-duties)
+        //   revert_quote            ✓       ✗                 ✗       ✗   (D-05 admin-only 5-min window)
+        //   mark_accepted_quote     ✓       ✓                 ✓       ✗   (D-07 sales bookkeeping)
+        //   mark_rejected_quote     ✓       ✓                 ✓       ✗   (D-07 + D-08 reason capture)
+        //
+        // QuotePolicy is the load-bearing gate (hand-written; D-04 separation-
+        // of-duties enforced even before this seeder runs). Shield perms are
+        // belt; the policy is braces (Pitfall 7).
+        $quotePermissions = [
+            'view_any_quote',
+            'view_quote',
+            'create_quote',
+            'update_quote',
+            'delete_quote',
+            'approve_quote',
+            'revert_quote',
+            'mark_accepted_quote',
+            'mark_rejected_quote',
+        ];
+
+        foreach ($quotePermissions as $perm) {
+            Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+        }
+
         // 2c. Phase 10 Plan 05 — run_pricing_agent permission (PRCAGT-05).
         //
         // Authorises the "Run pricing agent" Filament action on margin_change
@@ -114,6 +151,34 @@ class RolePermissionSeeder extends Seeder
         Role::findByName('sales')->givePermissionTo([
             'view_any_customer_group',
             'view_customer_group',
+        ]);
+
+        // ── Phase 11 Plan 03 — Quote role assignments (D-04 + D-07) ──────
+        // Additive role-assignment block (matches Phase 9 Plan 05 pattern).
+        // Idempotent: Spatie's givePermissionTo is no-op on already-attached
+        // perms. admin gets all 9 via Permission::all() at step 3 below.
+        //
+        // pricing_manager: all EXCEPT delete_quote (D-04 — only admin can
+        // hard-delete; soft-delete deferred until v1.x).
+        // sales: viewAny/view/create/update + markAccepted/markRejected (NOT
+        // approve/revert/delete — D-04 separation-of-duties).
+        // read_only: viewAny/view via the view_% LIKE pattern at step 4.
+        Role::findByName('pricing_manager')->givePermissionTo([
+            'view_any_quote',
+            'view_quote',
+            'create_quote',
+            'update_quote',
+            'approve_quote',
+            'mark_accepted_quote',
+            'mark_rejected_quote',
+        ]);
+        Role::findByName('sales')->givePermissionTo([
+            'view_any_quote',
+            'view_quote',
+            'create_quote',
+            'update_quote',
+            'mark_accepted_quote',
+            'mark_rejected_quote',
         ]);
         // read_only: NO customer_group permissions; the view_% LIKE pattern
         // at step 4 below WILL pick up view_customer_group + view_any_customer_group

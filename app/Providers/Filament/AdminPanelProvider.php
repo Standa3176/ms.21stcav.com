@@ -87,6 +87,15 @@ class AdminPanelProvider extends PanelProvider
             // including the "Guardrail Failures" JSON viewer (BLOCKER 1) +
             // Langfuse trace deep-link + linked Suggestions summary.
             ->discoverResources(in: app_path('Domain/Agents/Filament/Resources'), for: 'App\\Domain\\Agents\\Filament\\Resources')
+            // Phase 9 Plan 05 — TradePricing customer_groups CRUD under "Pricing" nav group.
+            ->discoverResources(in: app_path('Domain/TradePricing/Filament/Resources'), for: 'App\\Domain\\TradePricing\\Filament\\Resources')
+            // Phase 11 Plan 03 — Quotes domain Filament Resource (QuoteResource +
+            // QuoteLinesRelationManager + 4 state-machine Actions). Adds new
+            // "Sales" navigation group (first member; future v1.x can add
+            // CustomerResource + InvoiceResource here per CONTEXT.md Claude's
+            // Discretion). Per-domain Resource discovery follows the same
+            // pattern as Phase 4 CRM + Phase 5 Competitor + Phase 8 Agents.
+            ->discoverResources(in: app_path('Domain/Quotes/Filament/Resources'), for: 'App\\Domain\\Quotes\\Filament\\Resources')
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

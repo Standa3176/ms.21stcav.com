@@ -410,6 +410,12 @@ class AppServiceProvider extends ServiceProvider
                 // typed ERASE confirmation + dispatches EraseBitrixContactJob.
                 \App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand::class,
                 \App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand::class,
+                // Phase 11 Plan 04 — pre-flight check for Phase 11 quote-flow:
+                // verify TYPE_ID=QUOTE deal category exists + idempotently create
+                // UF_CRM_WOO_QUOTE_ID. Operator runs this BEFORE flipping
+                // QUOTE_BITRIX_PUSH_ENABLED=true. Standalone command (NOT an
+                // extension of BitrixBootstrapCommand per B-03 byte-identity).
+                \App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
                 // Phase 5 Plan 03 Task 3 — nightly 02:00 sales-counter recache.

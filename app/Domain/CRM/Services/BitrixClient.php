@@ -172,6 +172,76 @@ class BitrixClient
         );
     }
 
+    // ── Phase 11 Plan 04 — Deal product-rows + deal-category methods ──────
+    // Additive only — byte-identical to existing methods above (B-03 invariant).
+
+    /**
+     * Phase 11 Plan 04 — replace deal product rows.
+     *
+     * Bitrix `crm.deal.productrows.set` is idempotent — passing the same row
+     * payload twice produces the same Deal state (rows are replaced, not
+     * appended). Plan 11-04 PushQuoteToBitrixDealJob calls this on every
+     * push (initial + re-approval) to satisfy QUOT-07 idempotent re-approval.
+     *
+     * Row shape (RESEARCH §11 verified against vendor SDK):
+     *   ['PRODUCT_ID'=>0,'PRODUCT_NAME'=>'...', 'PRICE'=>'...','QUANTITY'=>'...',
+     *    'TAX_RATE'=>'20','TAX_INCLUDED'=>'Y','CUSTOMIZED'=>'Y',
+     *    'MEASURE_CODE'=>796,'MEASURE_NAME'=>'pcs','SORT'=>10]
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    public function dealProductRowsSet(int $dealId, array $rows, ?string $correlationId = null): void
+    {
+        $shadow = $this->shadowIfDisabled('crm.deal.productrows.set', null, ['id' => $dealId, 'rows' => $rows], $correlationId);
+        if ($shadow !== null) {
+            return;
+        }
+
+        $this->withSdk(
+            'crm.deal.productrows.set',
+            ['id' => $dealId, 'rows' => $rows],
+            fn () => $this->sdk()->getCRMScope()->dealProductRows()->set($dealId, $rows)->isSuccess(),
+            $correlationId,
+        );
+    }
+
+    /**
+     * Phase 11 Plan 04 — list Bitrix deal categories.
+     *
+     * Plan 11-04 BitrixQuotesBootstrapCommand consumes this for the
+     * pre-flight TYPE_ID=QUOTE verification (Pitfall 2 — operator must
+     * create the deal type in Bitrix admin before flipping
+     * QUOTE_BITRIX_PUSH_ENABLED=true).
+     *
+     * Read-only path — never goes through shadowIfDisabled (matches
+     * dealList / dealUserfieldList convention).
+     *
+     * @return array<int, array<string, mixed>>  list of {ID, NAME, SORT, IS_LOCKED}
+     */
+    public function dealCategoryList(?string $correlationId = null): array
+    {
+        return (array) $this->withSdk(
+            'crm.dealcategory.list',
+            [],
+            function (): array {
+                $result = $this->sdk()->getCRMScope()->dealCategory()->list([], [], ['ID', 'NAME', 'SORT', 'IS_LOCKED'], 0);
+
+                $rows = [];
+                foreach ($result->getDealCategories() as $cat) {
+                    $rows[] = [
+                        'ID' => isset($cat->ID) ? (string) $cat->ID : '',
+                        'NAME' => isset($cat->NAME) ? (string) $cat->NAME : '',
+                        'SORT' => isset($cat->SORT) ? (int) $cat->SORT : 0,
+                        'IS_LOCKED' => isset($cat->IS_LOCKED) ? (bool) $cat->IS_LOCKED : false,
+                    ];
+                }
+
+                return $rows;
+            },
+            $correlationId,
+        );
+    }
+
     // ══════════════════════════════════════════════════════════════════════
     // Contact methods
     // ══════════════════════════════════════════════════════════════════════

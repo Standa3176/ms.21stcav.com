@@ -127,6 +127,16 @@ Plans:
 **Research flag**: YES (resolved 2026-05-01) â€” Bitrix Deal line-item modelling resolved (Approach A: crm.deal.productrows.set verified via vendor SDK); 9 assumptions A1-A9 + 5 OQs documented in 11-RESEARCH.md
 **UI hint**: yes
 
+### Phase 11.2: Multi-Feed FTP Refactor (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 11
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11.2 to break down)
+
 ### Phase 11.1: Competitor FTP Pull (INSERTED)
 
 **Goal**: Pull competitor CSVs from configured FTP/SFTP/FTPS sources directly into `storage/app/competitors/incoming/` every 15 min so the existing Phase 5 `competitor:watch` command picks them up and runs the unchanged parse → DB → margin analyser pipeline. Closes the only missing link in the FTP→parse→DB→pricing pipeline. Admin-managed `competitor_ftp_sources` table with native-encrypted credentials; Filament Resource with Test connection + Pull now actions; 3-strike auto-disable + alert via `receives_competitor_ftp_alerts`. Phase 5 ingest pipeline UNTOUCHED (D-11 mandate).

@@ -299,12 +299,20 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\Competitor\Models\CompetitorIngestRun::class,  \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class);
         Gate::policy(\App\Domain\Competitor\Models\CsvParseError::class,        \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class);
 
-        // Phase 11.1 Plan 01 — admin-only CompetitorFtpSourcePolicy (D-08).
-        // STRICTER than the other Phase 5 Competitor policies because this
-        // table holds encrypted FTP credentials. pricing_manager / sales /
-        // read_only all 403. Pitfall P5-F — hand-written hasRole; do NOT
-        // regenerate via shield:generate (use shield:safe-regenerate instead).
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpSource::class,  \App\Domain\Competitor\Policies\CompetitorFtpSourcePolicy::class);
+        // Phase 11.2 Plan 01 — multi-feed FTP refactor (D-09 + D-11).
+        // Replaces Phase 11.1's per-source CompetitorFtpSourcePolicy (deleted).
+        //
+        // CompetitorFtpCredentialPolicy — admin-only on every method (D-09).
+        //   STRICTER than the other Competitor policies because credentials hold
+        //   encrypted FTP secrets. pricing_manager / sales / read_only all 403.
+        //
+        // CompetitorFtpFeedPolicy — admin write + pricing_manager view-only (D-11).
+        //   Sales + read_only have NO access (feeds are credentials-adjacent).
+        //
+        // Pitfall P5-F — hand-written hasRole / hasAnyRole checks; DO NOT
+        // regenerate via shield:generate. Use shield:safe-regenerate instead.
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpCredential::class, \App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy::class);
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpFeed::class,       \App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy::class);
 
         // ── Phase 6 Plan 01: ProductAutoCreate domain policies ──────────
         // D-04 + T-06-01-04 role split: admin governs skip-rule CRUD (cost +

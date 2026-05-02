@@ -119,8 +119,11 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     //      immutability gates). Floor bumped 27 → 29.
     // 30 = above + 1 CompetitorFtpSourcePolicy (Phase 11.1 — admin-only
     //      with encrypted credentials per D-08). Floor bumped 29 → 30.
+    // 31 = 30 - CompetitorFtpSourcePolicy (Phase 11.2 dropped) + CompetitorFtpCredentialPolicy
+    //      (admin-only — encrypted creds, D-09) + CompetitorFtpFeedPolicy (admin write +
+    //      pricing_manager view, D-11). Net +1. Floor bumped 30 → 31.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(30, 'Expected ≥ 30 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(31, 'Expected ≥ 31 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -165,8 +168,12 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         // (D-04 separation-of-duties + D-13 line immutability gates).
         \App\Domain\Quotes\Models\Quote::class                          => \App\Domain\Quotes\Policies\QuotePolicy::class,
         \App\Domain\Quotes\Models\QuoteLine::class                      => \App\Domain\Quotes\Policies\QuoteLinePolicy::class,
-        // Phase 11.1 Plan 01 — CompetitorFtpSourcePolicy (D-08 admin-only).
-        \App\Domain\Competitor\Models\CompetitorFtpSource::class        => \App\Domain\Competitor\Policies\CompetitorFtpSourcePolicy::class,
+        // Phase 11.2 Plan 01 — multi-feed FTP refactor (D-09 + D-11).
+        // Replaces Phase 11.1's CompetitorFtpSourcePolicy (deleted).
+        // CompetitorFtpCredentialPolicy: admin-only (encrypted credentials).
+        // CompetitorFtpFeedPolicy: admin write + pricing_manager view-only.
+        \App\Domain\Competitor\Models\CompetitorFtpCredential::class    => \App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy::class,
+        \App\Domain\Competitor\Models\CompetitorFtpFeed::class          => \App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

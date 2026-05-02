@@ -35,6 +35,15 @@ final class CsvParseError extends Model
 
     public const TYPE_ORPHAN_SKU = 'orphan_sku';
 
+    /**
+     * Phase 11.1 D-10 — extends Phase 5 ENUM via MySQL ALTER TABLE.
+     *
+     * Fired by CompetitorFtpPullCommand::handleSourceFailure() when an
+     * FTP/SFTP/FTPS pull throws. Surfaces in the existing Phase 5
+     * CsvIngestIssuesPage Filament tab — no new UI needed.
+     */
+    public const TYPE_FTP_PULL_FAILED = 'ftp_pull_failed';
+
     protected $fillable = [
         'ingest_run_id',
         'competitor_id',

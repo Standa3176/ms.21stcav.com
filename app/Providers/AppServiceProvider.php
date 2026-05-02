@@ -299,6 +299,13 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\Competitor\Models\CompetitorIngestRun::class,  \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class);
         Gate::policy(\App\Domain\Competitor\Models\CsvParseError::class,        \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class);
 
+        // Phase 11.1 Plan 01 — admin-only CompetitorFtpSourcePolicy (D-08).
+        // STRICTER than the other Phase 5 Competitor policies because this
+        // table holds encrypted FTP credentials. pricing_manager / sales /
+        // read_only all 403. Pitfall P5-F — hand-written hasRole; do NOT
+        // regenerate via shield:generate (use shield:safe-regenerate instead).
+        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpSource::class,  \App\Domain\Competitor\Policies\CompetitorFtpSourcePolicy::class);
+
         // ── Phase 6 Plan 01: ProductAutoCreate domain policies ──────────
         // D-04 + T-06-01-04 role split: admin governs skip-rule CRUD (cost +
         // brand-reputation impact). pricing_manager has view-only on rules +

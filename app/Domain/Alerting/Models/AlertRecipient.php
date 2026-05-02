@@ -44,6 +44,13 @@ use Illuminate\Notifications\Notifiable;
  * (Plan 11-04 push-failed DLQ + Plan 11-05 expiry exceptions). Default
  * FALSE; seeded fallback (ops@meetingstore.co.uk) force-updated TRUE so
  * the Pitfall M "no active recipient" outage cannot strand quote alerts.
+ *
+ * Plan 11.1-01: receives_competitor_ftp_alerts is opt-in for FTP pull
+ * failure alerts (3-strike auto-disable per D-12 — CompetitorFtpPullCommand
+ * dispatches CompetitorFtpPullFailedNotification after 3 consecutive
+ * pull failures on a single source). Default FALSE; seeded fallback
+ * (ops@meetingstore.co.uk) force-updated TRUE so the Pitfall M "no active
+ * recipient" outage cannot strand FTP failure alerts.
  */
 class AlertRecipient extends Model
 {
@@ -62,6 +69,7 @@ class AlertRecipient extends Model
         'receives_weekly_digest',
         'receives_agent_alerts',
         'receives_quote_alerts',
+        'receives_competitor_ftp_alerts',
     ];
 
     protected $casts = [
@@ -73,6 +81,7 @@ class AlertRecipient extends Model
         'receives_weekly_digest' => 'boolean',
         'receives_agent_alerts' => 'boolean',
         'receives_quote_alerts' => 'boolean',
+        'receives_competitor_ftp_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */
@@ -121,5 +130,11 @@ class AlertRecipient extends Model
     public function scopeReceivesQuoteAlerts(Builder $q): Builder
     {
         return $q->where('receives_quote_alerts', true);
+    }
+
+    /** Scope: only rows opted-in to competitor FTP pull failure alerts (Phase 11.1 Plan 01 D-12). */
+    public function scopeReceivesCompetitorFtpAlerts(Builder $q): Builder
+    {
+        return $q->where('receives_competitor_ftp_alerts', true);
     }
 }

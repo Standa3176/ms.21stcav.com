@@ -33,7 +33,8 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 - [ ] **Phase 8: C4 Agent Framework** â€” Greenfield agent infrastructure (registry, ToolBus, GuardrailEngine, ClaudeClient, AgentRun model, agents queue, suggestion provenance morph, shield:safe-regenerate). Blocks all agent work.
 - [ ] **Phase 9: E1 Trade Customer Pricing** â€” Decorator-pattern `TradeRuleResolver` extending v1 RuleResolver. Adds `pricing_rules.customer_group_id` + `customer_groups` table. Golden fixture extended 50â†’80 triples (original 50 byte-identical).
 - [x] **Phase 10: C1 Pricing Agent** â€” First concrete agent. Enriches existing `margin_change` Suggestions with LLM reasoning + confidence band. Validates the Phase 8 framework end-to-end with low blast radius. (completed 2026-04-30)
-- [x] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE. (completed 2026-05-01)
+- [x] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE.
+ (completed 2026-05-01)
 - [ ] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns.
 - [ ] **Phase 13: E3 WhatsApp Business Channel** â€” Inbound webhook (Meta HMAC) + 24h-window outbound free-form + template registry. Marketing-template broadcasts deferred to v2.1. New `whatsapp-inbound` queue.
 - [ ] **Phase 14: E4 AI Product-Finder Chatbot** â€” Public REST endpoint (`/api/chat/message`) + `ProductFinderAgent` over MySQL FULLTEXT (~5k SKUs assumption). Anonymous PII posture: phone/email captured only on explicit quote request, hashed at rest.
@@ -128,13 +129,19 @@ Plans:
 
 ### Phase 11.1: Competitor FTP Pull (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 11
-**Plans:** 0 plans
-
-Plans:
-- [ ] TBD (run /gsd-plan-phase 11.1 to break down)
+**Goal**: Pull competitor CSVs from configured FTP/SFTP/FTPS sources directly into `storage/app/competitors/incoming/` every 15 min so the existing Phase 5 `competitor:watch` command picks them up and runs the unchanged parse → DB → margin analyser pipeline. Closes the only missing link in the FTP→parse→DB→pricing pipeline. Admin-managed `competitor_ftp_sources` table with native-encrypted credentials; Filament Resource with Test connection + Pull now actions; 3-strike auto-disable + alert via `receives_competitor_ftp_alerts`. Phase 5 ingest pipeline UNTOUCHED (D-11 mandate).
+**Depends on**: Phase 11 (after Phase 11 ships) + reuses Phase 5 ingest pipeline + Phase 1 audit/alerting/correlation_id seams
+**Requirements**: COMP-FTP-01 (scope-closer for v1.50.1 COMP-01..04 fetch-step gap; no new top-level requirement IDs)
+**Success Criteria** (what must be TRUE):
+  1. `competitor_ftp_sources` table exists with ULID PK + competitor FK + encrypted credentials (D-04 native Laravel `encrypted` cast) + 19 cols total per CONTEXT.md D-03; Filament admin-only Resource ships with Test connection + Pull now actions per D-08+D-09.
+  2. `competitor:ftp-pull {--source=} {--live}` artisan command runs in dry-run by default (D-06); --live performs atomic .tmp → final rename into `storage/app/competitors/incoming/`; mtime gate skips already-pulled files; size guard (config('competitor.ftp.max_file_mb', 50)) blocks oversized files.
+  3. Schedule fires every 15 min (D-07) BEFORE the every-5-min `competitor:watch` slot — files land within the 15-min window and the next 5-min watcher tick (>30s mtime gate) picks them up. `onOneServer()` + `withoutOverlapping(20)` for HA.
+  4. 3 consecutive failures auto-disable a source (`is_active=false`) and notify recipients with `receives_competitor_ftp_alerts=true` via `CompetitorFtpPullFailedNotification` (D-12). Failure also writes `csv_parse_errors` row with `issue_type=ftp_pull_failed` (D-10 — extends Phase 5 ENUM via MySQL ALTER TABLE with SQLite driver guard).
+  5. Phase 5 ingest pipeline UNTOUCHED (D-11) — `CompetitorWatchCommand`, `IngestCompetitorCsvJob`, filename regex, encoding detection, parse pipeline ALL unchanged. `git diff` of those files returns empty.
+  6. Phase 11.1 lives INSIDE existing `Competitor` Deptrac layer (Claude Discretion in CONTEXT.md) — NO `depfile.yaml` / `deptrac.yaml` changes; `DeptracQuotesLayerTest` still passes.
+**Plans**: 1 plan (single-plan phase — wave 1, no dependencies)
+  - [x] 11.1-01-PLAN.md — Schema (3 migrations) + CompetitorFtpSource model with encrypted casts + admin-only Policy + FtpSourceConnector + competitor:ftp-pull command + Filament Resource + AlertRecipient extension + 15-min schedule + RolePermissionSeeder admin-only LIKE + shield:safe-regenerate + 6 Pest tests + PolicyTemplateIntegrityTest floor 29→30
+**Research flag**: NO — Laravel native primitives only (`league/flysystem-ftp` + `league/flysystem-sftp-v3` already transitively in Laravel 12; `encrypted` Eloquent cast is native AES-256). Single-plan phase, ~50-100 LOC business logic + 6 tests.
 
 ### Phase 12: C3 SEO / Content Agent
 **Goal**: SEO agent proposes content patches (title, descriptions, meta_description) for low-completeness Phase 6 AutoCreate drafts; approved patches auto-pin via `ProductOverride` so subsequent supplier sync preserves them.

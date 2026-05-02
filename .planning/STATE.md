@@ -148,6 +148,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affe
 ### Roadmap Evolution
 
 - Phase 09.1 inserted after Phase 9: Integration Connections Admin (URGENT) — Filament admin page for Supplier API + WooCommerce REST + Bitrix + Langfuse + Anthropic credentials with per-integration "Test connection" actions; closes the env-only-credentials ops gap before Phase 10 PricingAgent ships and burns Anthropic budget against potentially-misconfigured upstreams
+- Phase 11.1 inserted after Phase 11: Competitor FTP Pull (URGENT) — scheduled FTP/SFTP fetch of competitor CSVs from external feeds into `storage/app/competitors/incoming/` so Phase 5 watcher picks them up. New `competitor_ftp_sources` admin-managed table (host/port/path/encrypted credentials/cron/active flag), `competitor:ftp-pull` artisan command (dry-run default + `--live` opt-in), Filament Resource, scheduled before `competitor:watch`, audit_log entry per pull. Closes the only missing link in the FTP→parse→DB→pricing pipeline. Single-plan phase, ~50-100 LOC + 5-6 tests. Deps: Phase 5 (existing CSV ingest pipeline).
 
 ### Pending Todos
 

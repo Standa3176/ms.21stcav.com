@@ -126,6 +126,16 @@ Plans:
 **Research flag**: YES (resolved 2026-05-01) â€” Bitrix Deal line-item modelling resolved (Approach A: crm.deal.productrows.set verified via vendor SDK); 9 assumptions A1-A9 + 5 OQs documented in 11-RESEARCH.md
 **UI hint**: yes
 
+### Phase 11.1: Competitor FTP Pull (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 11
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 11.1 to break down)
+
 ### Phase 12: C3 SEO / Content Agent
 **Goal**: SEO agent proposes content patches (title, descriptions, meta_description) for low-completeness Phase 6 AutoCreate drafts; approved patches auto-pin via `ProductOverride` so subsequent supplier sync preserves them.
 **Depends on**: Phase 8 (agent framework) + Phase 6 (v1 AutoCreate review inbox + `auto_create_status=pending_review` + `completeness_score` + `ProductOverride.pin_*` columns)

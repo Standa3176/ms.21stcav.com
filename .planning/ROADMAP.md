@@ -129,13 +129,13 @@ Plans:
 
 ### Phase 11.2: Multi-Feed FTP Refactor (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 11
-**Plans:** 0 plans
+**Goal**: Refactor Phase 11.1’s per-source FTP model into the (shared credential) + (many feeds) shape that matches real-world operator UX (1 supplier-aggregated FTP folder with 14+ competitor files). Splits schema into ‘competitor_ftp_credentials’ (~1 row, encrypted creds, ULID PK) + ‘competitor_ftp_feeds’ (one row per remote file, integer PK matching the screenshot). Adds ‘FeedFormatNormaliser’ service (csv passthrough / tsv / zip / txt → canonical CSV before write). Ships 2 new Filament Resources (replacing 1 deleted). Phase 5 ingest pipeline byte-identical UNTOUCHED (D-07 inheriting Phase 11.1 D-11). Destructive migration safe (zero prod data 10 min after Phase 11.1 ship).
+**Requirements**: None (refactor of Phase 11.1 — closes the model-shape gap; no new ROADMAP requirement IDs)
+**Depends on:** Phase 11.1
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 11.2 to break down)
+- [x] 11.2-01-PLAN.md — drop competitor_ftp_sources + create credentials/feeds tables + 2 models + 2 policies + FeedFormatNormaliser + refactored connector/command/notification + 2 Filament Resources matching screenshot + D-07 architectural test + 11.2-VERIFICATION.md ship verdict
 
 ### Phase 11.1: Competitor FTP Pull (INSERTED)
 

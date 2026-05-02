@@ -7,251 +7,239 @@ namespace App\Domain\Competitor\Ftp\Console\Commands;
 use App\Console\Commands\BaseCommand;
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Competitor\Ftp\Notifications\CompetitorFtpPullFailedNotification;
+use App\Domain\Competitor\Ftp\Services\FeedFormatNormaliser;
 use App\Domain\Competitor\Ftp\Services\FtpSourceConnector;
-use App\Domain\Competitor\Models\CompetitorFtpSource;
+use App\Domain\Competitor\Models\CompetitorFtpFeed;
 use App\Domain\Competitor\Models\CsvParseError;
 use App\Foundation\Audit\Services\Auditor;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Phase 11.1 Plan 01 — D-05 + D-06 + D-12 — competitor:ftp-pull command.
+ * Phase 11.2 Plan 01 — D-12 + D-13 multi-feed FTP pull command.
  *
- * Iterates active CompetitorFtpSource rows, downloads matching CSV files
- * into storage/app/competitors/incoming/, and exits — Phase 5's existing
- * competitor:watch (every 5 min) picks them up via the >30s mtime gate
- * and runs the unchanged parse → DB → margin analyser pipeline (D-11).
+ * Refactored from Phase 11.1's per-source iteration. Now iterates
+ * `competitor_ftp_feeds` rows (auto-increment integer PK matching the
+ * operator screenshot's IDs) and pulls one file per active feed.
  *
- * --- Modes (D-06) ---
- *   - Default: dry-run. Lists what would be downloaded, never writes.
- *   - --live: actually downloads.
- *   - --source={ulid}: scope to one source (admin "Pull now" Action).
+ * --- Modes ---
+ *   - Default: dry-run. Lists what would be pulled, never writes.
+ *   - --live: actually downloads via FtpSourceConnector + FeedFormatNormaliser.
+ *   - --feed={id}: scope to one feed by integer PK.
+ *   - --credential={ulid}: scope to all feeds sharing one credential.
+ *   - --feed and --credential are MUTUALLY EXCLUSIVE — error if both passed.
  *
- * --- Per-source pull algorithm (D-05) ---
- *   1. Build dynamic Flysystem disk via FtpSourceConnector::connect.
- *   2. List files in $source->base_path (deep:false).
- *   3. Skip files NOT matching $source->filename_pattern regex.
- *   4. Skip files with mtime <= $source->last_pulled_at (idempotency).
- *   5. Skip files larger than config('competitor.ftp.max_file_mb', 50) (DoS guard).
- *   6. Stream-download to .tmp file, then atomic rename to final filename.
- *   7. On success: update last_pulled_at + last_pull_status + reset consecutive_failures.
- *
- * --- Failure handling (D-12) ---
- *   - Atomic increment of `consecutive_failures` via $source->increment().
- *   - csv_parse_errors row written with issue_type='ftp_pull_failed' (D-10).
- *   - At threshold (default 3): is_active=false + dispatch notification.
- *   - Auditor::record('competitor_ftp_pull_disabled', ...).
+ * --- Per-feed pull algorithm (D-13) ---
+ *   1. Build dynamic Flysystem disk via FtpSourceConnector::connect($feed->credential).
+ *   2. Check remote mtime via $disk->lastModified($feed->remote_filename).
+ *      If equal to $feed->remote_file_date, set last_pull_status='no_change' + skip.
+ *   3. Stream-download to temp file.
+ *   4. Run FeedFormatNormaliser::normalise() → returns canonical CSV path.
+ *   5. Atomic move into storage/app/competitors/incoming/{local_filename} via
+ *      .tmp + rename (Phase 5 watcher's >30s mtime gate filters partial pulls).
+ *   6. Update last_pulled_at, remote_file_date, last_pull_status='success',
+ *      reset consecutive_failures=0.
+ *   7. On failure: increment consecutive_failures; if ≥3 → is_active=false +
+ *      dispatch CompetitorFtpPullFailedNotification.
+ *   8. Auditor::record('competitor_ftp_feed_pull', ...).
+ *   9. Failures write csv_parse_errors row with issue_type='ftp_pull_failed'.
  */
 final class CompetitorFtpPullCommand extends BaseCommand
 {
     protected $signature = 'competitor:ftp-pull '
-        .'{--source= : ULID of a single source to pull (default: all active)} '
+        .'{--feed= : Integer ID of a single feed to pull (default: all active)} '
+        .'{--credential= : ULID of a credential — pulls all feeds sharing it} '
         .'{--live : Perform downloads (default: dry-run)}';
 
-    protected $description = 'Pull competitor CSVs from configured FTP/SFTP/FTPS sources into storage/app/competitors/incoming/ (Phase 11.1).';
+    protected $description = 'Pull competitor CSVs from configured FTP/SFTP/FTPS feeds (Phase 11.2 multi-feed).';
 
     public function __construct(
         private readonly Auditor $auditor,
         private readonly FtpSourceConnector $connector,
+        private readonly FeedFormatNormaliser $normaliser,
     ) {
         parent::__construct();
     }
 
     protected function perform(): int
     {
-        $sourceId = $this->option('source');
+        $feedId = $this->option('feed');
+        $credentialId = $this->option('credential');
         $dryRun = ! $this->option('live');
 
-        $query = CompetitorFtpSource::query()->where('is_active', true);
-        if ($sourceId !== null && $sourceId !== '') {
-            $query = CompetitorFtpSource::query()->where('id', $sourceId);
-        }
-
-        $sources = $query->get();
-
-        if ($sourceId !== null && $sourceId !== '' && $sources->isEmpty()) {
-            $this->error("competitor:ftp-pull — no source found with id={$sourceId}.");
+        if (filled($feedId) && filled($credentialId)) {
+            $this->error('competitor:ftp-pull — pass either --feed or --credential, not both.');
 
             return self::FAILURE;
         }
 
+        $query = CompetitorFtpFeed::query()
+            ->with(['credential', 'competitor'])
+            ->where('is_active', true);
+
+        if (filled($feedId)) {
+            // Reset to allow scoping to a single feed regardless of is_active.
+            $query = CompetitorFtpFeed::query()
+                ->with(['credential', 'competitor'])
+                ->where('id', (int) $feedId);
+        } elseif (filled($credentialId)) {
+            $query->where('credential_id', $credentialId);
+        }
+
+        $feeds = $query->orderBy('id')->get();
+
         $this->info(sprintf(
-            'competitor:ftp-pull — %s — %d source(s) to process',
+            'competitor:ftp-pull — %s — %d feed(s) to process',
             $dryRun ? 'DRY-RUN' : 'LIVE',
-            $sources->count()
+            $feeds->count()
         ));
 
-        foreach ($sources as $source) {
+        foreach ($feeds as $feed) {
             try {
-                $this->processSource($source, $dryRun);
+                $this->pullOne($feed, $dryRun);
             } catch (Throwable $e) {
-                $this->handleSourceFailure($source, $e);
+                $this->handleFailure($feed, $e);
             }
         }
 
         $this->auditor->record('competitor_ftp_pull', [
             'mode' => $dryRun ? 'dry-run' : 'live',
-            'sources_processed' => $sources->count(),
+            'feeds_processed' => $feeds->count(),
         ]);
 
         return self::SUCCESS;
     }
 
-    private function processSource(CompetitorFtpSource $source, bool $dryRun): void
+    private function pullOne(CompetitorFtpFeed $feed, bool $dryRun): void
     {
-        $flysystem = $this->connector->connect($source);
-        $pattern = $source->filename_pattern;
-        $maxBytes = (int) config('competitor.ftp.max_file_mb', 50) * 1024 * 1024;
-        $lastPulledAt = $source->last_pulled_at?->getTimestamp() ?? 0;
+        $disk = $this->connector->connect($feed->credential);
 
-        $filesFetched = 0;
-        $filesSkipped = 0;
-
-        $this->line("  Source: {$source->name} ({$source->protocol}://{$source->host}:{$source->port}{$source->base_path})");
-
-        foreach ($flysystem->listContents('', deep: false) as $item) {
-            if (! $item->isFile()) {
-                continue;
-            }
-
-            $remoteFilename = basename($item->path());
-
-            // Filename regex (D-05 step 3) + traversal guard (basename above).
-            if (@preg_match($pattern, $remoteFilename) !== 1) {
-                $filesSkipped++;
-                continue;
-            }
-
-            // mtime gate (D-05 step 3 — skip already-processed files).
-            $mtime = $item->lastModified() ?? 0;
-            if ($mtime <= $lastPulledAt) {
-                $filesSkipped++;
-                continue;
-            }
-
-            // Size guard (D-05 step 4 + DoS).
-            $size = $item->fileSize() ?? 0;
-            if ($size > $maxBytes) {
-                $filesSkipped++;
-                Log::warning('competitor.ftp.file_too_large', [
-                    'source_id' => $source->id,
-                    'filename' => $remoteFilename,
-                    'size_bytes' => $size,
-                    'max_bytes' => $maxBytes,
-                ]);
-                continue;
-            }
-
-            if ($dryRun) {
-                $this->line("    [DRY-RUN] would fetch {$remoteFilename} ({$size} bytes)");
-                $filesFetched++;
-                continue;
-            }
-
-            // --- Live path: stream-download with .tmp atomic rename (D-05 step 6) ---
-            $localFilename = $this->normaliseFilename($source->competitor->slug, $remoteFilename);
-            $incomingDir = storage_path('app'.DIRECTORY_SEPARATOR.'competitors'.DIRECTORY_SEPARATOR.'incoming');
-
-            if (! is_dir($incomingDir)) {
-                @mkdir($incomingDir, 0o775, true);
-            }
-
-            $tempPath = $incomingDir.DIRECTORY_SEPARATOR.$localFilename.'.tmp';
-            $finalPath = $incomingDir.DIRECTORY_SEPARATOR.$localFilename;
-
-            $remoteStream = $flysystem->readStream($item->path());
-            $localFh = fopen($tempPath, 'wb');
-            if ($localFh === false) {
-                throw new \RuntimeException("Could not open local temp file: {$tempPath}");
-            }
-            stream_copy_to_stream($remoteStream, $localFh);
-            fclose($localFh);
-            if (is_resource($remoteStream)) {
-                fclose($remoteStream);
-            }
-
-            if (! @rename($tempPath, $finalPath)) {
-                @unlink($tempPath);
-                throw new \RuntimeException("Atomic rename failed: {$tempPath} → {$finalPath}");
-            }
-
-            $this->line("    [OK] {$remoteFilename} → {$localFilename}");
-            $filesFetched++;
-        }
-
-        if (! $dryRun) {
-            $source->update([
+        // D-13 step 2 — skip-on-no-change gate.
+        $remoteMtime = $disk->lastModified($feed->remote_filename);
+        if ($feed->remote_file_date !== null
+            && $remoteMtime === $feed->remote_file_date->timestamp) {
+            $feed->update([
+                'last_pull_status' => CompetitorFtpFeed::STATUS_NO_CHANGE,
                 'last_pulled_at' => now(),
-                'last_pull_status' => $filesFetched > 0
-                    ? CompetitorFtpSource::STATUS_SUCCESS
-                    : CompetitorFtpSource::STATUS_PARTIAL,
-                'last_pull_files_fetched' => $filesFetched,
                 'last_pull_error' => null,
-                'consecutive_failures' => 0, // D-12 — reset on success
             ]);
+            $this->line("  no_change feed_id={$feed->id} {$feed->local_filename}");
+
+            return;
         }
 
-        $this->info("  → fetched={$filesFetched}, skipped={$filesSkipped}");
-    }
+        if ($dryRun) {
+            $this->line(sprintf(
+                '    [DRY-RUN] feed_id=%d would pull %s → %s',
+                $feed->id,
+                $feed->remote_filename,
+                $feed->local_filename
+            ));
 
-    /**
-     * D-05 step 5 — normalise remote filename to Phase 5 watcher convention.
-     *
-     * If the remote filename already matches Phase 5's `{slug}_{YYYY-MM-DD}.csv`
-     * regex, copy as-is. Otherwise, fallback to `{competitor.slug}_{today}.csv`.
-     */
-    private function normaliseFilename(string $slug, string $remoteName): string
-    {
-        $phase5Pattern = '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/';
-        if (preg_match($phase5Pattern, $remoteName) === 1) {
-            return $remoteName;
+            return;
         }
 
-        return sprintf('%s_%s.csv', $slug, now()->toDateString());
+        // D-13 step 3 — stream-download to temp file.
+        $tempPath = tempnam(sys_get_temp_dir(), 'feed_pull_');
+        $remoteStream = $disk->readStream($feed->remote_filename);
+        $localFh = fopen($tempPath, 'wb');
+        if ($localFh === false) {
+            throw new \RuntimeException("Could not open local temp file: {$tempPath}");
+        }
+        stream_copy_to_stream($remoteStream, $localFh);
+        fclose($localFh);
+        if (is_resource($remoteStream)) {
+            fclose($remoteStream);
+        }
+
+        // D-13 step 4 — normalise to canonical CSV.
+        $normalisedPath = $this->normaliser->normalise(
+            $tempPath,
+            $feed->format,
+            $feed->local_filename
+        );
+
+        // D-13 step 5 — atomic move into incoming/.
+        $incomingDir = storage_path('app'.DIRECTORY_SEPARATOR.'competitors'.DIRECTORY_SEPARATOR.'incoming');
+        if (! is_dir($incomingDir)) {
+            @mkdir($incomingDir, 0o775, true);
+        }
+
+        $finalPath = $incomingDir.DIRECTORY_SEPARATOR.$feed->local_filename;
+        $tmpIncoming = $finalPath.'.tmp';
+
+        if (! @copy($normalisedPath, $tmpIncoming)) {
+            throw new \RuntimeException("Failed to copy normalised CSV → {$tmpIncoming}");
+        }
+        if (! @rename($tmpIncoming, $finalPath)) {
+            @unlink($tmpIncoming);
+            throw new \RuntimeException("Atomic rename failed: {$tmpIncoming} → {$finalPath}");
+        }
+
+        // D-13 step 6 — success.
+        $feed->update([
+            'last_pulled_at' => now(),
+            'remote_file_date' => Carbon::createFromTimestamp($remoteMtime),
+            'last_pull_status' => CompetitorFtpFeed::STATUS_SUCCESS,
+            'last_pull_error' => null,
+            'consecutive_failures' => 0,
+        ]);
+
+        $this->auditor->record('competitor_ftp_feed_pull', [
+            'feed_id' => $feed->id,
+            'competitor_id' => $feed->competitor_id,
+            'remote_filename' => $feed->remote_filename,
+            'local_filename' => $feed->local_filename,
+        ]);
+
+        $this->line("    [OK] feed_id={$feed->id} {$feed->remote_filename} → {$feed->local_filename}");
     }
 
-    private function handleSourceFailure(CompetitorFtpSource $source, Throwable $e): void
+    private function handleFailure(CompetitorFtpFeed $feed, Throwable $e): void
     {
         $threshold = (int) config('competitor.ftp.consecutive_failures_threshold', 3);
         $message = substr($e->getMessage(), 0, 1000);
 
         // Atomic increment — single UPDATE; refresh to read the new value.
-        $source->increment('consecutive_failures');
-        $source->refresh();
+        $feed->increment('consecutive_failures');
+        $feed->refresh();
 
-        $source->update([
+        $feed->update([
             'last_pulled_at' => now(),
-            'last_pull_status' => CompetitorFtpSource::STATUS_FAILED,
+            'last_pull_status' => CompetitorFtpFeed::STATUS_FAILED,
             'last_pull_error' => $message,
-            'last_pull_files_fetched' => 0,
         ]);
 
-        // D-10 — write csv_parse_errors row so failures surface in the
+        // D-13 step 9 — write csv_parse_errors row so failures surface in the
         // existing Phase 5 CsvIngestIssuesPage tab without new UI.
         CsvParseError::create([
-            'filename' => $source->name.' (FTP source)',
+            'filename' => $feed->local_filename,
+            'competitor_id' => $feed->competitor_id,
             'issue_type' => CsvParseError::TYPE_FTP_PULL_FAILED,
             'context' => [
-                'source_id' => $source->id,
-                'host' => $source->host,
-                'protocol' => $source->protocol,
+                'feed_id' => $feed->id,
+                'competitor_id' => $feed->competitor_id,
+                'credential_id' => $feed->credential_id,
+                'remote_filename' => $feed->remote_filename,
+                'local_filename' => $feed->local_filename,
                 'error' => $message,
-                'consecutive_failures' => $source->consecutive_failures,
+                'consecutive_failures' => $feed->consecutive_failures,
             ],
         ]);
 
-        Log::error('competitor.ftp.pull_failed', [
-            'source_id' => $source->id,
-            'host' => $source->host,
+        Log::error('competitor.ftp.feed_pull_failed', [
+            'feed_id' => $feed->id,
+            'remote_filename' => $feed->remote_filename,
             'error' => $message,
-            'consecutive_failures' => $source->consecutive_failures,
+            'consecutive_failures' => $feed->consecutive_failures,
         ]);
 
-        $this->error("  [FAIL] {$source->name} ({$source->host}): {$message}");
+        $this->error("  [FAIL] feed_id={$feed->id} {$feed->local_filename}: {$message}");
 
-        // D-12 — 3-strike auto-disable + notification.
-        if ($source->consecutive_failures >= $threshold) {
-            $source->update(['is_active' => false]);
+        // D-13 step 7 — 3-strike auto-disable + notification.
+        if ($feed->consecutive_failures >= $threshold) {
+            $feed->update(['is_active' => false]);
 
             $recipients = AlertRecipient::query()
                 ->where('is_active', true)
@@ -259,16 +247,17 @@ final class CompetitorFtpPullCommand extends BaseCommand
                 ->get();
 
             foreach ($recipients as $recipient) {
-                $recipient->notify(new CompetitorFtpPullFailedNotification($source, $message));
+                $recipient->notify(new CompetitorFtpPullFailedNotification($feed, $message));
             }
 
-            $this->auditor->record('competitor_ftp_pull_disabled', [
-                'source_id' => $source->id,
-                'consecutive_failures' => $source->consecutive_failures,
+            $this->auditor->record('competitor_ftp_feed_disabled', [
+                'feed_id' => $feed->id,
+                'consecutive_failures' => $feed->consecutive_failures,
                 'recipients_notified' => $recipients->count(),
+                'reason' => 'consecutive_failures_threshold',
             ]);
 
-            $this->warn("  → AUTO-DISABLED after {$source->consecutive_failures} consecutive failures; {$recipients->count()} recipient(s) notified.");
+            $this->warn("  → AUTO-DISABLED feed_id={$feed->id} after {$feed->consecutive_failures} consecutive failures; {$recipients->count()} recipient(s) notified.");
         }
     }
 }

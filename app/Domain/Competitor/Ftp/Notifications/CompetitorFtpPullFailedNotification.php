@@ -4,23 +4,26 @@ declare(strict_types=1);
 
 namespace App\Domain\Competitor\Ftp\Notifications;
 
-use App\Domain\Competitor\Models\CompetitorFtpSource;
+use App\Domain\Competitor\Models\CompetitorFtpFeed;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 /**
- * Phase 11.1 Plan 01 — D-12 3-strike auto-disable email.
+ * Phase 11.2 Plan 01 — feed-level 3-strike auto-disable email.
  *
- * Dispatched by CompetitorFtpPullCommand::handleSourceFailure() once a
- * source's `consecutive_failures` reaches the configured threshold
- * (default 3 — `config('competitor.ftp.consecutive_failures_threshold')`).
+ * Refactored from Phase 11.1's source-level shape — now takes a
+ * CompetitorFtpFeed (one row per remote file) instead of a CompetitorFtpSource.
+ *
+ * Dispatched by CompetitorFtpPullCommand::handleFailure() once a feed's
+ * `consecutive_failures` reaches the configured threshold (default 3 —
+ * `config('competitor.ftp.consecutive_failures_threshold')`).
  *
  * Recipients are resolved at dispatch time via:
  *   AlertRecipient::query()->active()->receivesCompetitorFtpAlerts()->get()
  *
  * The seeded fallback row (ops@meetingstore.co.uk) is force-promoted TRUE
- * by the Phase 11.1 migration so Pitfall M "no active recipient" outage
+ * by Phase 11.1's migration so Pitfall M "no active recipient" outage
  * cannot strand FTP failure alerts.
  */
 class CompetitorFtpPullFailedNotification extends Notification
@@ -28,7 +31,7 @@ class CompetitorFtpPullFailedNotification extends Notification
     use Queueable;
 
     public function __construct(
-        public CompetitorFtpSource $source,
+        public CompetitorFtpFeed $feed,
         public string $error,
     ) {}
 
@@ -39,20 +42,27 @@ class CompetitorFtpPullFailedNotification extends Notification
 
     public function toMail(object $notifiable): MailMessage
     {
+        $supplier = $this->feed->competitor?->name ?? 'unknown';
+        $remote = $this->feed->remote_filename;
+        $heading = "{$supplier} / {$remote}";
+
         return (new MailMessage)
-            ->subject('[FTP Pull Failed] '.$this->source->name)
+            ->subject('[FTP Pull Failed] '.$heading)
             ->line(
-                'Competitor FTP source "'.$this->source->name.'" ('.$this->source->host.') has been '
-                .'auto-disabled after '.$this->source->consecutive_failures.' consecutive pull failures.'
+                "Competitor FTP feed \"{$heading}\" has been auto-disabled after "
+                .$this->feed->consecutive_failures.' consecutive pull failures.'
             )
+            ->line("Feed ID: {$this->feed->id}")
+            ->line("Local filename: {$this->feed->local_filename}")
             ->line('Last error: '.$this->error)
             ->line(
                 'Re-enable in Filament once the upstream issue is resolved. '
-                .'Use the "Test connection" Action to verify credentials before flipping is_active back on.'
+                .'Use the "Test connection" Action on the credential to verify reachability '
+                .'before flipping is_active back on.'
             )
             ->action(
                 'Review in Filament',
-                url('/admin/competitor-ftp-sources/'.$this->source->id.'/edit')
+                url('/admin/competitor-ftp-feeds/'.$this->feed->id.'/edit')
             );
     }
 }

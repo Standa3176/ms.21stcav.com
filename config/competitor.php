@@ -59,9 +59,12 @@ return [
     'filename_regex'               => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
 
     // Phase 11.1 Plan 01 — D-05 step 4 + D-12 circuit breaker + D-01 timeout.
+    // Phase 11.2 Plan 01 — D-10 stale-feed red-text threshold for the Filament
+    //   CompetitorFtpFeedResource remote_file_date column.
     'ftp' => [
         'max_file_mb'                    => (int) env('COMPETITOR_FTP_MAX_FILE_MB', 50),
         'consecutive_failures_threshold' => (int) env('COMPETITOR_FTP_FAILURE_THRESHOLD', 3),
         'connection_timeout_seconds'     => (int) env('COMPETITOR_FTP_TIMEOUT_SECONDS', 30),
+        'stale_days'                     => (int) env('COMPETITOR_FTP_STALE_DAYS', 30),
     ],
 ];

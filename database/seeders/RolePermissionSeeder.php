@@ -97,37 +97,44 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
-        // ── Phase 11.1 Plan 01 — Competitor FTP source permissions (D-08) ──
+        // ── Phase 11.2 Plan 01 — Competitor FTP credential + feed permissions ──
+        //                       (replaces Phase 11.1's competitor_ftp_source perms)
         //
-        // Admin-only Resource (encrypted credentials live in this table).
-        // 7 perms (view_any / view / create / update / delete / replicate /
-        // reorder + ::-separated counterparts) emitted by Shield once
-        // shield:safe-regenerate runs. Explicit Permission::firstOrCreate
-        // ensures the perms exist on cold-start tests / installs (mirrors
-        // AgentRunResource + CustomerGroup pattern).
+        // CompetitorFtpCredentialResource — admin-only (D-09). Encrypted credentials
+        // live in this table; pricing_manager / sales / read_only all 403.
         //
-        // RBAC matrix:
-        //   admin           — yes (covered by Permission::all() sync at step 3 below)
-        //   pricing_manager — NO  (admin tool with credentials per D-08)
-        //   sales           — NO  (admin tool with credentials per D-08)
-        //   read_only       — NO  (encrypted credentials must not surface
-        //                          even via view-only access; explicit
-        //                          revokePermissionTo at step 4c below in
-        //                          case the view_% LIKE pattern catches one)
-        $competitorFtpSourcePermissions = [
-            'view_any_competitor_ftp_source',
-            'view_competitor_ftp_source',
-            'create_competitor_ftp_source',
-            'update_competitor_ftp_source',
-            'delete_competitor_ftp_source',
+        // CompetitorFtpFeedResource — admin write + pricing_manager view-only (D-11).
+        // sales + read_only 403.
+        //
+        // Explicit Permission::firstOrCreate ensures the perms exist on cold-start
+        // tests / installs (mirrors AgentRunResource + CustomerGroup pattern).
+        $competitorFtpCredentialPermissions = [
+            'view_any_competitor_ftp_credential',
+            'view_competitor_ftp_credential',
+            'create_competitor_ftp_credential',
+            'update_competitor_ftp_credential',
+            'delete_competitor_ftp_credential',
             // Shield :: separator counterparts (forward-compat).
-            'view_any_competitor::ftp::source',
-            'view_competitor::ftp::source',
-            'create_competitor::ftp::source',
-            'update_competitor::ftp::source',
-            'delete_competitor::ftp::source',
+            'view_any_competitor::ftp::credential',
+            'view_competitor::ftp::credential',
+            'create_competitor::ftp::credential',
+            'update_competitor::ftp::credential',
+            'delete_competitor::ftp::credential',
         ];
-        foreach ($competitorFtpSourcePermissions as $perm) {
+        $competitorFtpFeedPermissions = [
+            'view_any_competitor_ftp_feed',
+            'view_competitor_ftp_feed',
+            'create_competitor_ftp_feed',
+            'update_competitor_ftp_feed',
+            'delete_competitor_ftp_feed',
+            // Shield :: separator counterparts (forward-compat).
+            'view_any_competitor::ftp::feed',
+            'view_competitor::ftp::feed',
+            'create_competitor::ftp::feed',
+            'update_competitor::ftp::feed',
+            'delete_competitor::ftp::feed',
+        ];
+        foreach (array_merge($competitorFtpCredentialPermissions, $competitorFtpFeedPermissions) as $perm) {
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
@@ -247,17 +254,25 @@ class RolePermissionSeeder extends Seeder
             'view_customer_group',
         ]);
 
-        // 4c. Phase 11.1 Plan 01 (D-08) — read_only is "locked out entirely"
-        // from competitor_ftp_sources. The view_% LIKE pattern at step 4
-        // would otherwise sweep in view_any_competitor_ftp_source +
-        // view_competitor_ftp_source — but encrypted credentials must NOT
-        // surface even via read-only access. Explicit revoke restores the
+        // 4c. Phase 11.2 Plan 01 (D-09 + D-11) — read_only is "locked out
+        // entirely" from competitor_ftp_credentials AND competitor_ftp_feeds.
+        // The view_% LIKE pattern at step 4 would otherwise sweep in
+        // view_any_competitor_ftp_credential / view_competitor_ftp_credential
+        // (encrypted secrets — admin-only) and view_any_competitor_ftp_feed /
+        // view_competitor_ftp_feed (D-11 admin-write + pricing_manager-view
+        // only; read_only NOT in scope). Explicit revoke restores the
         // admin-only-by-design boundary.
         $readOnly->revokePermissionTo([
-            'view_any_competitor_ftp_source',
-            'view_competitor_ftp_source',
-            'view_any_competitor::ftp::source',
-            'view_competitor::ftp::source',
+            // Credentials — admin-only (D-09).
+            'view_any_competitor_ftp_credential',
+            'view_competitor_ftp_credential',
+            'view_any_competitor::ftp::credential',
+            'view_competitor::ftp::credential',
+            // Feeds — admin write + pricing_manager view; NOT read_only (D-11).
+            'view_any_competitor_ftp_feed',
+            'view_competitor_ftp_feed',
+            'view_any_competitor::ftp::feed',
+            'view_competitor::ftp::feed',
         ]);
 
         // 5. pricing_manager → CRUD on product + pricing_rule; view-only on competitor_price + sync_run
@@ -392,15 +407,22 @@ class RolePermissionSeeder extends Seeder
                     // ═══════════════════════════════════════════════════════════
                     'run_pricing_agent',
                     // ═══════════════════════════════════════════════════════════
-                    // Phase 11.1 Plan 01 (D-08) — pricing_manager gets NO
-                    // competitor_ftp_source permissions. Encrypted credentials
-                    // live in this table; admin-only by design. Sales + read_only
-                    // are also explicitly excluded (read_only revoke at step 4c
-                    // above; sales whereIn at the salesPermissions block below
-                    // simply doesn't reference competitor_ftp_source).
-                    // No keys appended here — the absence IS the policy. This
-                    // comment is the rationale anchor for future code review.
+                    // Phase 11.2 Plan 01 (D-09 + D-11) — replaces Phase 11.1's
+                    // competitor_ftp_source-perm absence with explicit allow-list:
+                    //
+                    //   competitor_ftp_credentials  — pricing_manager NO perms
+                    //                                 (admin-only — encrypted secrets
+                    //                                 live in this table). The absence
+                    //                                 below IS the policy.
+                    //
+                    //   competitor_ftp_feeds        — pricing_manager VIEW-ONLY
+                    //                                 (D-11). Listed below.
                     // ═══════════════════════════════════════════════════════════
+                    // Feeds — pricing_manager view-only (D-11).
+                    'view_any_competitor_ftp_feed',
+                    'view_competitor_ftp_feed',
+                    'view_any_competitor::ftp::feed',
+                    'view_competitor::ftp::feed',
                 ]);
             })
             ->pluck('name')

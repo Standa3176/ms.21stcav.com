@@ -39,6 +39,12 @@ declare(strict_types=1);
 | csv_chunk_size — 100. Rows per CompetitorCsvChunkJob dispatch.
 |
 | filename_regex — {slug}_{YYYY-MM-DD}.csv (D-01). Anchors prevent traversal.
+|
+| ftp.* — Phase 11.1 D-05 step 4 + D-12 + D-11. DoS guard + circuit-breaker
+|   threshold + connection timeout for the every-15-min FTP pull command.
+|   Files larger than `ftp.max_file_mb` are skipped (DoS guard). After
+|   `ftp.consecutive_failures_threshold` consecutive failures a source is
+|   auto-disabled and recipients are notified (D-12).
 */
 
 return [
@@ -51,4 +57,11 @@ return [
     'stale_feed_hours'             => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),
     'csv_chunk_size'               => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
     'filename_regex'               => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
+
+    // Phase 11.1 Plan 01 — D-05 step 4 + D-12 circuit breaker + D-01 timeout.
+    'ftp' => [
+        'max_file_mb'                    => (int) env('COMPETITOR_FTP_MAX_FILE_MB', 50),
+        'consecutive_failures_threshold' => (int) env('COMPETITOR_FTP_FAILURE_THRESHOLD', 3),
+        'connection_timeout_seconds'     => (int) env('COMPETITOR_FTP_TIMEOUT_SECONDS', 30),
+    ],
 ];

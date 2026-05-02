@@ -444,6 +444,11 @@ class AppServiceProvider extends ServiceProvider
                 \App\Domain\Quotes\Console\Commands\QuotesExpireCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
+                // Phase 11.1 Plan 01 — every-15-min FTP/SFTP/FTPS pull (COMP-FTP-01).
+                // Lives outside app/Console/Commands/ so explicit registration
+                // mirrors the watcher pattern above. Dry-run by default per D-06;
+                // schedule entry in routes/console.php passes --live opt-in flag.
+                \App\Domain\Competitor\Ftp\Console\Commands\CompetitorFtpPullCommand::class,
                 // Phase 5 Plan 03 Task 3 — nightly 02:00 sales-counter recache.
                 // A3 fallback: dispatched job is currently a stub (WooClient lacks
                 // /orders); command + schedule ship so future WooClient extension

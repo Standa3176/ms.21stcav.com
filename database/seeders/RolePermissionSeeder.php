@@ -97,6 +97,40 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
+        // ── Phase 11.1 Plan 01 — Competitor FTP source permissions (D-08) ──
+        //
+        // Admin-only Resource (encrypted credentials live in this table).
+        // 7 perms (view_any / view / create / update / delete / replicate /
+        // reorder + ::-separated counterparts) emitted by Shield once
+        // shield:safe-regenerate runs. Explicit Permission::firstOrCreate
+        // ensures the perms exist on cold-start tests / installs (mirrors
+        // AgentRunResource + CustomerGroup pattern).
+        //
+        // RBAC matrix:
+        //   admin           — yes (covered by Permission::all() sync at step 3 below)
+        //   pricing_manager — NO  (admin tool with credentials per D-08)
+        //   sales           — NO  (admin tool with credentials per D-08)
+        //   read_only       — NO  (encrypted credentials must not surface
+        //                          even via view-only access; explicit
+        //                          revokePermissionTo at step 4c below in
+        //                          case the view_% LIKE pattern catches one)
+        $competitorFtpSourcePermissions = [
+            'view_any_competitor_ftp_source',
+            'view_competitor_ftp_source',
+            'create_competitor_ftp_source',
+            'update_competitor_ftp_source',
+            'delete_competitor_ftp_source',
+            // Shield :: separator counterparts (forward-compat).
+            'view_any_competitor::ftp::source',
+            'view_competitor::ftp::source',
+            'create_competitor::ftp::source',
+            'update_competitor::ftp::source',
+            'delete_competitor::ftp::source',
+        ];
+        foreach ($competitorFtpSourcePermissions as $perm) {
+            Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+        }
+
         // 2c. Phase 10 Plan 05 — run_pricing_agent permission (PRCAGT-05).
         //
         // Authorises the "Run pricing agent" Filament action on margin_change
@@ -211,6 +245,19 @@ class RolePermissionSeeder extends Seeder
         $readOnly->revokePermissionTo([
             'view_any_customer_group',
             'view_customer_group',
+        ]);
+
+        // 4c. Phase 11.1 Plan 01 (D-08) — read_only is "locked out entirely"
+        // from competitor_ftp_sources. The view_% LIKE pattern at step 4
+        // would otherwise sweep in view_any_competitor_ftp_source +
+        // view_competitor_ftp_source — but encrypted credentials must NOT
+        // surface even via read-only access. Explicit revoke restores the
+        // admin-only-by-design boundary.
+        $readOnly->revokePermissionTo([
+            'view_any_competitor_ftp_source',
+            'view_competitor_ftp_source',
+            'view_any_competitor::ftp::source',
+            'view_competitor::ftp::source',
         ]);
 
         // 5. pricing_manager → CRUD on product + pricing_rule; view-only on competitor_price + sync_run
@@ -344,6 +391,16 @@ class RolePermissionSeeder extends Seeder
                     // get this perm (CONTEXT Claude's Discretion §"Admin permission").
                     // ═══════════════════════════════════════════════════════════
                     'run_pricing_agent',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 11.1 Plan 01 (D-08) — pricing_manager gets NO
+                    // competitor_ftp_source permissions. Encrypted credentials
+                    // live in this table; admin-only by design. Sales + read_only
+                    // are also explicitly excluded (read_only revoke at step 4c
+                    // above; sales whereIn at the salesPermissions block below
+                    // simply doesn't reference competitor_ftp_source).
+                    // No keys appended here — the absence IS the policy. This
+                    // comment is the rationale anchor for future code review.
+                    // ═══════════════════════════════════════════════════════════
                 ]);
             })
             ->pluck('name')

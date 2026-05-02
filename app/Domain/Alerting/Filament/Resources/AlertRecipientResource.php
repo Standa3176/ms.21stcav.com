@@ -100,6 +100,13 @@ class AlertRecipientResource extends Resource
                 ->label('Receives Weekly Digest')
                 ->helperText('Monday 07:00 Europe/London — Sync / Margin / CRM / Auto-Create / Competitor summary email (DASH-05).')
                 ->default(true),
+            // Phase 11.1 Plan 01 — Competitor FTP pull failure alert opt-in (D-12).
+            // Default FALSE; seeded fallback (ops@meetingstore.co.uk) is force-promoted
+            // TRUE by the Plan 11.1-01 migration so Pitfall M outage cannot strand alerts.
+            Toggle::make('receives_competitor_ftp_alerts')
+                ->label('Receives Competitor FTP Alerts')
+                ->helperText('Email this recipient when an FTP source fails 3 consecutive pulls and auto-disables (Phase 11.1 D-12).')
+                ->default(false),
             Textarea::make('notes')
                 ->rows(3)
                 ->maxLength(2000)
@@ -132,6 +139,10 @@ class AlertRecipientResource extends Resource
                 IconColumn::make('receives_weekly_digest')
                     ->boolean()
                     ->label('Weekly digest?'),
+                // Phase 11.1 Plan 01 — Competitor FTP pull failure opt-in.
+                IconColumn::make('receives_competitor_ftp_alerts')
+                    ->boolean()
+                    ->label('FTP alerts?'),
                 TextColumn::make('created_at')->dateTime()->sortable(),
             ])
             ->defaultSort('email');

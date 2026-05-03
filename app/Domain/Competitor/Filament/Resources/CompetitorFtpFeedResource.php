@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domain\Competitor\Filament\Resources;
 
 use App\Domain\Competitor\Filament\Resources\CompetitorFtpFeedResource\Pages;
+use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorFtpFeed;
 use App\Filament\Concerns\HasExportableTable;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -24,6 +26,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
 
 /**
  * Phase 11.2 Plan 01 — CompetitorFtpFeedResource (D-08 + D-10 + D-11).
@@ -72,25 +75,57 @@ class CompetitorFtpFeedResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
+            // Quick task 260503-uwk — competitor select is now inline-creatable
+            // (createOptionForm) so ops can add a new competitor without leaving
+            // the FTP Feed form. Existing competitors come from the dropdown;
+            // new ones get a status=pending row plus an auto-derived slug.
             Select::make('competitor_id')
                 ->label('Supplier')
                 ->relationship('competitor', 'name')
                 ->required()
                 ->searchable()
-                ->preload(),
+                ->preload()
+                ->createOptionForm([
+                    TextInput::make('name')
+                        ->required()
+                        ->maxLength(255),
+                    TextInput::make('slug')
+                        ->maxLength(64)
+                        ->rules(['regex:/^[a-z0-9_-]+$/'])
+                        ->helperText('Optional — auto-derived from name if blank. Lowercase letters, digits, hyphens, underscores only.'),
+                ])
+                ->createOptionUsing(function (array $data): int {
+                    $slug = filled($data['slug'] ?? null)
+                        ? (string) $data['slug']
+                        : Str::slug((string) $data['name'], '_');
+
+                    return Competitor::create([
+                        'name' => $data['name'],
+                        'slug' => $slug,
+                        'status' => Competitor::STATUS_PENDING,
+                        'is_active' => true,
+                    ])->getKey();
+                }),
 
             TextInput::make('remote_filename')
                 ->required()
                 ->maxLength(512)
                 ->helperText('Exact filename on the remote FTP server (e.g. nuvias-hub-feed.csv, PRICE.ZIP, Enhanced-GB.tsv)'),
 
-            TextInput::make('local_filename')
+            // Quick task 260503-uwk — local_filename is now Hidden + auto-derived
+            // server-side from the competitor's slug. Operators no longer hand-craft
+            // the implementation-detail filename pattern. The fixed date 2026-01-01
+            // is intentional: the watcher's regex requires <slug>_YYYY-MM-DD.csv but
+            // only uses the slug part for competitor identity — freshness comes from
+            // the file's mtime, not the date string in its name.
+            // Edit form: keeps the existing value (changing local_filename would
+            // orphan files in storage/app/competitors/incoming/).
+            // Belt-and-braces regex matches the watcher's pattern in case anyone
+            // ever programmatically POSTs an arbitrary value to this hidden field.
+            Hidden::make('local_filename')
                 ->required()
-                ->maxLength(255)
-                ->suffix('.csv')
-                ->unique(ignoreRecord: true)
-                ->rules(['regex:/\.csv$/i'])
-                ->helperText('Canonical name written to storage/app/competitors/incoming/ — must end in .csv'),
+                ->dehydrated()
+                ->rules(['regex:/^[a-z0-9_-]+_\d{4}-\d{2}-\d{2}\.csv$/']),
 
             Select::make('format')
                 ->required()

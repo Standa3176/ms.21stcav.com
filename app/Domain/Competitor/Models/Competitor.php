@@ -61,6 +61,11 @@ final class Competitor extends Model
         return $this->hasMany(CompetitorIngestRun::class);
     }
 
+    public function ftpFeeds(): HasMany
+    {
+        return $this->hasMany(CompetitorFtpFeed::class);
+    }
+
     public function csvMapping(): HasOne
     {
         return $this->hasOne(CompetitorCsvMapping::class);

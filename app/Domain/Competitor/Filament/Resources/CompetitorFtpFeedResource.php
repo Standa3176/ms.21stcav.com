@@ -79,12 +79,31 @@ class CompetitorFtpFeedResource extends Resource
             // (createOptionForm) so ops can add a new competitor without leaving
             // the FTP Feed form. Existing competitors come from the dropdown;
             // new ones get a status=pending row plus an auto-derived slug.
+            //
+            // afterStateUpdated derives local_filename client-side as soon as
+            // a competitor is selected — required so the Hidden::make('local_filename')
+            // field below has a value AT VALIDATION TIME (before save).
+            // mutateFormDataBeforeCreate runs AFTER validation, so it cannot
+            // fill required fields.
             Select::make('competitor_id')
                 ->label('Supplier')
                 ->relationship('competitor', 'name')
                 ->required()
                 ->searchable()
                 ->preload()
+                ->live()
+                ->afterStateUpdated(function ($state, callable $set): void {
+                    if ($state === null || $state === '') {
+                        return;
+                    }
+                    $competitor = Competitor::find($state);
+                    if ($competitor === null) {
+                        return;
+                    }
+                    // Watcher regex: <slug>_YYYY-MM-DD.csv. Date is fixed because
+                    // freshness comes from file mtime, not the date string.
+                    $set('local_filename', sprintf('%s_2026-01-01.csv', $competitor->slug));
+                })
                 ->createOptionForm([
                     TextInput::make('name')
                         ->required()

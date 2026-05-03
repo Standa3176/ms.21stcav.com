@@ -81,13 +81,13 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 
 ### Phase 09.1: Integration Connections Admin (INSERTED)
 
-**Goal:** [Urgent work - to be planned]
-**Requirements**: TBD
-**Depends on:** Phase 9
-**Plans:** 0 plans
+**Goal**: Consolidate the 5 env-only integration credentials (Supplier API JWT, WooCommerce REST, Bitrix24 webhook, Anthropic Claude API, Langfuse observability) into a single polymorphic 'integration_credentials' table with encrypted-at-rest payloads + admin-managed Filament Resource (Settings nav group, kind-aware live form, per-kind Test connection action) + IntegrationCredentialResolver (DB-row-wins-then-env-fallback, 60s observer-invalidated cache) consumed by WooClient/SupplierClient/BitrixClient/ClaudeClient. Adds 'IntegrationHealthWidget' (5 traffic-light tiles) to the home dashboard. Closes the env-only-credentials ops gap before Phase 10 PricingAgent burns Anthropic budget against potentially-misconfigured upstreams. Phase 11.2 CompetitorFtpCredential pattern UNTOUCHED (architectural test enforces — different concerns: per-feed FTP vs per-integration-kind credentials).
+**Requirements**: None (operational scaffolding — no new requirement IDs)
+**Depends on:** Phase 11.2 (encrypted-cast pattern reference) + Phase 8 (shield:safe-regenerate wrapper) + Phase 7 (SnapshotAggregator + dashboard_snapshots) + Phase 1 (LogsActivity + IntegrationLogger) + Phase 4 (BitrixClient refactor target) + Phase 2 (SupplierClient + WooClient refactor targets)
+**Plans:** 1 plan (single-plan phase — wave 1, no dependencies)
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 09.1 to break down)
+- [ ] 09.1-01-PLAN.md — integration_credentials schema + IntegrationCredential model with 'encrypted:array' cast + 2 enums + IntegrationCredentialPolicy (admin-only, hand-written) + IntegrationCredentialResolver (DB-wins-then-env-fallback, 60s observer-invalidated cache) + IntegrationCredentialMissingException + 5 client refactors (Woo, Supplier, Bitrix, Claude with per-kind testConnection()) + Langfuse runtime-DB-override deferred (env-only v1) + IntegrationCredentialResource (kind-aware live form, Settings nav, per-row Test connection action) + TestIntegrationAction + IntegrationHealthWidget + SnapshotAggregator::computeIntegrationHealth() extension + Integrations Deptrac layer (dual-YAML) + PolicyTemplateIntegrityTest floor 31→32 + Phase 11.2 untouched architectural test + 11 Pest tests + 09.1-VERIFICATION.md ship verdict
 
 ### Phase 10: C1 Pricing Agent
 **Goal**: Pricing agent enriches v1's existing `margin_change` Suggestions with LLM reasoning + confidence band â€” never replaces the deterministic qualifier, never creates new margin_change rows on its own.

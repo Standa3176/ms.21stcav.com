@@ -45,11 +45,13 @@ class CustomerGroupResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
-    protected static ?string $navigationGroup = 'Pricing';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Customer
+    // groups are referenced by pricing rules + sit alongside Catalogue.
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    // I-01 — distinct from PricingRuleResource::$navigationSort (currently 10).
-    // Reflection-based test in CustomerGroupResourceTest fails CI on collision.
-    protected static ?int $navigationSort = 11;
+    // I-01 — distinct from PricingRuleResource::$navigationSort (now 20).
+    // Reflection-based test in CustomerGroupResourceNavigationSortTest fails CI on collision.
+    protected static ?int $navigationSort = 21;
 
     protected static ?string $recordTitleAttribute = 'name';
 

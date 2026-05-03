@@ -35,10 +35,11 @@ final class HorizonFailedJobsWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'horizon_failed_jobs')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Horizon failures', '—')
-                    ->description('Awaiting first dashboard:refresh')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -47,17 +48,25 @@ final class HorizonFailedJobsWidget extends StatsOverviewWidget
         $fiveMin = (int) ($payload['last_5_min'] ?? 0);
         $day = (int) ($payload['last_24_hours'] ?? 0);
 
+        // Threshold logic: 0 success, 1–10 warning, >10 danger. The 5-min window
+        // is the tighter pulse — anything > 0 is treated as warning+ regardless
+        // of magnitude (immediate-attention semantics from the original code).
+        $dayColor = $day === 0 ? 'success' : ($day <= 10 ? 'warning' : 'danger');
+        $fiveMinColor = $fiveMin === 0 ? 'success' : ($fiveMin <= 10 ? 'warning' : 'danger');
+
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
 
         return [
             Stat::make('Failed (last 5 min)', (string) $fiveMin)
                 ->description('Immediate attention')
-                ->color($fiveMin > 0 ? 'danger' : 'success')
+                ->descriptionIcon('heroicon-m-x-circle')
+                ->color($fiveMinColor)
                 ->extraAttributes($ring),
             Stat::make('Failed (24h)', (string) $day)
                 ->description('Rolling 24h window')
-                ->color($day > 0 ? 'warning' : 'success'),
+                ->descriptionIcon('heroicon-m-x-circle')
+                ->color($dayColor),
         ];
     }
 }

@@ -40,9 +40,11 @@ class CompetitorPriceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-pound';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Competitor
+    // price browser folded into Catalogue (sits next to product/pricing data).
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $pluralModelLabel = 'Competitor Prices';
 

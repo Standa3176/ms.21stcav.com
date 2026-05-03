@@ -35,10 +35,11 @@ final class PendingReviewsWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'pending_reviews')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Pending reviews', '—')
-                    ->description('Awaiting first dashboard:refresh')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -47,6 +48,12 @@ final class PendingReviewsWidget extends StatsOverviewWidget
         $drafts = (int) ($payload['auto_create_drafts'] ?? 0);
         $margin = (int) ($payload['margin_change_suggestions'] ?? 0);
         $opportunity = (int) ($payload['new_product_opportunity_suggestions'] ?? 0);
+        $total = $drafts + $margin + $opportunity;
+
+        // Threshold logic: <5 success, 5–20 warning, >20 danger.
+        $bucketColor = fn (int $count) => $count === 0
+            ? 'success'
+            : ($count <= 5 ? 'success' : ($count <= 20 ? 'warning' : 'danger'));
 
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
@@ -54,14 +61,17 @@ final class PendingReviewsWidget extends StatsOverviewWidget
         return [
             Stat::make('Auto-create drafts', (string) $drafts)
                 ->description('Ready for human review')
-                ->color($drafts > 0 ? 'warning' : 'gray')
+                ->descriptionIcon('heroicon-m-inbox-stack')
+                ->color($bucketColor($drafts))
                 ->extraAttributes($ring),
             Stat::make('Margin changes', (string) $margin)
                 ->description('Pending pricing adjustments')
-                ->color($margin > 0 ? 'warning' : 'gray'),
+                ->descriptionIcon('heroicon-m-inbox-stack')
+                ->color($bucketColor($margin)),
             Stat::make('New product opportunities', (string) $opportunity)
                 ->description('Competitor-surfaced candidates')
-                ->color($opportunity > 0 ? 'warning' : 'gray'),
+                ->descriptionIcon('heroicon-m-inbox-stack')
+                ->color($bucketColor($opportunity)),
         ];
     }
 }

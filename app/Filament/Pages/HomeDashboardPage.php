@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
 use App\Filament\Widgets\HorizonFailedJobsWidget;
@@ -14,7 +15,10 @@ use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
+use Carbon\Carbon;
+use Filament\Actions\Action;
 use Filament\Pages\Dashboard;
+use Illuminate\Support\Facades\Artisan;
 
 /**
  * Phase 7 Plan 02 — Home dashboard page (D-01).
@@ -51,7 +55,50 @@ class HomeDashboardPage extends Dashboard
 
     protected static ?string $navigationLabel = 'Home';
 
-    protected static ?int $navigationSort = -100;
+    protected static ?string $navigationGroup = 'Operations';
+
+    protected static ?int $navigationSort = 10;
+
+    /**
+     * Sub-heading rendered under the page title — gives ops a single
+     * "when did the dashboard last refresh?" anchor instead of having
+     * to read each widget's `extraAttributes` ring.
+     */
+    public function getSubheading(): ?string
+    {
+        $latest = DashboardSnapshot::max('computed_at');
+
+        if (! $latest) {
+            return 'Last refreshed: Never run · click Refresh data to populate the dashboard';
+        }
+
+        return 'Last refreshed: ' . Carbon::parse($latest)->diffForHumans();
+    }
+
+    /**
+     * Global "Refresh data" action — synchronous run of the
+     * `dashboard:refresh` command + Livewire $refresh dispatch so the
+     * 9 widgets re-render against the new snapshot rows. Admin-only.
+     *
+     * @return array<int, Action>
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('refreshData')
+                ->label('Refresh data')
+                ->icon('heroicon-m-arrow-path')
+                ->color('primary')
+                ->requiresConfirmation(false)
+                ->action(function () {
+                    Artisan::call('dashboard:refresh');
+                    // Re-render all dashboard widgets after the snapshot rows land.
+                    $this->dispatch('$refresh');
+                })
+                ->successNotificationTitle('Dashboard refreshed')
+                ->visible(fn () => auth()->user()?->hasRole('admin') ?? false),
+        ];
+    }
 
     /**
      * @return array<int, class-string>

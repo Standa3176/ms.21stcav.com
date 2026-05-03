@@ -39,10 +39,13 @@ final class LastSyncRunWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'last_sync_run')->first();
 
-        if ($snapshot === null) {
+        // Empty-state — em-dash + friendly "No data yet" reads softer than
+        // "Awaiting first dashboard:refresh" for non-engineer ops users.
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
-                Stat::make('Last sync', 'Never run')
-                    ->description('Awaiting first dashboard:refresh')
+                Stat::make('Last sync', '—')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -66,6 +69,7 @@ final class LastSyncRunWidget extends StatsOverviewWidget
 
         $stat = Stat::make('Last sync', $age)
             ->description($description)
+            ->descriptionIcon('heroicon-m-arrow-path')
             ->color($color);
 
         if ($snapshot->isStale()) {

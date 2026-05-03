@@ -48,7 +48,9 @@ class IntegrationCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-link';
 
-    protected static ?string $navigationGroup = 'Settings';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Admin-only
+    // credential vault — slot under Admin group at sort 20.
+    protected static ?string $navigationGroup = 'Admin';
 
     protected static ?string $navigationLabel = 'Integration Credentials';
 
@@ -58,7 +60,7 @@ class IntegrationCredentialResource extends Resource
 
     protected static ?string $slug = 'integration-credentials';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 20;
 
     public static function form(Form $form): Form
     {

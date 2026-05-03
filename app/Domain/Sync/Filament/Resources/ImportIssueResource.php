@@ -36,9 +36,12 @@ class ImportIssueResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    protected static ?string $navigationGroup = 'Sync';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Import
+    // issues affect product data — moved into Catalogue alongside the
+    // Competitor CSV ingest issues for a single triage surface.
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 90;
 
     protected static ?string $recordTitleAttribute = 'sku';
 

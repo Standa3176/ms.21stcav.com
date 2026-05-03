@@ -57,9 +57,11 @@ class CsvIngestIssuesPage extends Page implements HasTable
 
     protected static ?string $navigationIcon = 'heroicon-o-wrench-screwdriver';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Issue
+    // triage page sits next to the underlying CsvParseError resource.
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 65;
 
     protected static ?string $navigationLabel = 'CSV Ingest Issues';
 

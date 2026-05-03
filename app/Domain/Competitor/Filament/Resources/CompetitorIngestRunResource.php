@@ -33,9 +33,10 @@ class CompetitorIngestRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 70;
 
     protected static ?string $pluralModelLabel = 'Competitor Ingest Runs';
 

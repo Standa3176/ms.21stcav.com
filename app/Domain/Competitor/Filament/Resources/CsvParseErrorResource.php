@@ -42,9 +42,10 @@ class CsvParseErrorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $pluralModelLabel = 'CSV Parse Errors';
 

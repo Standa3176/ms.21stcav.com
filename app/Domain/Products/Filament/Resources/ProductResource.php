@@ -44,6 +44,8 @@ class ProductResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
 
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). ProductResource
+    // is the canonical first item under Catalogue.
     protected static ?string $navigationGroup = 'Catalogue';
 
     protected static ?int $navigationSort = 10;

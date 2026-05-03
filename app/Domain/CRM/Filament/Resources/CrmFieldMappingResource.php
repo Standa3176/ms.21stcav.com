@@ -45,9 +45,11 @@ class CrmFieldMappingResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrows-right-left';
 
-    protected static ?string $navigationGroup = 'CRM';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). CRM mapping
+    // is admin config — Admin group at sort 70.
+    protected static ?string $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 70;
 
     protected static ?string $recordTitleAttribute = 'woo_field';
 

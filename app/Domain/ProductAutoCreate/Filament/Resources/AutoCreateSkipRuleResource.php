@@ -51,9 +51,11 @@ class AutoCreateSkipRuleResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-funnel';
 
-    protected static ?string $navigationGroup = 'Product Operations';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Skip rules
+    // are vendor-exclusion config — Admin group, alongside other policy config.
+    protected static ?string $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'Auto-Create Skip Rules';
 

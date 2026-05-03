@@ -33,9 +33,11 @@ class ProductOverrideResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    protected static ?string $navigationGroup = 'Pricing';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Per-product
+    // pricing overrides slot under Catalogue alongside PricingRuleResource.
+    protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 25;
 
     protected static ?string $recordTitleAttribute = 'id';
 

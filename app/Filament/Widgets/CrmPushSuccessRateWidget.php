@@ -35,10 +35,11 @@ final class CrmPushSuccessRateWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'crm_push_success_rate')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
-                Stat::make('CRM push success', 'No data')
-                    ->description('Awaiting first dashboard:refresh')
+                Stat::make('CRM push success', '—')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -51,11 +52,13 @@ final class CrmPushSuccessRateWidget extends StatsOverviewWidget
             return [
                 Stat::make('CRM push success', '—')
                     ->description('No CRM pushes in last 24h')
+                    ->descriptionIcon('heroicon-m-paper-airplane')
                     ->color('gray'),
             ];
         }
 
-        $rateColor = $rate >= 95 ? 'success' : ($rate >= 80 ? 'warning' : 'danger');
+        // Threshold logic: ≥99 success, 95–99 warning, <95 danger.
+        $rateColor = $rate >= 99 ? 'success' : ($rate >= 95 ? 'warning' : 'danger');
         $retryCount = (int) ($payload['retry_count'] ?? 0);
         $failedCount = (int) ($payload['failed_count'] ?? 0);
 
@@ -65,13 +68,16 @@ final class CrmPushSuccessRateWidget extends StatsOverviewWidget
         return [
             Stat::make('CRM success', $rate . '%')
                 ->description($total . ' pushes in 24h')
+                ->descriptionIcon('heroicon-m-paper-airplane')
                 ->color($rateColor)
                 ->extraAttributes($ring),
             Stat::make('Retries', (string) $retryCount)
                 ->description('Transient Bitrix failures')
+                ->descriptionIcon('heroicon-m-arrow-path')
                 ->color($retryCount > 0 ? 'warning' : 'gray'),
             Stat::make('Failed', (string) $failedCount)
                 ->description('Human-review in suggestions inbox')
+                ->descriptionIcon('heroicon-m-exclamation-triangle')
                 ->color($failedCount > 0 ? 'danger' : 'gray'),
         ];
     }

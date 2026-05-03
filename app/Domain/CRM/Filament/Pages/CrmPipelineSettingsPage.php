@@ -36,9 +36,11 @@ class CrmPipelineSettingsPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';
 
-    protected static ?string $navigationGroup = 'CRM';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Settings
+    // page slot under Admin group at sort 50.
+    protected static ?string $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $navigationLabel = 'CRM Pipeline Settings';
 

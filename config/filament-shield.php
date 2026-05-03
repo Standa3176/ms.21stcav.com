@@ -1,10 +1,16 @@
 <?php
 
 return [
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
+    // navigation_sort=60 puts Roles & Permissions last within the Admin group.
+    // The 'navigation_group' bool stays TRUE (means: USE the translated group
+    // string from lang/vendor/filament-shield/en/filament-shield.php nav.group,
+    // which we override to 'Admin'). Setting it to a string here would bypass
+    // translation overrides — leave the bool toggle as-is.
     'shield_resource' => [
         'should_register_navigation' => true,
         'slug' => 'shield/roles',
-        'navigation_sort' => -1,
+        'navigation_sort' => 60,
         'navigation_badge' => true,
         'navigation_group' => true,
         'sub_navigation_position' => null,

@@ -51,7 +51,8 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cloud-arrow-down';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
+    protected static ?string $navigationGroup = 'Catalogue';
 
     protected static ?string $navigationLabel = 'FTP Feeds';
 
@@ -61,7 +62,7 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-feeds';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 40;
 
     public static function getEloquentQuery(): Builder
     {

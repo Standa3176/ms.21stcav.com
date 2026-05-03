@@ -44,10 +44,11 @@ final class SyncDiffsParityWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'sync_diffs_parity')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Shadow-mode parity', '—')
-                    ->description('Awaiting first divergence-scan')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -58,10 +59,17 @@ final class SyncDiffsParityWidget extends StatsOverviewWidget
         $window = (int) ($payload['window_days'] ?? 7);
         $diverged = (int) ($payload['diverged_rows'] ?? 0);
 
-        $color = match ($payload['traffic_light'] ?? 'amber') {
+        // Threshold logic: ≥99 success, 95–99 warning, <95 danger.
+        // SnapshotAggregator's pre-computed traffic_light is the source of truth
+        // when present; fall back to threshold buckets if parity_percent is set
+        // without a bucket assignment.
+        $color = match ($payload['traffic_light'] ?? null) {
             'green' => 'success',
+            'amber' => 'warning',
             'red' => 'danger',
-            default => 'warning',
+            default => $parity === null
+                ? 'warning'
+                : ($parity >= 99 ? 'success' : ($parity >= 95 ? 'warning' : 'danger')),
         };
 
         $value = $parity === null ? '—' : ($parity . '%');
@@ -77,6 +85,7 @@ final class SyncDiffsParityWidget extends StatsOverviewWidget
                     $window,
                     $diverged,
                 ))
+                ->descriptionIcon('heroicon-m-scale')
                 ->color($color)
                 ->extraAttributes($ring),
         ];

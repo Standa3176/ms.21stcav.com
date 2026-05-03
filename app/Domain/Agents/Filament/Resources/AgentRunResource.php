@@ -40,9 +40,12 @@ class AgentRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cpu-chip';
 
-    protected static ?string $navigationGroup = 'Operations';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). AgentRuns
+    // are forensics rows for the Pricing/CSV/etc. agents — moved into Review
+    // alongside Suggestions + Auto-Create review queues for one-stop triage.
+    protected static ?string $navigationGroup = 'Review';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $navigationLabel = 'Agent Runs';
 

@@ -34,10 +34,11 @@ final class ProductCatalogueHealthWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'product_catalogue_health')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Catalogue health', '—')
-                    ->description('Awaiting first dashboard:refresh')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -46,6 +47,13 @@ final class ProductCatalogueHealthWidget extends StatsOverviewWidget
         $published = (int) ($payload['published'] ?? 0);
         $draft = (int) ($payload['draft'] ?? 0);
         $pending = (int) ($payload['pending'] ?? 0);
+        $total = $published + $draft + $pending;
+
+        // Threshold logic: published_pct ≥80 success, 50–80 warning, <50 danger.
+        $publishedPct = $total > 0 ? ($published / $total) * 100 : 0;
+        $publishedColor = $total === 0
+            ? 'gray'
+            : ($publishedPct >= 80 ? 'success' : ($publishedPct >= 50 ? 'warning' : 'danger'));
 
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
@@ -53,13 +61,16 @@ final class ProductCatalogueHealthWidget extends StatsOverviewWidget
         return [
             Stat::make('Published', (string) $published)
                 ->description('Live on meetingstore.co.uk')
-                ->color('success')
+                ->descriptionIcon('heroicon-m-shield-check')
+                ->color($publishedColor)
                 ->extraAttributes($ring),
             Stat::make('Draft', (string) $draft)
                 ->description('Editor-side only')
+                ->descriptionIcon('heroicon-m-shield-check')
                 ->color('gray'),
             Stat::make('Pending', (string) $pending)
                 ->description('Awaiting moderation')
+                ->descriptionIcon('heroicon-m-shield-check')
                 ->color($pending > 0 ? 'warning' : 'gray'),
         ];
     }

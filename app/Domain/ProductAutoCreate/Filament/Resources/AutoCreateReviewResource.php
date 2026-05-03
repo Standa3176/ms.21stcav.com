@@ -79,9 +79,12 @@ class AutoCreateReviewResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    protected static ?string $navigationGroup = 'Product Operations';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Auto-Create
+    // Review is a triage queue — slot under Review (alongside Suggestions +
+    // Agent Runs). Skip Rules + Settings move to Admin (config, not triage).
+    protected static ?string $navigationGroup = 'Review';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'Auto-Create Review';
 

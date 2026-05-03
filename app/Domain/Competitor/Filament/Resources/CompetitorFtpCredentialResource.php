@@ -47,7 +47,8 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
-    protected static ?string $navigationGroup = 'Competitor Intelligence';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
+    protected static ?string $navigationGroup = 'Catalogue';
 
     protected static ?string $navigationLabel = 'FTP Credentials';
 
@@ -57,7 +58,7 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-credentials';
 
-    protected static ?int $navigationSort = 51;
+    protected static ?int $navigationSort = 50;
 
     public static function form(Form $form): Form
     {

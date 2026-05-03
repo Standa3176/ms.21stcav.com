@@ -33,9 +33,11 @@ class SyncRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-path';
 
-    protected static ?string $navigationGroup = 'Sync';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). SyncRuns
+    // are system-run logs / ops-pulse — keep under Operations alongside Horizon.
+    protected static ?string $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $recordTitleAttribute = 'id';
 

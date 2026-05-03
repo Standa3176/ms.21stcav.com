@@ -26,8 +26,11 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // violet-800 — deliberate B2B-operational tone (vs vibrant violet-600 SaaS-trial vibe).
+            // Color::hex() generates the 50..950 shade ramp from the seed colour; Filament uses
+            // the lighter shades for hover/active surfaces and the darker ones for ring/focus.
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::hex('#5B21B6'),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

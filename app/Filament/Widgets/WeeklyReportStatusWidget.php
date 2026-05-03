@@ -38,10 +38,11 @@ final class WeeklyReportStatusWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'weekly_report_status')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Weekly digest', '—')
-                    ->description('Awaiting first dashboard:refresh')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -54,16 +55,27 @@ final class WeeklyReportStatusWidget extends StatsOverviewWidget
         $lastSentLabel = $lastSent ? Carbon::parse($lastSent)->diffForHumans() : 'Not yet sent';
         $nextRunLabel = $nextRun ? Carbon::parse($nextRun)->format('D H:i') : '—';
 
+        // Threshold logic: ≤7d success, 7–14d warning, >14d danger.
+        $lastSentColor = 'gray';
+        if ($lastSent) {
+            $daysSince = Carbon::parse($lastSent)->diffInDays(now());
+            $lastSentColor = $daysSince <= 7
+                ? 'success'
+                : ($daysSince <= 14 ? 'warning' : 'danger');
+        }
+
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
 
         return [
             Stat::make('Last sent', $lastSentLabel)
                 ->description(sprintf('%d recipients', $recipients))
-                ->color($lastSent ? 'success' : 'gray')
+                ->descriptionIcon('heroicon-m-envelope')
+                ->color($lastSentColor)
                 ->extraAttributes($ring),
             Stat::make('Next run', $nextRunLabel)
                 ->description('Monday 07:00 Europe/London')
+                ->descriptionIcon('heroicon-m-envelope')
                 ->color('gray'),
         ];
     }

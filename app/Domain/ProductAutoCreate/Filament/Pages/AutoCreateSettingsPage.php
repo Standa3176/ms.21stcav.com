@@ -41,9 +41,11 @@ class AutoCreateSettingsPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    protected static ?string $navigationGroup = 'Product Operations';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Settings
+    // page slot under Admin group at sort 40.
+    protected static ?string $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $navigationLabel = 'Auto-Create Settings';
 

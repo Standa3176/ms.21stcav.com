@@ -75,9 +75,12 @@ class QuoteResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    protected static ?string $navigationGroup = 'Sales';
+    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Quotes
+    // is an ops-team workflow ("issue a proposal to a customer") — slot
+    // under Operations rather than its own one-item Sales group.
+    protected static ?string $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $modelLabel = 'Quote';
 

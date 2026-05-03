@@ -37,10 +37,11 @@ final class ImportIssuesWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'import_issues')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
                 Stat::make('Import issues', '—')
-                    ->description('Awaiting first dashboard:refresh')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
@@ -50,20 +51,28 @@ final class ImportIssuesWidget extends StatsOverviewWidget
         $quarantined = (int) ($payload['quarantined_csvs'] ?? 0);
         $lowComp = (int) ($payload['low_completeness_drafts'] ?? 0);
 
+        // Threshold logic: 0 success, 1–10 warning, >10 danger.
+        $bucketColor = fn (int $count) => $count === 0
+            ? 'success'
+            : ($count <= 10 ? 'warning' : 'danger');
+
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
 
         return [
             Stat::make('CSV parse errors', (string) $parseErrors)
                 ->description('Unresolved ingest failures')
-                ->color($parseErrors > 0 ? 'danger' : 'gray')
+                ->descriptionIcon('heroicon-m-exclamation-triangle')
+                ->color($bucketColor($parseErrors))
                 ->extraAttributes($ring),
             Stat::make('Quarantined CSVs', (string) $quarantined)
                 ->description('Failed ingest runs')
-                ->color($quarantined > 0 ? 'warning' : 'gray'),
+                ->descriptionIcon('heroicon-m-exclamation-triangle')
+                ->color($bucketColor($quarantined)),
             Stat::make('Low-completeness drafts', (string) $lowComp)
                 ->description('Score <50 — auto-create')
-                ->color($lowComp > 0 ? 'warning' : 'gray'),
+                ->descriptionIcon('heroicon-m-exclamation-triangle')
+                ->color($bucketColor($lowComp)),
         ];
     }
 }

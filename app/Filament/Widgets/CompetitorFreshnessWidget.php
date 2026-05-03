@@ -39,31 +39,38 @@ final class CompetitorFreshnessWidget extends StatsOverviewWidget
     {
         $snapshot = DashboardSnapshot::where('metric_key', 'competitor_freshness')->first();
 
-        if ($snapshot === null) {
+        if ($snapshot === null || $snapshot->computed_at === null) {
             return [
-                Stat::make('Competitor feeds', 'No data')
-                    ->description('Awaiting first dashboard:refresh')
+                Stat::make('Competitor feeds', '—')
+                    ->description('No data yet')
+                    ->descriptionIcon('heroicon-m-arrow-path')
                     ->color('gray'),
             ];
         }
 
         $payload = (array) $snapshot->metric_value_json;
         $threshold = (int) ($payload['threshold_hours'] ?? config('competitor.stale_feed_hours', 48));
+        $missing = (int) ($payload['missing'] ?? 0);
+        $staleCount = (int) ($payload['stale'] ?? 0);
+        $fresh = (int) ($payload['fresh'] ?? 0);
 
         $stale = $snapshot->isStale();
         $ring = $stale ? ['class' => 'ring-2 ring-amber-400'] : [];
 
         return [
-            Stat::make('Fresh feeds', (string) ($payload['fresh'] ?? 0))
+            Stat::make('Fresh feeds', (string) $fresh)
                 ->description(sprintf('Last ingest <%dh ago', $threshold))
-                ->color('success')
+                ->descriptionIcon('heroicon-m-clock')
+                ->color($fresh > 0 ? 'success' : 'gray')
                 ->extraAttributes($ring),
-            Stat::make('Stale feeds', (string) ($payload['stale'] ?? 0))
+            Stat::make('Stale feeds', (string) $staleCount)
                 ->description(sprintf('Last ingest >=%dh ago', $threshold))
-                ->color('warning'),
-            Stat::make('Missing feeds', (string) ($payload['missing'] ?? 0))
+                ->descriptionIcon('heroicon-m-clock')
+                ->color($staleCount > 0 ? 'warning' : 'gray'),
+            Stat::make('Missing feeds', (string) $missing)
                 ->description('No ingest recorded')
-                ->color('danger'),
+                ->descriptionIcon('heroicon-m-clock')
+                ->color($missing > 0 ? 'danger' : 'gray'),
         ];
     }
 }

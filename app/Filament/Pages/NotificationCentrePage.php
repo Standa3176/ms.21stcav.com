@@ -44,7 +44,7 @@ class NotificationCentrePage extends Page
 
     protected static ?string $navigationLabel = 'Notification Centre';
 
-    protected static ?int $navigationSort = 80;
+    protected static ?int $navigationSort = 30;
 
     protected static string $view = 'filament.pages.notification-centre';
 

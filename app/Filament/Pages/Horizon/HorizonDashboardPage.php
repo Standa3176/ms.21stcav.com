@@ -38,7 +38,7 @@ class HorizonDashboardPage extends Page
 
     protected static ?string $navigationIcon = 'heroicon-o-queue-list';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $slug = 'horizon';
 

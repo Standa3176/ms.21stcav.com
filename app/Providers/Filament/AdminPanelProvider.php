@@ -31,6 +31,18 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
+            // Phase 7 Plan 02 — D-03 Horizon Cluster (post-09.1 follow-up #2).
+            // Replaces the single HorizonEmbedPage with HorizonCluster + 8 thin
+            // sub-pages (Dashboard / Monitoring / Metrics / Batches /
+            // Pending|Completed|Silenced|Failed Jobs). Each sub-page renders the
+            // same shared Blade view with a different horizonPath via
+            // getViewData(). Sidebar shows "Horizon" as a collapsible parent
+            // under Operations group; clicking the parent defaults to Dashboard
+            // (lowest navigationSort). Admin-only gate at both Cluster and
+            // each sub-page (defense in depth). HorizonLinkNavigationItem.php
+            // intentionally retained as rollback path — see HorizonCluster
+            // class docblock.
+            ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
             ->pages([
                 // Phase 7 Plan 02 — HomeDashboardPage overrides the default Filament
                 // dashboard at /admin (D-01, 9-widget grid). Registered first so it
@@ -42,13 +54,10 @@ class AdminPanelProvider extends PanelProvider
                 // aggregated by NotificationCentreAggregator; Livewire wire:poll refreshes.
                 \App\Filament\Pages\NotificationCentrePage::class,
                 // Phase 7 Plan 02 — D-03 UX-correction patch (post-09.1 follow-up).
-                // Replaces HorizonLinkNavigationItem ("open in new tab") with an
-                // iframe-embedded Horizon dashboard inside Filament chrome. Admin-only
-                // gate via HorizonEmbedPage::canAccess (mirrors the original
-                // NavigationItem visibility closure). HorizonLinkNavigationItem.php
-                // intentionally retained on disk (unused) as the documented rollback
-                // path; see HorizonEmbedPage class docblock.
-                \App\Filament\Pages\HorizonEmbedPage::class,
+                // HorizonEmbedPage was registered here for ~10 minutes; superseded
+                // by the HorizonCluster registered via ->discoverClusters(...) above.
+                // See HorizonCluster class docblock for the full rollback path
+                // (HorizonLinkNavigationItem.php is intentionally retained on disk).
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

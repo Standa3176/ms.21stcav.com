@@ -31,18 +31,24 @@ class AdminPanelProvider extends PanelProvider
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
-            // Phase 7 Plan 02 — D-03 Horizon Cluster (post-09.1 follow-up #2).
-            // Replaces the single HorizonEmbedPage with HorizonCluster + 8 thin
-            // sub-pages (Dashboard / Monitoring / Metrics / Batches /
-            // Pending|Completed|Silenced|Failed Jobs). Each sub-page renders the
-            // same shared Blade view with a different horizonPath via
-            // getViewData(). Sidebar shows "Horizon" as a collapsible parent
-            // under Operations group; clicking the parent defaults to Dashboard
-            // (lowest navigationSort). Admin-only gate at both Cluster and
-            // each sub-page (defense in depth). HorizonLinkNavigationItem.php
-            // intentionally retained as rollback path — see HorizonCluster
-            // class docblock.
-            ->discoverClusters(in: app_path('Filament/Clusters'), for: 'App\\Filament\\Clusters')
+            // Phase 7 Plan 02 — D-03 native Horizon Pages (post-09.1 follow-up #3).
+            //
+            // History: HorizonLinkNavigationItem (new-tab link) → HorizonEmbedPage
+            // (single iframe) → HorizonCluster (Cluster + 8 iframe sub-pages — gave
+            // double-sidebar UX) → THIS: 8 native Filament Pages reading directly
+            // from Laravel\Horizon's PHP repository contracts. No iframe at all.
+            //
+            // ->discoverClusters() removed entirely (no other clusters exist; Filament
+            // tolerates its absence). The 8 native pages live under
+            // app/Filament/Pages/Horizon/ and are picked up by the existing
+            // ->discoverPages(in: app_path('Filament/Pages'), ...) line above —
+            // Filament's auto-discovery walks subdirectories. Sidebar collapsing
+            // is achieved via static $navigationParentItem on the 7 child pages
+            // (Filament 3.3 native parent-child nav).
+            //
+            // HorizonLinkNavigationItem.php is intentionally retained on disk
+            // (unused) as the rollback path — re-register it via navigationItems()
+            // and the new pages disappear behind a single admin-gated link.
             ->pages([
                 // Phase 7 Plan 02 — HomeDashboardPage overrides the default Filament
                 // dashboard at /admin (D-01, 9-widget grid). Registered first so it
@@ -53,11 +59,18 @@ class AdminPanelProvider extends PanelProvider
                 // 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq)
                 // aggregated by NotificationCentreAggregator; Livewire wire:poll refreshes.
                 \App\Filament\Pages\NotificationCentrePage::class,
-                // Phase 7 Plan 02 — D-03 UX-correction patch (post-09.1 follow-up).
-                // HorizonEmbedPage was registered here for ~10 minutes; superseded
-                // by the HorizonCluster registered via ->discoverClusters(...) above.
-                // See HorizonCluster class docblock for the full rollback path
-                // (HorizonLinkNavigationItem.php is intentionally retained on disk).
+                // Phase 7 Plan 02 — D-03 native Horizon Pages (8) — explicit registration
+                // belt-and-braces alongside ->discoverPages(...) above. Discovery would
+                // pick them up anyway; explicit list gives static analysers + grep an
+                // anchor + makes the parent-child nav order legible at a glance.
+                \App\Filament\Pages\Horizon\HorizonDashboardPage::class,
+                \App\Filament\Pages\Horizon\HorizonMonitoringPage::class,
+                \App\Filament\Pages\Horizon\HorizonMetricsPage::class,
+                \App\Filament\Pages\Horizon\HorizonBatchesPage::class,
+                \App\Filament\Pages\Horizon\HorizonPendingJobsPage::class,
+                \App\Filament\Pages\Horizon\HorizonCompletedJobsPage::class,
+                \App\Filament\Pages\Horizon\HorizonSilencedJobsPage::class,
+                \App\Filament\Pages\Horizon\HorizonFailedJobsPage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([

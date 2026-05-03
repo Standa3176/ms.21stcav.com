@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Agents\Clients;
 
 use App\Domain\Agents\Services\CostCalculator;
+use App\Domain\Integrations\Enums\IntegrationCredentialKind;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Support\Facades\Context;
 use Prism\Prism\Enums\Provider;
@@ -48,6 +51,7 @@ final class ClaudeClient
     public function __construct(
         private readonly CostCalculator $costCalculator,
         private readonly IntegrationLogger $logger,
+        private readonly IntegrationCredentialResolver $resolver,
     ) {}
 
     /**
@@ -66,8 +70,13 @@ final class ClaudeClient
     ): ClaudeResponse {
         $model ??= (string) config('agents.default_model', self::DEFAULT_MODEL);
 
+        // Phase 09.1 — Anthropic API key sourced via IntegrationCredentialResolver
+        // (DB row wins; .env fallback). Passed to Prism via $providerConfig — see
+        // vendor/prism-php/prism/src/Concerns/ConfiguresProviders.php signature.
+        $apiKey = $this->resolver->for(IntegrationCredentialKind::AnthropicApi)['api_key'];
+
         $request = Prism::text()
-            ->using(Provider::Anthropic, $model)
+            ->using(Provider::Anthropic, $model, ['api_key' => $apiKey])
             ->withSystemPrompt($systemPrompt)
             ->withMessages($messages)
             ->withMaxSteps($maxSteps)
@@ -144,5 +153,34 @@ final class ClaudeClient
         $traceId = Context::get('langfuse_trace_id');
 
         return is_string($traceId) ? $traceId : null;
+    }
+
+    /**
+     * Phase 09.1 Plan 01 (D-11) — Test connection for the Anthropic API.
+     *
+     * Sends a 5-token "ping" prompt against claude-haiku-4-5 (cheapest model)
+     * using resolver-supplied api_key via Prism's $providerConfig override.
+     */
+    public function testConnection(): IntegrationTestResult
+    {
+        $start = microtime(true);
+
+        try {
+            $apiKey = $this->resolver->for(IntegrationCredentialKind::AnthropicApi)['api_key'];
+
+            Prism::text()
+                ->using(Provider::Anthropic, 'claude-haiku-4-5', ['api_key' => $apiKey])
+                ->withPrompt('ping')
+                ->withMaxTokens(5)
+                ->asText();
+
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::ok($latency);
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::failed($e->getMessage(), $latency);
+        }
     }
 }

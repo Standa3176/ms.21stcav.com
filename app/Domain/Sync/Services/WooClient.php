@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
+use App\Domain\Integrations\Enums\IntegrationCredentialKind;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Domain\Sync\Exceptions\RateLimitExceededException;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Foundation\Integration\Services\IntegrationLogger;
@@ -27,8 +30,52 @@ class WooClient
 {
     public function __construct(
         private IntegrationLogger $logger,
+        private IntegrationCredentialResolver $resolver,
         private ?AutomatticClient $inner = null,
     ) {}
+
+    /**
+     * Phase 09.1 — memoised SDK keyed by base_url + consumer_key hash so
+     * credential rotation transparently rebinds within ≤60s (Resolver cache TTL).
+     *
+     * @var array<string, AutomatticClient>
+     */
+    private array $sdkCache = [];
+
+    /**
+     * Resolve the Automattic SDK for the current resolver-supplied credentials.
+     *
+     * If $this->inner was injected (test path) it is returned verbatim — preserves
+     * Mockery / fake-binding workflows that pre-stage a stubbed AutomatticClient.
+     *
+     * Otherwise builds a fresh SDK from the resolver payload, memoised per
+     * base_url + consumer_key hash so credential rotation rebinds without
+     * leaking SDK state across rotations.
+     */
+    private function sdk(): AutomatticClient
+    {
+        if ($this->inner !== null) {
+            return $this->inner;
+        }
+
+        $creds = $this->resolver->for(IntegrationCredentialKind::WooRest);
+        $cacheKey = md5($creds['base_url'] . '|' . $creds['consumer_key']);
+
+        if (! isset($this->sdkCache[$cacheKey])) {
+            $this->sdkCache[$cacheKey] = new AutomatticClient(
+                $creds['base_url'],
+                $creds['consumer_key'],
+                $creds['consumer_secret'],
+                [
+                    'version' => 'wc/v3',
+                    'timeout' => 30,
+                    'verify_ssl' => app()->isProduction(),
+                ],
+            );
+        }
+
+        return $this->sdkCache[$cacheKey];
+    }
 
     // ══════════════════════════════════════════════════════════════════
     // Read path — SYNC-01 (Phase 2 addition)
@@ -46,17 +93,14 @@ class WooClient
      */
     public function get(string $endpoint, array $query = []): array
     {
-        if ($this->inner === null) {
-            throw new \RuntimeException(
-                'WooClient $inner not bound; resolve via the container or pass an AutomatticClient to the constructor.'
-            );
-        }
-
+        // Phase 09.1 — sdk() throws IntegrationCredentialMissingException via the
+        // resolver when no DB row + no env fallback exists. Same fail-loud semantics
+        // as the previous "$inner === null" guard.
         $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
         $start = microtime(true);
 
         try {
-            $response = $this->inner->get($endpoint, $query);
+            $response = $this->sdk()->get($endpoint, $query);
             $latencyMs = (int) round((microtime(true) - $start) * 1000);
             $httpStatus = $this->readResponseCode() ?? 200;
 
@@ -144,12 +188,7 @@ class WooClient
      */
     private function writeLive(string $method, string $endpoint, array $payload): array
     {
-        if ($this->inner === null) {
-            throw new \RuntimeException(
-                'WooClient $inner not bound; live writes require an AutomatticClient instance.'
-            );
-        }
-
+        // Phase 09.1 — sdk() throws via resolver when both DB + env are empty.
         $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
         $attempt = 0;
         $maxAttempts = 5;
@@ -235,14 +274,15 @@ class WooClient
     private function dispatchWrite(string $method, string $endpoint, array $payload): mixed
     {
         $method = strtoupper($method);
+        $sdk = $this->sdk();
 
         return match ($method) {
-            'POST' => $this->inner->post($endpoint, $payload),
-            'PUT' => $this->inner->put($endpoint, $payload),
-            'DELETE' => $this->inner->delete($endpoint, $payload),
+            'POST' => $sdk->post($endpoint, $payload),
+            'PUT' => $sdk->put($endpoint, $payload),
+            'DELETE' => $sdk->delete($endpoint, $payload),
             // PATCH is not exposed by Automattic\WooCommerce\Client (as of 3.1.0).
             // Route through the underlying HttpClient which does support it via request().
-            'PATCH' => $this->inner->http->request($endpoint, 'PATCH', $payload),
+            'PATCH' => $sdk->http->request($endpoint, 'PATCH', $payload),
             default => throw new \InvalidArgumentException("Unsupported HTTP method for Woo write: {$method}"),
         };
     }
@@ -253,11 +293,15 @@ class WooClient
      */
     private function readResponseCode(): ?int
     {
-        if ($this->inner === null) {
+        // Phase 09.1 — read via sdk() which auto-resolves through resolver
+        // (or returns the test-injected $inner when set).
+        try {
+            $sdk = $this->sdk();
+        } catch (\Throwable) {
             return null;
         }
 
-        $http = $this->inner->http ?? null;
+        $http = $sdk->http ?? null;
         if ($http === null) {
             return null;
         }
@@ -350,10 +394,12 @@ class WooClient
 
     private function readHttpResponseObject(): ?object
     {
-        if ($this->inner === null) {
+        try {
+            $sdk = $this->sdk();
+        } catch (\Throwable) {
             return null;
         }
-        $http = $this->inner->http ?? null;
+        $http = $sdk->http ?? null;
         if ($http === null) {
             return null;
         }
@@ -451,5 +497,34 @@ class WooClient
         }
 
         return null;
+    }
+
+    /**
+     * Phase 09.1 Plan 01 (D-11) — Test connection for the WooCommerce REST API.
+     *
+     * Performs a single GET /products?per_page=1 against the resolver-supplied
+     * base_url + consumer_key + consumer_secret. Any successful HTTP call is
+     * a green tick — Woo returns an array on success, the SDK throws
+     * HttpClientException on 4xx/5xx.
+     */
+    public function testConnection(): IntegrationTestResult
+    {
+        $start = microtime(true);
+
+        try {
+            $response = $this->sdk()->get('products', ['per_page' => 1]);
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            // Any non-throwing response is reachability-OK.
+            if (is_array($response) || is_object($response)) {
+                return IntegrationTestResult::ok($latency);
+            }
+
+            return IntegrationTestResult::failed('Empty response from /products', $latency);
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::failed($e->getMessage(), $latency);
+        }
     }
 }

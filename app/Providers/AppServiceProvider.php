@@ -90,20 +90,29 @@ class AppServiceProvider extends ServiceProvider
         // WooClient wraps the Automattic client with shadow-mode gate + 429 backoff
         // + IntegrationLogger threading. Singleton so per-request correlation_id flows
         // naturally through the same logger instance.
+        //
+        // Phase 09.1 Plan 01 — credentials sourced via IntegrationCredentialResolver
+        // (D-07). The standalone Automattic\WooCommerce\Client binding above is
+        // retained for tests that pre-stage a stubbed SDK via Mockery; production
+        // code-paths build the SDK inside WooClient::sdk() from resolver creds.
         $this->app->singleton(\App\Domain\Sync\Services\WooClient::class, function ($app) {
             return new \App\Domain\Sync\Services\WooClient(
                 $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
-                $app->make(\Automattic\WooCommerce\Client::class),
+                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
             );
         });
 
         // SupplierClient — non-singleton is fine: JWT state lives in Cache, not on
         // the instance, so re-instantiation is cheap and tests benefit from fresh
         // instances per resolve.
+        //
+        // Phase 09.1 Plan 01 — credentials sourced via IntegrationCredentialResolver
+        // (D-07). Replaces direct config('services.supplier.*') reads.
         $this->app->bind(\App\Domain\Sync\Services\SupplierClient::class, function ($app) {
             return new \App\Domain\Sync\Services\SupplierClient(
                 $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
                 $app->make(\Illuminate\Contracts\Cache\Repository::class),
+                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
             );
         });
 
@@ -113,8 +122,11 @@ class AppServiceProvider extends ServiceProvider
         // per-request correlation_id flows naturally through one logger instance
         // and the per-instance throttle timestamp enforces the rate limit.
         $this->app->singleton(\App\Domain\CRM\Services\BitrixClient::class, function ($app) {
+            // Phase 09.1 Plan 01 — webhook URL sourced via IntegrationCredentialResolver
+            // (D-07). Replaces direct config('services.bitrix.webhook_url') reads.
             return new \App\Domain\CRM\Services\BitrixClient(
                 $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
+                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
             );
         });
 

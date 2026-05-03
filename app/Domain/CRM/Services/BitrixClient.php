@@ -6,6 +6,9 @@ namespace App\Domain\CRM\Services;
 
 use App\Domain\CRM\Exceptions\BitrixPermanentException;
 use App\Domain\CRM\Exceptions\BitrixTransientException;
+use App\Domain\Integrations\Enums\IntegrationCredentialKind;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Bitrix24\SDK\Core\Exceptions\BaseException;
@@ -57,7 +60,22 @@ class BitrixClient
 
     public function __construct(
         private readonly IntegrationLogger $logger,
+        private readonly IntegrationCredentialResolver $resolver,
     ) {
+    }
+
+    /**
+     * Phase 09.1 — webhook URL sourced from IntegrationCredentialResolver
+     * (DB row wins; .env fallback). Replaces direct config('services.bitrix.webhook_url')
+     * reads. Resolver is internally cached for 60s per kind.
+     */
+    private function webhookUrl(): string
+    {
+        try {
+            return (string) $this->resolver->for(IntegrationCredentialKind::BitrixWebhook)['webhook_url'];
+        } catch (\Throwable) {
+            return '';
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -565,7 +583,7 @@ class BitrixClient
     /** Replace the webhook URL in error messages with a redaction marker (T-04-02-01). */
     private function sanitiseErrorMessage(string $message): string
     {
-        $webhookUrl = (string) config('services.bitrix.webhook_url');
+        $webhookUrl = $this->webhookUrl();
         if ($webhookUrl !== '') {
             $message = str_replace($webhookUrl, '***REDACTED_URL***', $message);
             // Redact even partial leaks (trailing slash, trimmed).
@@ -573,6 +591,29 @@ class BitrixClient
         }
 
         return $message;
+    }
+
+    /**
+     * Phase 09.1 Plan 01 (D-11) — Test connection for the Bitrix24 webhook.
+     *
+     * Calls dealCategoryList() — the lightest-weight read against the SDK
+     * that confirms the webhook URL + auth + Bitrix server reachability.
+     * Empty result array IS still success (Bitrix may have no categories yet).
+     */
+    public function testConnection(): IntegrationTestResult
+    {
+        $start = microtime(true);
+
+        try {
+            $this->dealCategoryList();
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::ok($latency);
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::failed($this->sanitiseErrorMessage($e->getMessage()), $latency);
+        }
     }
 
     /** Best-effort HTTP status extraction for permanent-error logging. */
@@ -783,9 +824,9 @@ class BitrixClient
     private function sdk(): ServiceBuilder
     {
         if ($this->sdk === null) {
-            $webhookUrl = (string) config('services.bitrix.webhook_url');
+            $webhookUrl = $this->webhookUrl();
             if ($webhookUrl === '') {
-                throw new RuntimeException('BitrixClient: BITRIX_WEBHOOK_URL is empty. Configure .env before use.');
+                throw new RuntimeException('BitrixClient: BITRIX_WEBHOOK_URL is empty. Configure via admin/integration-credentials or .env before use.');
             }
             $this->sdk = ServiceBuilderFactory::createServiceBuilderFromWebhook($webhookUrl);
         }

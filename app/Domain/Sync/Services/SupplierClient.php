@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
+use App\Domain\Integrations\Enums\IntegrationCredentialKind;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Domain\Sync\Exceptions\JwtRefreshFailedException;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Closure;
@@ -41,7 +44,21 @@ final class SupplierClient
     public function __construct(
         private IntegrationLogger $logger,
         private CacheRepository $cache,
+        private IntegrationCredentialResolver $resolver,
     ) {}
+
+    /**
+     * Phase 09.1 — credentials sourced from IntegrationCredentialResolver
+     * (DB row wins; .env fallback). Replaces direct config('services.supplier.*')
+     * reads. Resolver is internally cached for 60s per kind so repeated calls
+     * during a single sync run do NOT hit the DB N times.
+     *
+     * @return array{base_url: string, username: string, password: string}
+     */
+    private function credentials(): array
+    {
+        return $this->resolver->for(IntegrationCredentialKind::SupplierApi);
+    }
 
     /**
      * Fetch the full supplier catalogue.
@@ -118,7 +135,7 @@ final class SupplierClient
         $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
         $start = microtime(true);
 
-        $response = Http::baseUrl((string) config('services.supplier.url'))
+        $response = Http::baseUrl($this->credentials()['base_url'])
             ->withToken($this->getToken())
             ->timeout(self::DEFAULT_HTTP_TIMEOUT)
             ->retry(
@@ -172,7 +189,7 @@ final class SupplierClient
         $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
         $start = microtime(true);
 
-        $response = Http::baseUrl((string) config('services.supplier.url'))
+        $response = Http::baseUrl($this->credentials()['base_url'])
             ->withToken($this->getToken())
             ->timeout(self::DEFAULT_HTTP_TIMEOUT)
             ->retry(
@@ -270,12 +287,13 @@ final class SupplierClient
         $correlationId = Context::get('correlation_id') ?? (string) Str::uuid();
         $start = microtime(true);
 
+        $creds = $this->credentials();
         $response = Http::timeout(self::DEFAULT_TOKEN_TIMEOUT)
             ->post(
-                rtrim((string) config('services.supplier.url'), '/') . self::TOKEN_ENDPOINT,
+                rtrim($creds['base_url'], '/') . self::TOKEN_ENDPOINT,
                 [
-                    'username' => (string) config('services.supplier.username'),
-                    'password' => (string) config('services.supplier.password'),
+                    'username' => $creds['username'],
+                    'password' => $creds['password'],
                 ],
             );
 
@@ -288,7 +306,7 @@ final class SupplierClient
             'endpoint' => self::TOKEN_ENDPOINT,
             // Explicit body redaction: the logger redacts sensitive HEADER values, not body fields.
             'request_body' => [
-                'username' => (string) config('services.supplier.username'),
+                'username' => $creds['username'],
                 'password' => '***REDACTED***',
             ],
             'response_body' => $response->successful()
@@ -322,7 +340,53 @@ final class SupplierClient
      */
     private function tokenCacheKey(): string
     {
-        $username = (string) config('services.supplier.username', '');
+        // Phase 09.1 — username sourced from resolver (DB-row wins; env fallback).
+        // Resolver throw on missing creds is caught + degraded to a stable empty key
+        // so the test-environment "no creds at all" path still produces a deterministic
+        // cache key (callers will still fail when they actually try to fetch a token).
+        try {
+            $username = (string) ($this->credentials()['username'] ?? '');
+        } catch (\Throwable) {
+            $username = '';
+        }
+
         return 'supplier.jwt.' . md5($username);
+    }
+
+    /**
+     * Phase 09.1 Plan 01 (D-11) — Test connection for the Supplier API.
+     *
+     * POSTs against /generate_token.php using current resolver-supplied
+     * credentials and checks the response carries a non-empty token. Wraps
+     * the entire call in a try-catch so the result is never a thrown
+     * exception — TestIntegrationAction expects a structured IntegrationTestResult.
+     */
+    public function testConnection(): IntegrationTestResult
+    {
+        $start = microtime(true);
+
+        try {
+            $creds = $this->credentials();
+            $response = Http::timeout(self::DEFAULT_TOKEN_TIMEOUT)
+                ->post(rtrim($creds['base_url'], '/') . self::TOKEN_ENDPOINT, [
+                    'username' => $creds['username'],
+                    'password' => $creds['password'],
+                ]);
+
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            if ($response->successful() && is_string($response->json('token')) && $response->json('token') !== '') {
+                return IntegrationTestResult::ok($latency);
+            }
+
+            return IntegrationTestResult::failed(
+                "HTTP {$response->status()} — token missing/invalid in response",
+                $latency,
+            );
+        } catch (\Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::failed($e->getMessage(), $latency);
+        }
     }
 }

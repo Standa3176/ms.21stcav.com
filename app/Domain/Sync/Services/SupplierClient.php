@@ -31,8 +31,10 @@ use Illuminate\Support\Str;
  * (preserves FOUND-05 invariant). The logger auto-redacts the Authorization header;
  * the password field is explicitly masked in the logged request_body.
  */
-final class SupplierClient
+class SupplierClient
 {
+    // Phase 09.1 Plan 01 — `final` removed so Mockery can mock testConnection()
+    // for TestIntegrationActionTest (Test 3.4). Production code does NOT subclass.
     private const DATA_ENDPOINT = '/api/index.php';
     private const TOKEN_ENDPOINT = '/generate_token.php';
 

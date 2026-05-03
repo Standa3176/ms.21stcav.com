@@ -138,6 +138,32 @@ class RolePermissionSeeder extends Seeder
             Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
         }
 
+        // ── Phase 09.1 Plan 01 — Integration credential permissions ──────────
+        //
+        // IntegrationCredentialResource — admin-only (D-12). Encrypted credentials
+        // for the 5 integration kinds (Supplier API JWT / Woo REST / Bitrix
+        // webhook / Anthropic API key / Langfuse keys). pricing_manager / sales /
+        // read_only all 403 on every method.
+        //
+        // Explicit Permission::firstOrCreate ensures the perms exist on cold-start
+        // tests / installs (mirrors AgentRunResource + CompetitorFtpCredential pattern).
+        $integrationCredentialPermissions = [
+            'view_any_integration_credential',
+            'view_integration_credential',
+            'create_integration_credential',
+            'update_integration_credential',
+            'delete_integration_credential',
+            // Shield :: separator counterparts (forward-compat).
+            'view_any_integration::credential',
+            'view_integration::credential',
+            'create_integration::credential',
+            'update_integration::credential',
+            'delete_integration::credential',
+        ];
+        foreach ($integrationCredentialPermissions as $perm) {
+            Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+        }
+
         // 2c. Phase 10 Plan 05 — run_pricing_agent permission (PRCAGT-05).
         //
         // Authorises the "Run pricing agent" Filament action on margin_change
@@ -273,6 +299,18 @@ class RolePermissionSeeder extends Seeder
             'view_competitor_ftp_feed',
             'view_any_competitor::ftp::feed',
             'view_competitor::ftp::feed',
+        ]);
+
+        // 4d. Phase 09.1 Plan 01 (D-12) — read_only is "locked out entirely"
+        // from integration_credentials. The view_% LIKE pattern at step 4
+        // would otherwise sweep in view_any_integration_credential /
+        // view_integration_credential. Encrypted secrets at rest — admin-only
+        // by design.
+        $readOnly->revokePermissionTo([
+            'view_any_integration_credential',
+            'view_integration_credential',
+            'view_any_integration::credential',
+            'view_integration::credential',
         ]);
 
         // 5. pricing_manager → CRUD on product + pricing_rule; view-only on competitor_price + sync_run

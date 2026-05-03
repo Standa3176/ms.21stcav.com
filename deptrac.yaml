@@ -339,12 +339,22 @@ parameters:
     # use (NOT Wordpress writes — the SYNC-04 ban applies to Sync only).
     Quotes:       [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks, WpDirectDb]
     # Phase 09.1 Plan 01 — Integrations layer cross-domain allow-list.
-    # IntegrationCredentialResolver + IntegrationCredential model + Filament
-    # Resource live in this layer. Allow-list locked at [Foundation] — the
-    # resolver is a read-only service with no business dependencies. All
-    # consuming layers (Sync, CRM, Agents, Dashboard) take the dependency arrow
-    # in the direction Integrations → consumer (one-way: never the reverse).
-    Integrations: [Foundation]
+    # IntegrationCredentialResolver + IntegrationCredential model live here as
+    # read-only primitives consumed by Sync / CRM / Agents / Dashboard.
+    #
+    # The TestIntegrationAction (Filament per-row "Test connection") MUST
+    # dispatch to each consumer client's testConnection() method (D-11) so
+    # operators get an instant green/red answer per integration. That makes
+    # the Action the one INTENTIONAL cross-cutting surface — it depends on
+    # Sync (WooClient + SupplierClient), CRM (BitrixClient), and Agents
+    # (ClaudeClient) for the dispatch match. Acceptable because:
+    #   - The dispatch is read-only (testConnection() returns IntegrationTestResult)
+    #   - The dependency arrow stays one-way at the SERVICE-CLASS level: those
+    #     clients still depend on Integrations\Resolver (not the reverse) for
+    #     their actual credential lookup
+    #   - The action is a Filament UI primitive — UI layers naturally pull
+    #     from many domains (mirrors Http allow-list pattern)
+    Integrations: [Foundation, Sync, CRM, Agents]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

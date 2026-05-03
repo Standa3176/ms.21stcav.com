@@ -38,8 +38,10 @@ use Prism\Prism\Facades\Prism;
  * grep allow-list explicitly carves out `Prism::text()` calls so this is the
  * one and only place the Anthropic API gets hit.
  */
-final class ClaudeClient
+class ClaudeClient
 {
+    // Phase 09.1 Plan 01 — `final` removed so Mockery can mock testConnection()
+    // for TestIntegrationActionTest (Test 3.4). Production code does NOT subclass.
     public const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
     public const DEFAULT_MAX_STEPS = 8;

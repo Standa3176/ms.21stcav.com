@@ -68,7 +68,44 @@ final class SnapshotAggregator
             'sync_diffs_parity' => $this->computeSyncDiffsParity(),
             'product_catalogue_health' => $this->computeProductCatalogueHealth(),
             'weekly_report_status' => $this->computeWeeklyReportStatus(),
+            // Phase 09.1 Plan 01 (D-15) — IntegrationHealthWidget reads this metric_key.
+            'integration_health' => $this->computeIntegrationHealth(),
         ];
+    }
+
+    /**
+     * Phase 09.1 Plan 01 — Integration health per kind (D-15).
+     *
+     * Returns a per-kind map of [status, last_test_at] for the
+     * IntegrationHealthWidget 5-tile display. Reads the latest IntegrationCredential
+     * row per kind. Missing rows return ['status' => 'unknown', 'last_test_at' => null].
+     *
+     * @return array<string, array{status: string, last_test_at: ?string}>
+     */
+    public function computeIntegrationHealth(): array
+    {
+        $rows = Schema::hasTable('integration_credentials')
+            ? DB::table('integration_credentials')
+                ->select(['kind', 'last_test_status', 'last_test_at'])
+                ->get()
+                ->keyBy('kind')
+            : collect();
+
+        $out = [];
+        foreach (\App\Domain\Integrations\Enums\IntegrationCredentialKind::cases() as $kind) {
+            $row = $rows->get($kind->value);
+            $rawStatus = $row->last_test_status ?? null;
+            $out[$kind->value] = [
+                'status' => $rawStatus !== null && $rawStatus !== ''
+                    ? (string) $rawStatus
+                    : 'unknown',
+                'last_test_at' => isset($row->last_test_at) && $row->last_test_at !== null
+                    ? \Carbon\Carbon::parse($row->last_test_at)->toIso8601String()
+                    : null,
+            ];
+        }
+
+        return $out;
     }
 
     /**

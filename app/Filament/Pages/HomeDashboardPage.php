@@ -8,6 +8,7 @@ use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
 use App\Filament\Widgets\HorizonFailedJobsWidget;
 use App\Filament\Widgets\ImportIssuesWidget;
+use App\Filament\Widgets\IntegrationHealthWidget;
 use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
@@ -70,6 +71,10 @@ class HomeDashboardPage extends Dashboard
             SyncDiffsParityWidget::class,
             ProductCatalogueHealthWidget::class,
             WeeklyReportStatusWidget::class,
+            // Row 4 — Phase 09.1 Plan 01 (D-15) — Admin-only operational tile.
+            // 5 traffic-light tiles (one per integration kind) reading the
+            // 'integration_health' metric_key from dashboard_snapshots.
+            IntegrationHealthWidget::class,
         ];
     }
 

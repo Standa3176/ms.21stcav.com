@@ -41,6 +41,14 @@ class AdminPanelProvider extends PanelProvider
                 // 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq)
                 // aggregated by NotificationCentreAggregator; Livewire wire:poll refreshes.
                 \App\Filament\Pages\NotificationCentrePage::class,
+                // Phase 7 Plan 02 — D-03 UX-correction patch (post-09.1 follow-up).
+                // Replaces HorizonLinkNavigationItem ("open in new tab") with an
+                // iframe-embedded Horizon dashboard inside Filament chrome. Admin-only
+                // gate via HorizonEmbedPage::canAccess (mirrors the original
+                // NavigationItem visibility closure). HorizonLinkNavigationItem.php
+                // intentionally retained on disk (unused) as the documented rollback
+                // path; see HorizonEmbedPage class docblock.
+                \App\Filament\Pages\HorizonEmbedPage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
@@ -58,12 +66,13 @@ class AdminPanelProvider extends PanelProvider
                 \App\Filament\Widgets\ProductCatalogueHealthWidget::class,
                 \App\Filament\Widgets\WeeklyReportStatusWidget::class,
             ])
-            ->navigationItems([
-                // Phase 7 Plan 02 — D-03 Horizon link. Admin-only; opens /horizon
-                // in a new tab. Visibility closure enforces the role gate so
-                // pricing_manager / sales / read_only never see the affordance.
-                \App\Domain\Dashboard\Support\HorizonLinkNavigationItem::build(),
-            ])
+            // Phase 7 Plan 02 — D-03 Horizon link was previously registered here
+            // via HorizonLinkNavigationItem::build() (opens /horizon in new tab).
+            // Replaced post-09.1 by HorizonEmbedPage (registered in ->pages([...])
+            // above) which embeds /horizon in an iframe inside Filament chrome.
+            // HorizonLinkNavigationItem.php is intentionally retained on disk
+            // (unused) as the documented rollback path — see HorizonEmbedPage
+            // class docblock.
             // Per-domain Resource discovery (modules populate in later plans — 01-RESEARCH.md §1):
             ->discoverResources(in: app_path('Domain/Suggestions/Filament/Resources'), for: 'App\\Domain\\Suggestions\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Alerting/Filament/Resources'), for: 'App\\Domain\\Alerting\\Filament\\Resources')

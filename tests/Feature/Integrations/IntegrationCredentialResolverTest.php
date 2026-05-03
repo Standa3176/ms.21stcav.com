@@ -26,6 +26,7 @@ beforeEach(function (): void {
     config()->set('services.woo.consumer_secret', null);
     config()->set('services.bitrix.webhook_url', null);
     config()->set('prism.providers.anthropic.api_key', null);
+    config()->set('services.openai.api_key', null);
     config()->set('agents.langfuse.host', null);
     config()->set('agents.langfuse.public_key', null);
     config()->set('agents.langfuse.secret_key', null);

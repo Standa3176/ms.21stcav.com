@@ -40,6 +40,10 @@ use Throwable;
  *
  * RBAC enforced by CompetitorFtpCredentialPolicy (admin-only on every method).
  * Every Action calls `->authorize(...)` to honour the policy at the action layer.
+ *
+ * Quick task 260503-rul moved from Catalogue → Admin: FTP credentials are secrets,
+ * sit alongside other integration credentials in the Admin nav group. CompetitorFtpFeedResource
+ * remains in Catalogue (operational config edited by ops, not secrets).
  */
 class CompetitorFtpCredentialResource extends Resource
 {
@@ -47,8 +51,8 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260503-rul — moved to Admin group (sort 30, below Integration Credentials at 20).
+    protected static ?string $navigationGroup = 'Admin';
 
     protected static ?string $navigationLabel = 'FTP Credentials';
 
@@ -58,7 +62,7 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-credentials';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 30;
 
     public static function form(Form $form): Form
     {

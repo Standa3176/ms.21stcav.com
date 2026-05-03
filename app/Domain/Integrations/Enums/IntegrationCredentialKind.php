@@ -7,9 +7,13 @@ namespace App\Domain\Integrations\Enums;
 /**
  * Phase 09.1 Plan 01 — IntegrationCredentialKind (D-04).
  *
- * Five integration kinds backed by integration_credentials.kind enum.
+ * Six integration kinds backed by the integration_credentials.kind string column.
  * Each kind documents its required payload field shape via requiredFields(),
  * its display label via label(), and its Filament badge color via color().
+ *
+ * Quick task 260503-rul added OpenAiApi (parity with AnthropicApi shape — single
+ * api_key field). OpenAiClient test-connection support deferred; TestIntegrationAction
+ * falls through to its default branch and returns "Unknown kind" until wired.
  */
 enum IntegrationCredentialKind: string
 {
@@ -17,6 +21,7 @@ enum IntegrationCredentialKind: string
     case WooRest = 'woo_rest';
     case BitrixWebhook = 'bitrix_webhook';
     case AnthropicApi = 'anthropic_api';
+    case OpenAiApi = 'openai_api';
     case LangfuseObservability = 'langfuse_observability';
 
     /**
@@ -31,6 +36,7 @@ enum IntegrationCredentialKind: string
             self::WooRest => ['base_url', 'consumer_key', 'consumer_secret'],
             self::BitrixWebhook => ['webhook_url'],
             self::AnthropicApi => ['api_key'],
+            self::OpenAiApi => ['api_key'],
             self::LangfuseObservability => ['host', 'public_key', 'secret_key'],
         };
     }
@@ -42,6 +48,7 @@ enum IntegrationCredentialKind: string
             self::WooRest => 'WooCommerce REST',
             self::BitrixWebhook => 'Bitrix24 Webhook',
             self::AnthropicApi => 'Anthropic Claude API',
+            self::OpenAiApi => 'OpenAI / ChatGPT API',
             self::LangfuseObservability => 'Langfuse Observability',
         };
     }
@@ -54,6 +61,7 @@ enum IntegrationCredentialKind: string
             self::WooRest => 'warning',
             self::BitrixWebhook => 'success',
             self::AnthropicApi => 'danger', // expensive — visually distinct
+            self::OpenAiApi => 'danger', // expensive — parity with Anthropic visual treatment
             self::LangfuseObservability => 'gray',
         };
     }

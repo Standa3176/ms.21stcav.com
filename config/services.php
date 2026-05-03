@@ -68,6 +68,14 @@ return [
     // CRM_WRITE_ENABLED: Phase 1 D-08 shadow-mode parallel. MUST default to false; Phase 7 cutover flips.
     // BITRIX_SMOKE_TEST_ALLOWED: gate on `php artisan bitrix:smoke-test` — creates/reads real Bitrix records.
     //   MUST default to false so the command is never run accidentally against production.
+    // Quick task 260503-rul — OpenAI / ChatGPT credential kind.
+    // Optional env-fallback for IntegrationCredentialKind::OpenAiApi when no DB row exists.
+    // Operator typically populates the credential via /admin → Integration Credentials,
+    // but the env path is supported for parity with the other 5 kinds.
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+    ],
+
     'bitrix' => [
         'webhook_url' => env('BITRIX_WEBHOOK_URL'),
         'write_enabled' => env('CRM_WRITE_ENABLED', false),

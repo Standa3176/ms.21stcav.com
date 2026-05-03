@@ -107,6 +107,9 @@ class IntegrationCredentialResolver
             IntegrationCredentialKind::AnthropicApi => [
                 'api_key' => (string) config('prism.providers.anthropic.api_key', ''),
             ],
+            IntegrationCredentialKind::OpenAiApi => [
+                'api_key' => (string) config('services.openai.api_key', ''),
+            ],
             IntegrationCredentialKind::LangfuseObservability => [
                 'host' => (string) config('agents.langfuse.host', ''),
                 'public_key' => (string) config('agents.langfuse.public_key', ''),

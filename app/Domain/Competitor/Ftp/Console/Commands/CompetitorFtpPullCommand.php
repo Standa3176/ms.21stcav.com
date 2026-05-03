@@ -116,8 +116,18 @@ final class CompetitorFtpPullCommand extends BaseCommand
         $disk = $this->connector->connect($feed->credential);
 
         // D-13 step 2 — skip-on-no-change gate.
-        $remoteMtime = $disk->lastModified($feed->remote_filename);
-        if ($feed->remote_file_date !== null
+        // Many older FTP daemons (ProFTPd / Pure-FTPd in default config) implement
+        // LIST but reject MDTM. Flysystem's lastModified() uses MDTM and throws
+        // UnableToRetrieveMetadata on those servers. Treat that as "mtime unknown,
+        // always download" — costs one redundant fetch per cycle (typically <50KB
+        // CSV, twice-weekly cadence) and unblocks otherwise-correct configurations.
+        try {
+            $remoteMtime = $disk->lastModified($feed->remote_filename);
+        } catch (\League\Flysystem\UnableToRetrieveMetadata $e) {
+            $remoteMtime = null;
+        }
+        if ($remoteMtime !== null
+            && $feed->remote_file_date !== null
             && $remoteMtime === $feed->remote_file_date->timestamp) {
             $feed->update([
                 'last_pull_status' => CompetitorFtpFeed::STATUS_NO_CHANGE,
@@ -178,9 +188,13 @@ final class CompetitorFtpPullCommand extends BaseCommand
         }
 
         // D-13 step 6 — success.
+        // remote_file_date falls back to now() when MDTM was unavailable; the
+        // column is informational only (the watcher uses local file mtime).
         $feed->update([
             'last_pulled_at' => now(),
-            'remote_file_date' => Carbon::createFromTimestamp($remoteMtime),
+            'remote_file_date' => $remoteMtime !== null
+                ? Carbon::createFromTimestamp($remoteMtime)
+                : now(),
             'last_pull_status' => CompetitorFtpFeed::STATUS_SUCCESS,
             'last_pull_error' => null,
             'consecutive_failures' => 0,

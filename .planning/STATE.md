@@ -103,6 +103,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | Date       | Task                                | Type        | Commit  |
 | ---------- | ----------------------------------- | ----------- | ------- |
 | 2026-05-03 | Embed Horizon in Filament chrome    | feat(admin) | 2b77a25 |
+| 2026-05-03 | Horizon Cluster (8 sub-pages)       | feat(admin) | a2def38 |
 
 ## Accumulated Context
 

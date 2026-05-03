@@ -103,6 +103,16 @@ parameters:
       collectors:
         - type: directory
           regex: app/Domain/Quotes/.*
+    # Phase 09.1 Plan 01 — Integration Connections Admin domain.
+    # Single polymorphic credential store + resolver service consumed by
+    # WooClient (Sync), SupplierClient (Sync), BitrixClient (CRM),
+    # ClaudeClient (Agents), Langfuse Prism middleware, IntegrationHealthWidget (Dashboard).
+    # Allow-list locked at [Foundation] — read-only resolver; no business deps.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    - name: Integrations
+      collectors:
+        - type: directory
+          regex: app/Domain/Integrations/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -168,7 +178,11 @@ parameters:
     #   - Alerting: AlertRecipient lookup for stale-feed notification (Plan 05-04b COMP-11).
     # Explicitly NOT allowed: CRM, Sync (write path), Feeds.
     Competitor:   [Foundation, Pricing, Products, Suggestions, Webhooks, Alerting]
-    Sync:         [Foundation, Products, Alerting, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04).
+    # Phase 09.1 Plan 01 — Sync allow-list extended with Integrations because
+    # WooClient + SupplierClient now resolve credentials via
+    # IntegrationCredentialResolver (D-07). One-way arrow: Integrations does
+    # NOT depend on Sync.
+    Sync:         [Foundation, Products, Alerting, Integrations, '-WpDirectDb']  # Plan 02-03: SyncChunkJob mirrors supplier state into Product/ProductVariant. Plan 02-04: SyncSupplierCommand reads AlertRecipient for D-08. Plan 02-05: -WpDirectDb denies direct DB facade use (SYNC-04). Phase 09.1: +Integrations for resolver consumption.
     Webhooks:     [Foundation]
     # Phase 4 (Plans 04-02..04-05): CRM layer cross-domain allow-list.
     #   - Foundation: IntegrationLogger, Auditor, DomainEvent, BaseCommand, Context (every CRM service extends these)
@@ -191,7 +205,10 @@ parameters:
     # PushQuoteToBitrixDealJob (in CRM) calls PriceCalculator::stripVat to
     # compute ex-VAT amounts for crm.deal.productrows.set line items
     # (RESEARCH §11 verified). Pricing is read-only from CRM.
-    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes, Pricing]
+    # Phase 09.1 Plan 01 — CRM allow-list extended with Integrations because
+    # BitrixClient now resolves webhook_url via IntegrationCredentialResolver
+    # (D-07). One-way arrow: Integrations does NOT depend on CRM.
+    CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes, Pricing, Integrations]
     Suggestions:  [Foundation]
     Alerting:     [Foundation]
     Feeds:        [Foundation]
@@ -225,7 +242,11 @@ parameters:
     #                       (-WpDirectDb ban on Sync is about Woo writes).
     # Plan 07-06 finalises the allow-list; DeptracDashboardLayerTest (dual-file
     # grep + positive + 2 negative violators) enforces one-way arrow permanently.
-    Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb]
+    # Phase 09.1 Plan 01 — Dashboard allow-list extended with Integrations
+    # because SnapshotAggregator::computeIntegrationHealth() reads the
+    # IntegrationCredential model + IntegrationCredentialKind enum to compute
+    # the integration_health metric_key (D-15). One-way arrow.
+    Dashboard:    [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Competitor, CRM, ProductAutoCreate, WpDirectDb, Integrations]
     # Phase 7 Plan 05/06 — Cutover orchestrates the v1 legacy-plugin migration.
     # The 6 commands + 7 services read every prior domain (divergence scan walks
     # Products via Woo comparison; populate-overrides writes ProductOverride;
@@ -262,7 +283,10 @@ parameters:
     # (mirrors Phase 4 GdprEraser pattern + Pricing SimulatedImpactCalculator
     # precedent — narrowly scoped to local meetingstore_ops DB writes; WP
     # writes remain banned).
-    Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate, Alerting, WpDirectDb]
+    # Phase 09.1 Plan 01 — Agents allow-list extended with Integrations because
+    # ClaudeClient now resolves api_key via IntegrationCredentialResolver
+    # (D-07). One-way arrow: Integrations does NOT depend on Agents.
+    Agents:       [Foundation, Suggestions, Products, Pricing, Competitor, CRM, ProductAutoCreate, Alerting, WpDirectDb, Integrations]
     # Phase 9 Plan 01 — TradePricing layer cross-domain allow-list (TRDE-01).
     #   - Foundation: DomainEvent base, Auditor, IntegrationLogger, BaseCommand, Context
     #     (TradeRuleResolver + UpdateCustomerGroupOnUserRoleChange listener thread these)
@@ -314,6 +338,13 @@ parameters:
     # Dashboard + Agents which add WpDirectDb for narrowly-scoped DB facade
     # use (NOT Wordpress writes — the SYNC-04 ban applies to Sync only).
     Quotes:       [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks, WpDirectDb]
+    # Phase 09.1 Plan 01 — Integrations layer cross-domain allow-list.
+    # IntegrationCredentialResolver + IntegrationCredential model + Filament
+    # Resource live in this layer. Allow-list locked at [Foundation] — the
+    # resolver is a read-only service with no business dependencies. All
+    # consuming layers (Sync, CRM, Agents, Dashboard) take the dependency arrow
+    # in the direction Integrations → consumer (one-way: never the reverse).
+    Integrations: [Foundation]
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

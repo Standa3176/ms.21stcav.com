@@ -1,0 +1,60 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Integrations\Enums;
+
+/**
+ * Phase 09.1 Plan 01 — IntegrationCredentialKind (D-04).
+ *
+ * Five integration kinds backed by integration_credentials.kind enum.
+ * Each kind documents its required payload field shape via requiredFields(),
+ * its display label via label(), and its Filament badge color via color().
+ */
+enum IntegrationCredentialKind: string
+{
+    case SupplierApi = 'supplier_api';
+    case WooRest = 'woo_rest';
+    case BitrixWebhook = 'bitrix_webhook';
+    case AnthropicApi = 'anthropic_api';
+    case LangfuseObservability = 'langfuse_observability';
+
+    /**
+     * Field names required in payload_encrypted per D-04.
+     *
+     * @return array<int, string>
+     */
+    public function requiredFields(): array
+    {
+        return match ($this) {
+            self::SupplierApi => ['base_url', 'username', 'password'],
+            self::WooRest => ['base_url', 'consumer_key', 'consumer_secret'],
+            self::BitrixWebhook => ['webhook_url'],
+            self::AnthropicApi => ['api_key'],
+            self::LangfuseObservability => ['host', 'public_key', 'secret_key'],
+        };
+    }
+
+    public function label(): string
+    {
+        return match ($this) {
+            self::SupplierApi => 'Supplier API (21stcav.com)',
+            self::WooRest => 'WooCommerce REST',
+            self::BitrixWebhook => 'Bitrix24 Webhook',
+            self::AnthropicApi => 'Anthropic Claude API',
+            self::LangfuseObservability => 'Langfuse Observability',
+        };
+    }
+
+    /** Filament badge / Stat color per kind. */
+    public function color(): string
+    {
+        return match ($this) {
+            self::SupplierApi => 'info',
+            self::WooRest => 'warning',
+            self::BitrixWebhook => 'success',
+            self::AnthropicApi => 'danger', // expensive — visually distinct
+            self::LangfuseObservability => 'gray',
+        };
+    }
+}

@@ -43,6 +43,7 @@ it('no Policy file contains a Shield {{ Placeholder }} literal (Pitfall P2-H)', 
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Dashboard/Policies'),        // Phase 7 Plan 01 — 2 Dashboard policies
+        app_path('Domain/Integrations/Policies'),     // Phase 09.1 Plan 01 — 1 IntegrationCredentialPolicy (admin-only)
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
@@ -79,6 +80,7 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
         app_path('Domain/Competitor/Policies'),       // Phase 5 Plan 01 — 5 Competitor policies
         app_path('Domain/CRM/Policies'),              // Phase 4 Plan 01 — 5 Bitrix CRM policies
         app_path('Domain/Dashboard/Policies'),        // Phase 7 Plan 01 — 2 Dashboard policies
+        app_path('Domain/Integrations/Policies'),     // Phase 09.1 Plan 01 — 1 IntegrationCredentialPolicy (admin-only)
         app_path('Domain/Pricing/Policies'),
         app_path('Domain/ProductAutoCreate/Policies'), // Phase 6 Plan 01 — 2 auto-create policies
         app_path('Domain/Products/Policies'),
@@ -122,8 +124,10 @@ it('has at least 9 Policy files under the scanned roots (positive control)', fun
     // 31 = 30 - CompetitorFtpSourcePolicy (Phase 11.2 dropped) + CompetitorFtpCredentialPolicy
     //      (admin-only — encrypted creds, D-09) + CompetitorFtpFeedPolicy (admin write +
     //      pricing_manager view, D-11). Net +1. Floor bumped 30 → 31.
+    // 32 = above + 1 IntegrationCredentialPolicy (Phase 09.1 Plan 01 — admin-only,
+    //      hand-written; encrypted credentials per D-12 + D-14). Floor bumped 31 → 32.
     expect(count($policyFiles))
-        ->toBeGreaterThanOrEqual(31, 'Expected ≥ 31 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
+        ->toBeGreaterThanOrEqual(32, 'Expected ≥ 32 Policy files — got '.count($policyFiles).': '.implode(', ', $policyFiles));
 });
 
 it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)', function (): void {
@@ -174,6 +178,9 @@ it('Gate::policy bindings resolve to Domain / root Policies (not Shield stubs)',
         // CompetitorFtpFeedPolicy: admin write + pricing_manager view-only.
         \App\Domain\Competitor\Models\CompetitorFtpCredential::class    => \App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy::class,
         \App\Domain\Competitor\Models\CompetitorFtpFeed::class          => \App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy::class,
+        // Phase 09.1 Plan 01 — Integration Connections Admin (D-01 + D-12).
+        // IntegrationCredentialPolicy: admin-only (encrypted credentials at rest).
+        \App\Domain\Integrations\Models\IntegrationCredential::class    => \App\Domain\Integrations\Policies\IntegrationCredentialPolicy::class,
     ];
 
     foreach ($pairs as $model => $expectedPolicyClass) {

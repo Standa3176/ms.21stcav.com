@@ -314,6 +314,27 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpCredential::class, \App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy::class);
         Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpFeed::class,       \App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy::class);
 
+        // ── Phase 09.1 Plan 01 — Integration Connections Admin (D-01 + D-12 + D-14) ──
+        // IntegrationCredentialPolicy — admin-only on every method (D-12).
+        // STRICTER than the rest of the app: credentials hold encrypted secrets
+        // for the 5 integrations (Supplier API JWT / Woo REST / Bitrix webhook /
+        // Anthropic API key / Langfuse keys). pricing_manager / sales / read_only
+        // all 403 (no view perms in RolePermissionSeeder either).
+        //
+        // Pitfall P5-F — hand-written hasRole checks; DO NOT regenerate via
+        // shield:generate. Use shield:safe-regenerate (Phase 8).
+        //
+        // IntegrationCredentialObserver — invalidates IntegrationCredentialResolver's
+        // 60s per-kind cache key on every save/delete/forceDelete so operator
+        // credential rotation takes effect within ≤60s (D-06).
+        Gate::policy(
+            \App\Domain\Integrations\Models\IntegrationCredential::class,
+            \App\Domain\Integrations\Policies\IntegrationCredentialPolicy::class,
+        );
+        \App\Domain\Integrations\Models\IntegrationCredential::observe(
+            \App\Domain\Integrations\Observers\IntegrationCredentialObserver::class,
+        );
+
         // ── Phase 6 Plan 01: ProductAutoCreate domain policies ──────────
         // D-04 + T-06-01-04 role split: admin governs skip-rule CRUD (cost +
         // brand-reputation impact). pricing_manager has view-only on rules +

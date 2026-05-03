@@ -7,6 +7,7 @@ namespace App\Domain\Competitor\Filament\Resources;
 use App\Domain\Competitor\Filament\Resources\CompetitorPriceResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Products\Models\Product;
 use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
@@ -15,6 +16,7 @@ use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -53,10 +55,22 @@ class CompetitorPriceResource extends Resource
     /**
      * Eager-load the belongsTo Competitor so the relationship column doesn't
      * trigger per-row queries (Pitfall 10 / Phase 2 P2-G precedent).
+     *
+     * Quick task 260504-01s — also materialise an `is_matched` virtual column
+     * via correlated subquery so the Match Status badge doesn't trigger an
+     * N+1 product lookup per row. Mirrors the case-insensitive trim-normalised
+     * lookup in CompetitorCsvRowWriter so filter + writer agree.
      */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with(['competitor']);
+        return parent::getEloquentQuery()
+            ->with(['competitor'])
+            ->addSelect([
+                'is_matched' => Product::query()
+                    ->selectRaw('1')
+                    ->whereRaw('LOWER(TRIM(products.sku)) = LOWER(TRIM(competitor_prices.sku))')
+                    ->limit(1),
+            ]);
     }
 
     public static function table(Table $table): Table
@@ -67,6 +81,13 @@ class CompetitorPriceResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->fontFamily('mono'),
+                // Quick task 260504-01s — Match badge sourced from the is_matched
+                // virtual column (correlated subquery in getEloquentQuery).
+                TextColumn::make('is_matched')
+                    ->label('Match')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => $state ? 'Matched' : 'Orphan')
+                    ->color(fn ($state): string => $state ? 'success' : 'warning'),
                 TextColumn::make('competitor.name')
                     ->label('Competitor')
                     ->sortable(),
@@ -88,6 +109,26 @@ class CompetitorPriceResource extends Resource
             ])
             ->defaultSort('recorded_at', 'desc')
             ->filters([
+                // Quick task 260504-01s — Match Status filter mirroring the
+                // is_matched virtual column. EXISTS subquery is index-friendly
+                // (products(sku) is indexed) and case-insensitive trim-normalised
+                // to match the writer's lookup pattern.
+                TernaryFilter::make('is_matched')
+                    ->label('Match Status')
+                    ->placeholder('All')
+                    ->trueLabel('Matched (in catalogue)')
+                    ->falseLabel('Orphans (not in catalogue)')
+                    ->queries(
+                        true: fn (Builder $q): Builder => $q->whereExists(
+                            fn ($sub) => $sub->from('products')
+                                ->whereRaw('LOWER(TRIM(products.sku)) = LOWER(TRIM(competitor_prices.sku))')
+                        ),
+                        false: fn (Builder $q): Builder => $q->whereNotExists(
+                            fn ($sub) => $sub->from('products')
+                                ->whereRaw('LOWER(TRIM(products.sku)) = LOWER(TRIM(competitor_prices.sku))')
+                        ),
+                        blank: fn (Builder $q): Builder => $q,
+                    ),
                 SelectFilter::make('competitor_id')
                     ->label('Competitor')
                     ->options(fn (): array => Competitor::query()->orderBy('name')->pluck('name', 'id')->all())

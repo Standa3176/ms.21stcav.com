@@ -73,7 +73,10 @@ it('creates a csv_parse_errors row for an unparseable price and increments rows_
     expect($run->fresh()->rows_errored)->toBe(1);
 });
 
-it('detects an orphan SKU and increments rows_orphaned (no price row written)', function (): void {
+it('persists an orphan SKU as a competitor_prices row + increments rows_orphaned + suppresses CompetitorPriceRecorded event', function (): void {
+    // Quick task 260504-01s — orphans now persist as queryable rows so ops can
+    // see ALL competitor pricing data (not just rows that match a Product).
+    // Suggestion + rows_orphaned audit metric still fire; matched-only event stays suppressed.
     Event::fake([CompetitorPriceRecorded::class]);
 
     $competitor = Competitor::factory()->create();
@@ -89,8 +92,10 @@ it('detects an orphan SKU and increments rows_orphaned (no price row written)', 
         app(\App\Domain\Competitor\Services\CompetitorCsvRowWriter::class)
     );
 
-    expect(CompetitorPrice::count())->toBe(0);
+    expect(CompetitorPrice::count())->toBe(1);
+    expect(CompetitorPrice::first()->sku)->toBe('ORPHAN-SKU');
     expect($run->fresh()->rows_orphaned)->toBe(1);
+    expect($run->fresh()->rows_written)->toBe(1);
     expect(\App\Domain\Suggestions\Models\Suggestion::where('kind', 'new_product_opportunity')->count())->toBe(1);
     Event::assertNotDispatched(CompetitorPriceRecorded::class);
 });

@@ -73,14 +73,22 @@ final class CompetitorCsvRowWriter
             return;
         }
 
-        // Case-insensitive + trim-normalised Product lookup (D-08 orphan-detection precondition)
+        // Case-insensitive + trim-normalised Product lookup.
+        // Match status determines which downstream signals fire (orphan detector,
+        // margin-analyser event), but the price row itself persists regardless —
+        // ops need to see ALL competitor pricing data, not just rows that happen
+        // to match a Product (early-adoption Products table is near-empty).
+        // Quick task 260504-01s flipped this from "drop orphan rows on the floor"
+        // to "persist orphans, suppress matched-only events."
         $product = Product::whereRaw('LOWER(TRIM(sku)) = ?', [strtolower(trim($sku))])->first();
+        $isMatched = $product !== null;
 
-        if ($product === null) {
+        if (! $isMatched) {
+            // Orphan side-effects: record suggestion (cross-competitor dedup) +
+            // increment rows_orphaned audit metric. These were the original
+            // orphan-path side-effects; preserved unchanged.
             $this->orphanDetector->record($run->competitor, $sku, $grossPennies);
             $run->increment('rows_orphaned');
-
-            return;
         }
 
         // COMP-06 — reuse Phase 3 stripVat (NEVER duplicate VAT math)
@@ -111,13 +119,18 @@ final class CompetitorCsvRowWriter
             throw $e;
         }
 
-        event(new CompetitorPriceRecorded(
-            competitorId: (int) $run->competitor_id,
-            sku: $sku,
-            priceGrossPennies: $grossPennies,
-            priceExVatPennies: $exVatPennies,
-            ingestRunId: (int) $run->id,
-        ));
+        // Margin-analyser event ONLY fires for matched rows — downstream listeners
+        // need a Product to compute margin/cost deltas. Orphans persist as price
+        // history but skip the analytics fan-out.
+        if ($isMatched) {
+            event(new CompetitorPriceRecorded(
+                competitorId: (int) $run->competitor_id,
+                sku: $sku,
+                priceGrossPennies: $grossPennies,
+                priceExVatPennies: $exVatPennies,
+                ingestRunId: (int) $run->id,
+            ));
+        }
 
         $run->increment('rows_written');
     }

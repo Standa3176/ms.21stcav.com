@@ -76,7 +76,11 @@ class FtpSourceConnector
                 'port' => (int) $credential->port,
                 'ssl' => $isFtps,
                 'timeout' => (int) config('competitor.ftp.connection_timeout_seconds', 30),
-                'utf8' => true,
+                // utf8=false: many older FTP daemons reject `OPTS UTF8 ON` post-login
+                // (observed against supplier 46.202.141.242:21 — error "Could not set
+                // UTF-8 mode for connection"). Flysystem treats this as fatal. Filenames
+                // in distributor feeds are ASCII so UTF-8 negotiation buys us nothing.
+                'utf8' => false,
                 'passive' => true,
                 // FTP_BINARY (=2) lives in ext-ftp; reference the literal so dev
                 // boxes without ext-ftp enabled can still load this class for

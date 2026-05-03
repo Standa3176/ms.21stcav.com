@@ -105,6 +105,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-03 | Embed Horizon in Filament chrome    | feat(admin) | 2b77a25 |
 | 2026-05-03 | Horizon Cluster (8 sub-pages)       | feat(admin) | a2def38 |
 | 2026-05-03 | Native Horizon pages (drop iframe + cluster) | feat(admin) | 90d989f |
+| 2026-05-03 | Brand recolor (violet-800) + dashboard polish + nav restructure | feat(admin) | d806312 |
 
 ## Accumulated Context
 

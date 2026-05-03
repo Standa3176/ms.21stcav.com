@@ -107,6 +107,8 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-03 | Native Horizon pages (drop iframe + cluster) | feat(admin) | 90d989f |
 | 2026-05-03 | Brand recolor (violet-800) + dashboard polish + nav restructure | feat(admin) | d806312 |
 | 2026-05-03 | OpenAI/ChatGPT credential kind + FTP creds → Admin nav group | feat(admin) | ecb376a |
+| 2026-05-03 | FTP-credential UTF-8 disable + Sun+Wed pull schedule + ftp ext | fix(competitor-ftp) | c562ea4 |
+| 2026-05-03 | Inline-creatable competitor + auto local_filename + Competitors admin page | feat(competitor-feeds) | 538b0ee |
 
 ## Accumulated Context
 

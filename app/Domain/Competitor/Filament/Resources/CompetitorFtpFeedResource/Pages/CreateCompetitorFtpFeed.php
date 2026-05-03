@@ -6,6 +6,7 @@ namespace App\Domain\Competitor\Filament\Resources\CompetitorFtpFeedResource\Pag
 
 use App\Domain\Competitor\Filament\Resources\CompetitorFtpFeedResource;
 use App\Domain\Competitor\Models\Competitor;
+use Filament\Notifications\Notification;
 use Filament\Resources\Pages\CreateRecord;
 
 class CreateCompetitorFtpFeed extends CreateRecord
@@ -30,5 +31,29 @@ class CreateCompetitorFtpFeed extends CreateRecord
         }
 
         return $data;
+    }
+
+    /**
+     * After "Create" clicked → land on the feed list (default Filament behaviour
+     * with both Create + Edit pages registered would be to go to Edit; that's
+     * the wrong target for ops who want to confirm + move on to the next feed).
+     */
+    protected function getRedirectUrl(): string
+    {
+        return $this->getResource()::getUrl('index');
+    }
+
+    /**
+     * Explicit success toast so "Create" and "Create and create another" both
+     * surface a clear "Saved" confirmation. Filament fires a default notification
+     * when this returns a non-null value; making it explicit avoids any panel
+     * config silencing it.
+     */
+    protected function getCreatedNotification(): ?Notification
+    {
+        return Notification::make()
+            ->title('FTP feed saved')
+            ->body('Local file: '.($this->record->local_filename ?? '—'))
+            ->success();
     }
 }

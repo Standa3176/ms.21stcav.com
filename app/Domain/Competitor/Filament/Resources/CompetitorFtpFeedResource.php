@@ -180,6 +180,26 @@ class CompetitorFtpFeedResource extends Resource
                     ->placeholder('—')
                     ->tooltip('When the local file was last fetched (not the Eloquent updated_at column)'),
 
+                // Quick UX iteration — at-a-glance pull health: success / no_change /
+                // failed badge + a red Failures badge when a feed is silently retrying.
+                TextColumn::make('last_pull_status')
+                    ->label('Pull')
+                    ->badge()
+                    ->placeholder('— never run')
+                    ->color(fn (?string $state): string => match ($state) {
+                        CompetitorFtpFeed::STATUS_SUCCESS => 'success',
+                        CompetitorFtpFeed::STATUS_NO_CHANGE => 'gray',
+                        CompetitorFtpFeed::STATUS_FAILED => 'danger',
+                        default => 'gray',
+                    })
+                    ->tooltip(fn ($record): ?string => $record?->last_pull_error),
+
+                TextColumn::make('consecutive_failures')
+                    ->label('Failures')
+                    ->badge()
+                    ->color('danger')
+                    ->visible(fn ($record): bool => ($record?->consecutive_failures ?? 0) > 0),
+
                 ToggleColumn::make('is_active')->label('Status'),
             ])
             ->filters([

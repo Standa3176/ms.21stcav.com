@@ -109,6 +109,9 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-03 | OpenAI/ChatGPT credential kind + FTP creds → Admin nav group | feat(admin) | ecb376a |
 | 2026-05-03 | FTP-credential UTF-8 disable + Sun+Wed pull schedule + ftp ext | fix(competitor-ftp) | c562ea4 |
 | 2026-05-03 | Inline-creatable competitor + auto local_filename + Competitors admin page | feat(competitor-feeds) | 538b0ee |
+| 2026-05-03 | Post-create UX (toast + redirect + pull-status column) + afterStateUpdated fix | feat(competitor-feeds) | cce9107 |
+| 2026-05-04 | FTP MDTM fallback (older daemons reject MDTM) | fix(competitor-ftp) | 0f3770e |
+| 2026-05-04 | Capture orphan SKUs as queryable rows (4,264 rows materialised from live FTP feeds) | feat(competitor-prices) | cbca30b |
 
 ## Accumulated Context
 

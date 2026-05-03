@@ -59,19 +59,20 @@ Schedule::command('competitor:csv-prune')
     ->timezone('Europe/London')
     ->description('Prune competitor CSV archive files older than 90d (COMP-12; D-09 auditable)');
 
-// Phase 11.1 Plan 01 — every-15-min competitor FTP pull (D-07).
-// Lands files in storage/app/competitors/incoming/ for the every-5-min
-// competitor:watch below to pick up via the >30s mtime gate. Failures
-// increment a per-source counter; 3 consecutive failures auto-disable
+// Phase 11.1 Plan 01 — twice-weekly competitor FTP pull (D-07).
+// Supplier updates competitor data Sunday + Wednesday at 06:00 London time;
+// polling more often is wasted load. Lands files in storage/app/competitors/incoming/
+// for competitor:watch to pick up on its next 5-min sweep via the >30s mtime gate.
+// Failures increment a per-source counter; 3 consecutive failures auto-disable
 // the source and notify recipients with receives_competitor_ftp_alerts=true (D-12).
 // Runs BEFORE competitor:watch so the "fetch then watch" mental model is
 // preserved at the schedule-list level.
 Schedule::command('competitor:ftp-pull --live')
-    ->cron('*/15 * * * *')
+    ->cron('0 6 * * 0,3') // Sun + Wed at 06:00 (cron DOW: 0=Sun, 3=Wed)
     ->withoutOverlapping(20)
     ->onOneServer()
     ->timezone('Europe/London')
-    ->description('Pull competitor CSVs from configured FTP/SFTP/FTPS sources (Phase 11.1 Plan 01)');
+    ->description('Pull competitor CSVs Sun+Wed 06:00 London (Phase 11.1 Plan 01)');
 
 // Phase 5 Plan 02 — 5-minute competitor CSV watcher (COMP-01 + COMP-04).
 // Picks up aged files from storage/app/competitors/incoming/ and dispatches

@@ -123,8 +123,13 @@ class IntegrationCredentialResource extends Resource
                 }
 
                 $fields = [];
+                $urlFields = $kind->urlFields();
                 foreach ($kind->requiredFields() as $field) {
-                    $isUrlField = str_contains($field, 'url') || $field === 'host';
+                    // Quick task 260504-ld8b — kind-explicit URL detection.
+                    // Previously substring-matched on "url" + treated all `host`
+                    // fields as URLs; that broke SupplierDb where host is a
+                    // MySQL hostname/IP. Each kind now declares its URL fields.
+                    $isUrlField = in_array($field, $urlFields, true);
 
                     // Context-aware helper text. On edit, password fields show
                     // blank because Filament masks them — the value IS stored,

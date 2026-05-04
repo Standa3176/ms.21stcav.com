@@ -56,6 +56,32 @@ enum IntegrationCredentialKind: string
         };
     }
 
+    /**
+     * Quick task 260504-ld8b — fields that should get URL validation in the form.
+     *
+     * Defaults to substring-matching on "url" was too aggressive: it caught the
+     * MySQL-style `host` field on SupplierDb and rejected raw IPs / hostnames
+     * without `https://`. Each kind now explicitly declares its URL fields so
+     * the form behaves correctly per integration.
+     *
+     * Langfuse's `host` IS a URL (Http::get appends /api/public/health) so it
+     * stays in the list. SupplierDb's `host` is a MySQL hostname/IP and is NOT
+     * URL-validated.
+     *
+     * @return array<int, string>
+     */
+    public function urlFields(): array
+    {
+        return match ($this) {
+            self::SupplierApi, self::WooRest => ['base_url'],
+            self::BitrixWebhook => ['webhook_url'],
+            self::LangfuseObservability => ['host'],
+            // AnthropicApi, OpenAiApi: no URL fields (just api_key)
+            // SupplierDb: host is MySQL hostname or IP — NOT URL-validated
+            self::AnthropicApi, self::OpenAiApi, self::SupplierDb => [],
+        };
+    }
+
     /** Filament badge / Stat color per kind. */
     public function color(): string
     {

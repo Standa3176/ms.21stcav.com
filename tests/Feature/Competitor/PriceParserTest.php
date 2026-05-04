@@ -36,6 +36,22 @@ it('returns null for empty input', function (): void {
         ->toBeNull();
 });
 
+// Quick task 260504-edk — sale-price marketing strings (avparts pattern).
+it('extracts post-Save sale price from "Was£X Save Y% £Z" pattern', function (): void {
+    expect((new PriceParser())->toGrossPennies('Was£5,525.57Save 19%£4,499.00', CompetitorCsvMapping::FORMAT_DOT))
+        ->toBe(449900);
+});
+
+it('extracts post-Save sale price with spaces around tokens', function (): void {
+    expect((new PriceParser())->toGrossPennies('Was £2,659.00 Save 25% £1,999.00', CompetitorCsvMapping::FORMAT_DOT))
+        ->toBe(199900);
+});
+
+it('extracts post-Save sale price case-insensitively', function (): void {
+    expect((new PriceParser())->toGrossPennies('WAS £100 SAVE 10% £90.00', CompetitorCsvMapping::FORMAT_DOT))
+        ->toBe(9000);
+});
+
 it('parses a simple 89.99 GBP value', function (): void {
     expect((new PriceParser())->toGrossPennies('89.99', CompetitorCsvMapping::FORMAT_DOT))
         ->toBe(8999);

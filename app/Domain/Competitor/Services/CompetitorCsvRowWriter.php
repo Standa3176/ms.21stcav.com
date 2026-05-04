@@ -58,6 +58,28 @@ final class CompetitorCsvRowWriter
         $sku = trim((string) ($values[$skuIdx] ?? ''));
         $priceRaw = (string) ($values[$priceIdx] ?? '');
 
+        // Quick task 260504-edk — when the configured SKU column is empty, fall
+        // back to the first non-empty short alphanumeric token elsewhere in the
+        // row (skipping the SKU + price columns). Observed against onedirect:
+        // products with no manufacturer SKU at col 0 still ship a real internal
+        // id at col 3. The fallback value persists as competitor_prices.sku and
+        // shows as Orphan unless it happens to match a Product.
+        if ($sku === '') {
+            foreach ($values as $i => $cell) {
+                if ($i === $skuIdx || $i === $priceIdx) {
+                    continue;
+                }
+                $candidate = trim((string) $cell);
+                if ($candidate === '' || strlen($candidate) > 64) {
+                    continue;
+                }
+                if (preg_match('/^[A-Za-z0-9._\-\/]+$/', $candidate) === 1) {
+                    $sku = $candidate;
+                    break;
+                }
+            }
+        }
+
         if ($sku === '') {
             $this->writeParseError($run, CsvParseError::TYPE_INVALID_SKU_FORMAT, $row, 'empty SKU');
             $run->increment('rows_errored');

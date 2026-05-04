@@ -32,6 +32,15 @@ final class PriceParser
      */
     public function toGrossPennies(string $raw, string $decimalMode): ?int
     {
+        // Quick task 260504-edk — many supplier CSVs ship marketing-style sale
+        // prices, e.g. "Was£5,525.57Save 19%£4,499.00" (avparts pattern). Extract
+        // the post-"Save" amount as the actual selling price — the prior figure
+        // is the recommended/list price, not what the supplier is charging.
+        // Plain numeric prices fall through to the existing currency-strip logic.
+        if (preg_match('/Save\s*\d+\s*%\s*[£$€]?\s*([\d,]+(?:\.\d{1,2})?)/iu', $raw, $m) === 1) {
+            return $this->toGrossPennies($m[1], $decimalMode);
+        }
+
         // Strip £, $, €, "GBP" literal, and any whitespace (incl. tabs & newlines).
         $clean = (string) preg_replace('/[£$€]|GBP|\s/iu', '', trim($raw));
 

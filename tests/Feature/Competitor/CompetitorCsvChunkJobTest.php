@@ -104,3 +104,30 @@ it('is enqueued on the competitor-csv queue', function (): void {
     $job = new CompetitorCsvChunkJob(1, [], []);
     expect($job->queue)->toBe('competitor-csv');
 });
+
+// Quick task 260504-edk — onedirect pattern: empty primary SKU column but a
+// real internal id elsewhere in the row.
+it('falls back to a non-empty alphanumeric column when primary SKU is empty', function (): void {
+    Event::fake([CompetitorPriceRecorded::class]);
+
+    $competitor = Competitor::factory()->create();
+    $run = CompetitorIngestRun::factory()->create(['competitor_id' => $competitor->id]);
+
+    $mapping = [
+        'sku_column_index' => 0,
+        'price_column_index' => 1,
+        'decimal_format' => CompetitorCsvMapping::FORMAT_DOT,
+    ];
+
+    // col 0 = empty (configured SKU column),
+    // col 1 = price,
+    // col 2 = product name (has spaces — fails the alphanumeric regex),
+    // col 3 = internal id (matches → wins as fallback).
+    (new CompetitorCsvChunkJob($run->id, $mapping, [['', '£99.99', 'Product Name with spaces', 'INTID-52501']]))->handle(
+        app(\App\Domain\Competitor\Services\CompetitorCsvRowWriter::class)
+    );
+
+    expect(CompetitorPrice::count())->toBe(1);
+    expect(CompetitorPrice::first()->sku)->toBe('INTID-52501');
+    expect($run->fresh()->rows_errored)->toBe(0); // not counted as invalid_sku_format
+});

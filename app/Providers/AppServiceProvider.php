@@ -490,6 +490,8 @@ class AppServiceProvider extends ServiceProvider
                 \App\Domain\Quotes\Console\Commands\QuotesExpireCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
+                // Quick task 260504-e0q — operator command to replay quarantined CSVs.
+                \App\Domain\Competitor\Console\Commands\CompetitorRetryQuarantineCommand::class,
                 // Phase 11.1 Plan 01 — every-15-min FTP/SFTP/FTPS pull (COMP-FTP-01).
                 // Lives outside app/Console/Commands/ so explicit registration
                 // mirrors the watcher pattern above. Dry-run by default per D-06;

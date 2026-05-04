@@ -38,7 +38,13 @@ return [
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
             'busy_timeout' => null,
-            'journal_mode' => null,
+            // Quick task 260504-e0q — WAL allows concurrent readers while a writer
+            // is committing, AND drops the writer-vs-writer deadlocks observed
+            // when parallel CompetitorCsvChunkJobs raced to update
+            // job_batches.pending_jobs (caused screenmoove's 15,852-row run to
+            // fail with "database is locked"). Production uses MySQL; this is
+            // local-dev-only safety net. Survives migrate:fresh.
+            'journal_mode' => 'WAL',
             'synchronous' => null,
         ],
 

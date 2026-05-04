@@ -123,6 +123,9 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | Live Woo import — 5,633 products + stock_quantity + Live/Pending labels (24.8% competitor match) | feat(products) | 60dee1f |
 | 2026-05-04 | Extract buy_price from Woo _alg_wc_cog_cost meta (5,430 products / 96.4% coverage) | feat(sync) | be8e5a9 |
 | 2026-05-04 | Supplier DB (Remote MySQL) credential kind — Phase 1 of remote supplier sync | feat(integrations) | b2101b7 |
+| 2026-05-04 | Supplier DB host field accepts hostname or IP (kind-explicit URL detection) | fix(integrations) | 5cf41d0 |
+| 2026-05-04 | Supplier DB test action + edit-form rendering fixes (mysqli_report + Group $record) | fix(integrations) | 69b9273 |
+| 2026-05-04 | supplier:db-sync command + daily schedule (Phase 2; 3,939 of 5,629 SKUs matched) | feat(sync) | 7890d5c |
 
 ## Accumulated Context
 

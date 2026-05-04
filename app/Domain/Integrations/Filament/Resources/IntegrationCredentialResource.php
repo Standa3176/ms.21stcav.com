@@ -126,16 +126,29 @@ class IntegrationCredentialResource extends Resource
                 foreach ($kind->requiredFields() as $field) {
                     $isUrlField = str_contains($field, 'url') || $field === 'host';
 
+                    // Context-aware helper text. On edit, password fields show
+                    // blank because Filament masks them — the value IS stored,
+                    // just deliberately not echoed back. Tell the operator that.
                     $input = TextInput::make("payload_encrypted.{$field}")
                         ->label(Str::headline($field))
                         ->maxLength(2048)
                         ->dehydrated(fn ($state): bool => filled($state))
-                        ->helperText('Encrypted at rest. Leave blank on edit to keep the existing value.');
+                        ->required(fn (string $context): bool => $context === 'create')
+                        ->helperText(fn (string $context): string => $context === 'edit'
+                            ? '✓ Currently saved (encrypted). Leave blank to keep — type a new value to replace.'
+                            : 'Encrypted at rest.');
 
                     if ($isUrlField) {
                         $input = $input->url();
                     } else {
-                        $input = $input->password()->revealable();
+                        // For secrets on edit, show a placeholder so the field
+                        // looks intentionally masked rather than empty/missing.
+                        $input = $input
+                            ->password()
+                            ->revealable()
+                            ->placeholder(fn (string $context): string => $context === 'edit'
+                                ? '•••••••• (saved — leave blank to keep)'
+                                : '');
                     }
 
                     $fields[] = $input;

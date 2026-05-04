@@ -114,6 +114,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | Capture orphan SKUs as queryable rows (4,264 rows materialised from live FTP feeds) | feat(competitor-prices) | cbca30b |
 | 2026-05-04 | woo:import-products bulk Woo catalogue import + optional supplier enrichment | feat(sync) | 78d43ea |
 | 2026-05-04 | SQLite WAL default + competitor:retry-quarantine command | feat(competitor-csv) | 5762ff7 |
+| 2026-05-04 | Was£X Save Y% £Z sale-price extraction + fallback SKU column (242 rows recovered) | feat(competitor-csv) | 53fa2ac |
 
 ## Accumulated Context
 

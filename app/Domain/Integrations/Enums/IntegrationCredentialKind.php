@@ -23,6 +23,7 @@ enum IntegrationCredentialKind: string
     case AnthropicApi = 'anthropic_api';
     case OpenAiApi = 'openai_api';
     case LangfuseObservability = 'langfuse_observability';
+    case SupplierDb = 'supplier_db';
 
     /**
      * Field names required in payload_encrypted per D-04.
@@ -38,6 +39,7 @@ enum IntegrationCredentialKind: string
             self::AnthropicApi => ['api_key'],
             self::OpenAiApi => ['api_key'],
             self::LangfuseObservability => ['host', 'public_key', 'secret_key'],
+            self::SupplierDb => ['host', 'port', 'database', 'username', 'password'],
         };
     }
 
@@ -50,6 +52,7 @@ enum IntegrationCredentialKind: string
             self::AnthropicApi => 'Anthropic Claude API',
             self::OpenAiApi => 'OpenAI / ChatGPT API',
             self::LangfuseObservability => 'Langfuse Observability',
+            self::SupplierDb => 'Supplier DB (Remote MySQL)',
         };
     }
 
@@ -63,6 +66,7 @@ enum IntegrationCredentialKind: string
             self::AnthropicApi => 'danger', // expensive — visually distinct
             self::OpenAiApi => 'danger', // expensive — parity with Anthropic visual treatment
             self::LangfuseObservability => 'gray',
+            self::SupplierDb => 'success', // data-side green palette (Catalogue group)
         };
     }
 }

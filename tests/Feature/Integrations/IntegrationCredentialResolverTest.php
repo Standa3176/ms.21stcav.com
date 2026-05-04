@@ -30,6 +30,11 @@ beforeEach(function (): void {
     config()->set('agents.langfuse.host', null);
     config()->set('agents.langfuse.public_key', null);
     config()->set('agents.langfuse.secret_key', null);
+    config()->set('services.supplier_db.host', null);
+    config()->set('services.supplier_db.port', null);
+    config()->set('services.supplier_db.database', null);
+    config()->set('services.supplier_db.username', null);
+    config()->set('services.supplier_db.password', null);
 });
 
 /**

@@ -10,17 +10,18 @@ use App\Domain\Integrations\Enums\IntegrationCredentialKind;
  * Verifies the IntegrationCredentialKind enum contract per CONTEXT D-04.
  */
 
-it('declares exactly 6 cases with the D-04 string values', function (): void {
+it('declares exactly 7 cases with the D-04 string values', function (): void {
     $values = collect(IntegrationCredentialKind::cases())->map(fn ($k) => $k->value)->all();
 
     expect($values)
-        ->toHaveCount(6)
+        ->toHaveCount(7)
         ->toContain('supplier_api')
         ->toContain('woo_rest')
         ->toContain('bitrix_webhook')
         ->toContain('anthropic_api')
         ->toContain('openai_api')
-        ->toContain('langfuse_observability');
+        ->toContain('langfuse_observability')
+        ->toContain('supplier_db');
 });
 
 it('returns the per-kind required field shape from requiredFields() per D-04', function (): void {
@@ -41,6 +42,9 @@ it('returns the per-kind required field shape from requiredFields() per D-04', f
 
     expect(IntegrationCredentialKind::LangfuseObservability->requiredFields())
         ->toBe(['host', 'public_key', 'secret_key']);
+
+    expect(IntegrationCredentialKind::SupplierDb->requiredFields())
+        ->toBe(['host', 'port', 'database', 'username', 'password']);
 });
 
 it('returns non-empty label() and color() strings for every case', function (): void {

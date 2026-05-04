@@ -115,6 +115,13 @@ class IntegrationCredentialResolver
                 'public_key' => (string) config('agents.langfuse.public_key', ''),
                 'secret_key' => (string) config('agents.langfuse.secret_key', ''),
             ],
+            IntegrationCredentialKind::SupplierDb => [
+                'host' => (string) config('services.supplier_db.host', ''),
+                'port' => (string) config('services.supplier_db.port', '3306'),
+                'database' => (string) config('services.supplier_db.database', ''),
+                'username' => (string) config('services.supplier_db.username', ''),
+                'password' => (string) config('services.supplier_db.password', ''),
+            ],
         };
 
         return $this->payloadHasAllRequiredFields($kind, $envMap) ? $envMap : null;

@@ -76,6 +76,19 @@ return [
         'api_key' => env('OPENAI_API_KEY'),
     ],
 
+    // Quick task 260504-ld8 — remote supplier MySQL VPS (Phase 1: creds only).
+    // Resolver env-fallback for IntegrationCredentialKind::SupplierDb. Operator
+    // typically populates via /admin → Integration Credentials, but env path is
+    // supported for parity with the other kinds. Phase 2 will use these to pull
+    // SKU + buy_price + stock_quantity into local products.
+    'supplier_db' => [
+        'host' => env('SUPPLIER_DB_HOST'),
+        'port' => env('SUPPLIER_DB_PORT', 3306),
+        'database' => env('SUPPLIER_DB_DATABASE'),
+        'username' => env('SUPPLIER_DB_USERNAME'),
+        'password' => env('SUPPLIER_DB_PASSWORD'),
+    ],
+
     'bitrix' => [
         'webhook_url' => env('BITRIX_WEBHOOK_URL'),
         'write_enabled' => env('CRM_WRITE_ENABLED', false),

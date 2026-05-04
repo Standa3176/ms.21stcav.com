@@ -77,6 +77,7 @@ class TestIntegrationAction
             IntegrationCredentialKind::BitrixWebhook => app(BitrixClient::class)->testConnection(),
             IntegrationCredentialKind::AnthropicApi => app(ClaudeClient::class)->testConnection(),
             IntegrationCredentialKind::LangfuseObservability => self::testLangfuse(),
+            IntegrationCredentialKind::SupplierDb => self::testSupplierDb(),
             default => IntegrationTestResult::failed('Unknown kind: ' . ($record->kind?->value ?? 'null'), 0),
         };
     }
@@ -97,6 +98,65 @@ class TestIntegrationAction
             }
 
             return IntegrationTestResult::failed("HTTP {$response->status()} from /api/public/health", $latency);
+        } catch (Throwable $e) {
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            return IntegrationTestResult::failed($e->getMessage(), $latency);
+        }
+    }
+
+    /**
+     * Quick task 260504-ld8 — Supplier DB (remote MySQL) auth probe.
+     *
+     * One-shot mysqli connection — NOT a registered Laravel connection.
+     * Phase 2 will register a runtime connection from the same creds for
+     * the actual data sync; this test only proves auth + reachability.
+     *
+     * Surface: connect_errno (auth/network), latency_ms.
+     */
+    private static function testSupplierDb(): IntegrationTestResult
+    {
+        $start = microtime(true);
+
+        try {
+            $creds = app(IntegrationCredentialResolver::class)
+                ->for(IntegrationCredentialKind::SupplierDb);
+
+            // Suppress mysqli's default warning-on-failure so we can return
+            // a clean IntegrationTestResult instead of leaking PHP warnings
+            // into the Filament notification.
+            $previous = mysqli_report(MYSQLI_REPORT_OFF);
+
+            try {
+                $mysqli = @new \mysqli(
+                    $creds['host'],
+                    $creds['username'],
+                    $creds['password'],
+                    $creds['database'],
+                    (int) $creds['port'],
+                );
+            } finally {
+                mysqli_report($previous);
+            }
+
+            if ($mysqli->connect_errno !== 0) {
+                $latency = (int) round((microtime(true) - $start) * 1000);
+
+                return IntegrationTestResult::failed(
+                    "MySQL connect_errno={$mysqli->connect_errno}: {$mysqli->connect_error}",
+                    $latency,
+                );
+            }
+
+            $result = $mysqli->query('SELECT 1');
+            $mysqli->close();
+            $latency = (int) round((microtime(true) - $start) * 1000);
+
+            if ($result === false) {
+                return IntegrationTestResult::failed('SELECT 1 query failed', $latency);
+            }
+
+            return IntegrationTestResult::ok($latency);
         } catch (Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
 

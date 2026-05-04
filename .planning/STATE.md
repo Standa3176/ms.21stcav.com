@@ -115,6 +115,8 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | woo:import-products bulk Woo catalogue import + optional supplier enrichment | feat(sync) | 78d43ea |
 | 2026-05-04 | SQLite WAL default + competitor:retry-quarantine command | feat(competitor-csv) | 5762ff7 |
 | 2026-05-04 | Was£X Save Y% £Z sale-price extraction + fallback SKU column (242 rows recovered) | feat(competitor-csv) | 53fa2ac |
+| 2026-05-04 | Default new competitors Active + cascade-impact delete modal | feat(competitor-feeds) | a9112e7 |
+| 2026-05-04 | 8-group nav restructure + colored attention badges (29 files) | feat(admin) | def23dc |
 
 ## Accumulated Context
 

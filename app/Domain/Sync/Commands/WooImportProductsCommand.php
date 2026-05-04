@@ -6,6 +6,7 @@ namespace App\Domain\Sync\Commands;
 
 use App\Console\Commands\BaseCommand;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooClient;
@@ -74,6 +75,12 @@ final class WooImportProductsCommand extends BaseCommand
         $skippedOther = 0;
         $simpleSeen = 0;
         $page = 1;
+
+        // Quick task 260504-muq — track woo_product_ids touched this run so we can
+        // write per-product snapshots after the import loop completes (one row
+        // per Product per day in product_price_snapshots; idempotent on
+        // unique(product_id, recorded_at) via updateOrCreate).
+        $touchedWooProductIds = [];
 
         do {
             $products = $woo->get('products', ['per_page' => 100, 'page' => $page]);
@@ -172,6 +179,7 @@ final class WooImportProductsCommand extends BaseCommand
                     } else {
                         $updated++;
                     }
+                    $touchedWooProductIds[] = $wooProductId;
                 } catch (QueryException $e) {
                     $errored++;
                     Log::warning('woo_import.row_failed', [
@@ -206,13 +214,43 @@ final class WooImportProductsCommand extends BaseCommand
             $page++;
         } while (true);
 
+        // Quick task 260504-muq — write today's ProductPriceSnapshot rows
+        // (skipped on --dry-run; nothing was upserted to read back). Iterate
+        // touched IDs in chunks of 500 to keep the per-product hydration cost
+        // bounded on the ~5,633 row catalogue. updateOrCreate idempotently
+        // handles re-runs on the same day.
+        $productSnapshotsWritten = 0;
+        if (! $dryRun && $touchedWooProductIds !== []) {
+            foreach (array_chunk(array_unique($touchedWooProductIds), 500) as $idChunk) {
+                Product::whereIn('woo_product_id', $idChunk)
+                    ->get(['id', 'sku', 'status', 'sell_price', 'buy_price', 'stock_quantity'])
+                    ->each(function (Product $p) use (&$productSnapshotsWritten): void {
+                        ProductPriceSnapshot::updateOrCreate(
+                            [
+                                'product_id' => $p->id,
+                                'recorded_at' => today(),
+                            ],
+                            [
+                                'sku' => (string) ($p->sku ?? ''),
+                                'woo_status' => (string) ($p->status ?? ''),
+                                'sell_price' => $p->sell_price,
+                                'buy_price' => $p->buy_price,
+                                'stock_quantity' => $p->stock_quantity,
+                            ],
+                        );
+                        $productSnapshotsWritten++;
+                    });
+            }
+        }
+
         $this->info(sprintf(
-            'Done. created=%d updated=%d errored=%d skipped_variation=%d skipped_other=%d',
+            'Done. created=%d updated=%d errored=%d skipped_variation=%d skipped_other=%d snapshots=%d',
             $created,
             $updated,
             $errored,
             $skippedVariation,
             $skippedOther,
+            $productSnapshotsWritten,
         ));
 
         return self::SUCCESS;

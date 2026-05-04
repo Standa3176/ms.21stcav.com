@@ -8,6 +8,8 @@ use App\Console\Commands\BaseCommand;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductPriceSnapshot;
+use App\Domain\Products\Models\SupplierOfferSnapshot;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -200,6 +202,26 @@ final class SupplierDbSyncCommand extends BaseCommand
                             'stock_quantity' => $newStock,
                         ]);
                         $updated++;
+
+                        // Quick task 260504-muq — overwrite today's snapshot
+                        // with supplier-current values. The earlier
+                        // woo:import-products run wrote the same row with
+                        // Woo-side values; supplier feed is more authoritative
+                        // for buy_price + stock so we win on tie. Idempotent
+                        // via unique(product_id, recorded_at).
+                        ProductPriceSnapshot::updateOrCreate(
+                            [
+                                'product_id' => $local->id,
+                                'recorded_at' => today(),
+                            ],
+                            [
+                                'sku' => (string) ($local->sku ?? ''),
+                                'woo_status' => (string) ($local->status ?? ''),
+                                'sell_price' => $local->sell_price,
+                                'buy_price' => $newBuy,
+                                'stock_quantity' => $newStock,
+                            ],
+                        );
                     } catch (QueryException $e) {
                         $errored++;
                         Log::warning('supplier_db_sync.row_failed', [
@@ -226,21 +248,133 @@ final class SupplierDbSyncCommand extends BaseCommand
             return true;
         });
 
+        // Quick task 260504-muq — write per-supplier offer snapshots BEFORE
+        // closing the mysqli handle (the helper reuses it). Skip on --dry-run
+        // (would write hundreds of MB of zero-value rows). Pass the same
+        // lowercased local SKU array we already deduped above.
+        $offerSnapshotsWritten = 0;
+        if (! $dryRun) {
+            $offerSnapshotsWritten = $this->syncSupplierOfferSnapshots($mysqli, $lowered);
+        }
+
         $mysqli->close();
 
         // ── Summary ──
         $this->info(str_repeat('-', 60));
         $this->info(sprintf(
-            'Done. matched=%d unmatched=%d updated=%d unchanged=%d errored=%d%s',
+            'Done. matched=%d unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d%s',
             $matched,
             $unmatched,
             $updated,
             $unchanged,
             $errored,
+            $offerSnapshotsWritten,
             $dryRun ? " would_update={$wouldUpdate}" : '',
         ));
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * Quick task 260504-muq — pull every supplier offer for the given local
+     * SKU set and write SupplierOfferSnapshot rows. One row per
+     * (sku, supplier_id, day) — re-runs on the same day overwrite via
+     * unique(sku, supplier_id, recorded_at).
+     *
+     * Match logic mirrors the main pull (LOWER(TRIM(mpn)) preferred,
+     * LOWER(TRIM(suppliersku)) fallback) and joins feeds → name for the
+     * human-readable supplier label. Chunked at 2000 SKUs per query to keep
+     * the IN-clause manageable.
+     *
+     * @param  array<int, string>  $localSkusLowercased  pre-normalized lowercase-trimmed local SKUs
+     */
+    private function syncSupplierOfferSnapshots(\mysqli $db, array $localSkusLowercased): int
+    {
+        if ($localSkusLowercased === []) {
+            return 0;
+        }
+
+        // Build the lowercase→product_id lookup once (full table scan; ~5,633 rows
+        // is cheap). Used to populate the nullable product_id FK on each offer
+        // snapshot so the Filament UI can do `where product_id = ?` lookups.
+        $localSkuToProductId = Product::whereNotNull('sku')
+            ->pluck('id', 'sku')
+            ->mapWithKeys(static fn ($id, $sku) => [strtolower(trim((string) $sku)) => $id])
+            ->all();
+
+        $written = 0;
+
+        foreach (array_chunk($localSkusLowercased, 2000) as $chunkIndex => $chunk) {
+            $placeholders = rtrim(str_repeat('?,', count($chunk)), ',');
+            // feeds_products is the per-supplier offer table (one row per
+            // supplier × SKU). supplier_products is the deduped winner table
+            // used by the main sync loop above. We want the FULL multi-supplier
+            // view here, so query feeds_products + LEFT JOIN feeds for the
+            // human-readable supplier name (Rule 1 fix — initial code targeted
+            // the wrong table).
+            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, fp.stock, fp.rrp, f.name AS supplier_name
+                    FROM feeds_products fp
+                    LEFT JOIN feeds f ON fp.supplierid = f.id
+                    WHERE fp.product_excluded = 0
+                      AND (LOWER(TRIM(fp.mpn)) IN ({$placeholders})
+                           OR LOWER(TRIM(fp.suppliersku)) IN ({$placeholders}))
+                    ORDER BY fp.updated_at DESC";
+
+            $stmt = $db->prepare($sql);
+            if ($stmt === false) {
+                $this->warn("syncSupplierOfferSnapshots: prepare failed on chunk {$chunkIndex}: {$db->error}");
+                continue;
+            }
+
+            $params = array_merge($chunk, $chunk);
+            $types = str_repeat('s', count($params));
+            $stmt->bind_param($types, ...$params);
+            $stmt->execute();
+            $result = $stmt->get_result();
+
+            while ($row = $result->fetch_assoc()) {
+                // Pick the matching key — prefer mpn, fall back to suppliersku.
+                $mpnKey = strtolower(trim((string) ($row['mpn'] ?? '')));
+                $skuKey = strtolower(trim((string) ($row['suppliersku'] ?? '')));
+
+                $matchKey = null;
+                if ($mpnKey !== '' && isset($localSkuToProductId[$mpnKey])) {
+                    $matchKey = $mpnKey;
+                } elseif ($skuKey !== '' && isset($localSkuToProductId[$skuKey])) {
+                    $matchKey = $skuKey;
+                }
+                if ($matchKey === null) {
+                    continue;
+                }
+
+                try {
+                    SupplierOfferSnapshot::updateOrCreate(
+                        [
+                            'sku' => $matchKey,
+                            'supplier_id' => (string) ($row['supplierid'] ?? ''),
+                            'recorded_at' => today(),
+                        ],
+                        [
+                            'product_id' => $localSkuToProductId[$matchKey] ?? null,
+                            'supplier_name' => (string) ($row['supplier_name'] ?? ''),
+                            'price' => $this->parsePrice((string) ($row['price'] ?? '')),
+                            'stock' => $this->parseStock((string) ($row['stock'] ?? '')),
+                            'rrp' => $this->parsePrice((string) ($row['rrp'] ?? '')),
+                        ],
+                    );
+                    $written++;
+                } catch (QueryException $e) {
+                    Log::warning('supplier_db_sync.offer_snapshot_failed', [
+                        'sku' => $matchKey,
+                        'supplier_id' => $row['supplierid'] ?? null,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+            $stmt->close();
+        }
+
+        return $written;
     }
 
     /**

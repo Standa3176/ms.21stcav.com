@@ -578,6 +578,13 @@ class AppServiceProvider extends ServiceProvider
                 // Europe/London). Default --days=1825 covers the full D-07
                 // horizon; --dry-run for safe ops verification.
                 \App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand::class,
+                // Quick task 260504-muq — history:prune (90-day price + stock
+                // history retention). Deletes product_price_snapshots +
+                // supplier_offer_snapshots older than
+                // config('history.retention_days', 90). Scheduled at 04:00
+                // Europe/London via routes/console.php (continues the
+                // 03:00..03:50 retention cascade).
+                \App\Domain\Products\Console\Commands\SnapshotsPruneCommand::class,
             ]);
         }
     }

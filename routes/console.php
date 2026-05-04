@@ -167,6 +167,19 @@ Schedule::command('snapshots:prune')
     ->timezone('Europe/London')
     ->description('Prune dashboard_snapshots older than 30 days (Phase 7 Plan 02)');
 
+// Quick task 260504-muq — history:prune daily 04:00 (continues the 03:00..03:50
+// retention cascade with a 10-min gap). Deletes product_price_snapshots +
+// supplier_offer_snapshots older than config('history.retention_days', 90).
+// Distinct command name from Phase 7's snapshots:prune (which targets the
+// dashboard_snapshots table) — registering both as snapshots:prune would
+// silently shadow one based on AppServiceProvider registration order.
+Schedule::command('history:prune')
+    ->dailyAt('04:00')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune product + supplier-offer snapshots older than retention window (Quick task 260504-muq)');
+
 // Phase 7 Plan 04 (D-08) — reports:weekly-digest Monday 07:00 Europe/London.
 // Composes the 5-section ops digest (Sync / Margin / CRM / Auto-Create / Competitor)
 // and sends to AlertRecipient rows where receives_weekly_digest=true. On success,

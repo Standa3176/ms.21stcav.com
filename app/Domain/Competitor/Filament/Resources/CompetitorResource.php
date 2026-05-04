@@ -79,7 +79,11 @@ class CompetitorResource extends Resource
                     Competitor::STATUS_ACTIVE => 'Active',
                     Competitor::STATUS_INACTIVE => 'Inactive',
                 ])
-                ->default(Competitor::STATUS_PENDING),
+                // Operator-driven creation defaults to Active — the operator
+                // has consciously typed the name. Pending is reserved for the
+                // watcher's auto-create-from-filename path (CompetitorWatchCommand)
+                // where the slug hasn't been visually inspected yet.
+                ->default(Competitor::STATUS_ACTIVE),
 
             Toggle::make('is_active')
                 ->default(true)
@@ -135,7 +139,33 @@ class CompetitorResource extends Resource
             ])
             ->actions([
                 EditAction::make(),
-                DeleteAction::make(),
+                // Custom-modal delete that surfaces cascade impact BEFORE the click.
+                // competitor_prices + competitor_ftp_feeds + competitor_csv_mappings
+                // all cascadeOnDelete; competitor_ingest_runs + csv_parse_errors
+                // nullOnDelete (history preserved).
+                DeleteAction::make()
+                    ->modalHeading('Delete competitor and cascading data?')
+                    ->modalDescription(function (Competitor $record): string {
+                        $prices = $record->prices()->count();
+                        $feeds = $record->ftpFeeds()->count();
+                        $hasMapping = $record->csvMapping()->exists() ? 1 : 0;
+
+                        return sprintf(
+                            "Deleting \"%s\" will PERMANENTLY remove:\n"
+                                ."  • %d competitor price rows\n"
+                                ."  • %d FTP feed config%s\n"
+                                ."  • %d column mapping%s\n\n"
+                                ."Run history and parse errors are kept (with competitor_id=null) for forensics. "
+                                ."To pause ingestion without losing data, toggle is_active off instead.",
+                            $record->name,
+                            $prices,
+                            $feeds,
+                            $feeds === 1 ? '' : 's',
+                            $hasMapping,
+                            $hasMapping === 1 ? '' : 's',
+                        );
+                    })
+                    ->modalSubmitActionLabel('Yes — delete competitor + all cascading data'),
             ]);
     }
 

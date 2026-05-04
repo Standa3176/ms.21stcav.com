@@ -118,10 +118,13 @@ class CompetitorFtpFeedResource extends Resource
                         ? (string) $data['slug']
                         : Str::slug((string) $data['name'], '_');
 
+                    // Inline-create from the FTP-feed form is operator-driven →
+                    // default to Active. Pending stays reserved for the watcher's
+                    // auto-create path where the slug hasn't been inspected.
                     return Competitor::create([
                         'name' => $data['name'],
                         'slug' => $slug,
-                        'status' => Competitor::STATUS_PENDING,
+                        'status' => Competitor::STATUS_ACTIVE,
                         'is_active' => true,
                     ])->getKey();
                 }),

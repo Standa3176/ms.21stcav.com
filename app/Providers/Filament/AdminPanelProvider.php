@@ -120,6 +120,11 @@ class AdminPanelProvider extends PanelProvider
             // (unused) as the documented rollback path — see HorizonEmbedPage
             // class docblock.
             // Per-domain Resource discovery (modules populate in later plans — 01-RESEARCH.md §1):
+            // Phase 09.1 — Integration Credentials Resource (Anthropic / OpenAI / Woo / Supplier / Bitrix API keys).
+            // Discovery line was missing from the original phase plan; surfaced when ops noticed Admin nav only
+            // showed Alert Recipients + Roles & Permissions. The resource itself was correctly placed at
+            // navigationGroup='Admin' from day one — only the discoverer pointer was absent.
+            ->discoverResources(in: app_path('Domain/Integrations/Filament/Resources'), for: 'App\\Domain\\Integrations\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Suggestions/Filament/Resources'), for: 'App\\Domain\\Suggestions\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Alerting/Filament/Resources'), for: 'App\\Domain\\Alerting\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Sync/Filament/Resources'), for: 'App\\Domain\\Sync\\Filament\\Resources')

@@ -48,6 +48,28 @@ Schedule::command('sync-diffs:prune')
     ->withoutOverlapping(30)
     ->onOneServer();
 
+// Quick task 260504-m5w — daily Woo catalogue refresh.
+// Pulls publish + draft + private products from meetingstore.co.uk into the
+// local products table so supplier:db-sync (03:30) and downstream pricing
+// queries see today's catalogue. LIVE — no kill-switch (idempotent + ops
+// verified manually pre-deployment).
+Schedule::command('woo:import-products')
+    ->dailyAt('03:00')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Daily Woo catalogue import (publish + draft + private products)');
+
+// Quick task 260504-m5w — daily supplier DB pull from VPS MySQL.
+// Runs AFTER woo:import-products so any new Woo SKUs get matched same-day.
+// LIVE — no kill-switch (idempotent + ops verified manually pre-deployment).
+Schedule::command('supplier:db-sync')
+    ->dailyAt('03:30')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Daily supplier MySQL VPS price + stock sync');
+
 // Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive retention prune (COMP-12).
 // Default retention: config('competitor.csv_retention_days', 90). NEVER touches
 // competitor_prices / ingest_runs / csv_parse_errors rows — archive files only.

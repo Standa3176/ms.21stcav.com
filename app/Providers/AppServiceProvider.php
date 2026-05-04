@@ -452,6 +452,11 @@ class AppServiceProvider extends ServiceProvider
                 // populated from an existing Woo catalogue (sync:supplier
                 // updates existing rows but never creates).
                 \App\Domain\Sync\Commands\WooImportProductsCommand::class,
+                // Quick task 260504-m5w — daily supplier MySQL VPS sync.
+                // Pulls price + stock from supplier_products on stcav_dash and
+                // updates local products.buy_price + stock_quantity. Match key:
+                // LOWER(TRIM(mpn)) preferred, LOWER(TRIM(suppliersku)) fallback.
+                \App\Domain\Sync\Commands\SupplierDbSyncCommand::class,
                 // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
                 // recompute. Default dry-run, --live opt-in (D-12). Lives
                 // under app/Domain/Pricing/Console/Commands/ so explicit

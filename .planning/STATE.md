@@ -112,6 +112,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-03 | Post-create UX (toast + redirect + pull-status column) + afterStateUpdated fix | feat(competitor-feeds) | cce9107 |
 | 2026-05-04 | FTP MDTM fallback (older daemons reject MDTM) | fix(competitor-ftp) | 0f3770e |
 | 2026-05-04 | Capture orphan SKUs as queryable rows (4,264 rows materialised from live FTP feeds) | feat(competitor-prices) | cbca30b |
+| 2026-05-04 | woo:import-products bulk Woo catalogue import + optional supplier enrichment | feat(sync) | 78d43ea |
 
 ## Accumulated Context
 

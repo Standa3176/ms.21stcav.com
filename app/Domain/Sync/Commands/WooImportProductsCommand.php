@@ -120,6 +120,14 @@ final class WooImportProductsCommand extends BaseCommand
                     ? (int) $p['stock_quantity']
                     : null;
 
+                // Quick task 260504-imk follow-up — extract buy_price from Woo's
+                // meta_data. The legacy meetingstore.co.uk Woo store uses the
+                // "Algoritmika WC Cost of Goods" plugin which stores cost as
+                // meta_key=_alg_wc_cog_cost. Without reading meta_data the
+                // import has no buy_price unless --with-supplier (which is
+                // gated on having Supplier API credentials).
+                $cogCost = $this->extractMetaValue($p['meta_data'] ?? [], '_alg_wc_cog_cost');
+
                 $payload = [
                     'sku' => $sku !== '' ? $sku : null,
                     'name' => (string) ($p['name'] ?? ''),
@@ -131,11 +139,18 @@ final class WooImportProductsCommand extends BaseCommand
                     'short_description' => (string) ($p['short_description'] ?? ''),
                     'long_description' => (string) ($p['description'] ?? ''),
                     'sell_price' => $this->parseDecimal($p['regular_price'] ?? $p['price'] ?? null),
+                    'buy_price' => $this->parseDecimal($cogCost),
                     'last_synced_at' => now(),
                 ];
 
+                // Supplier API enrichment overrides the meta-derived buy_price
+                // when present (supplier feed is more authoritative than the
+                // last-synced cost stored on the Woo product).
                 if ($withSupplier && $sku !== '' && isset($supplierFeed[$sku])) {
-                    $payload['buy_price'] = $this->parseDecimal($supplierFeed[$sku]['price'] ?? null);
+                    $supplierBuy = $this->parseDecimal($supplierFeed[$sku]['price'] ?? null);
+                    if ($supplierBuy !== null) {
+                        $payload['buy_price'] = $supplierBuy;
+                    }
                 }
 
                 if ($dryRun) {
@@ -201,6 +216,32 @@ final class WooImportProductsCommand extends BaseCommand
         ));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Extract a single meta_data value by key. Woo returns meta_data as an
+     * array of {id, key, value} entries (each item is stdClass via the SDK,
+     * cast to array on access). Returns null if the key isn't present or
+     * its value is empty.
+     *
+     * @param  iterable<int, array<string, mixed>|object>  $metaData
+     */
+    private function extractMetaValue(iterable $metaData, string $key): ?string
+    {
+        foreach ($metaData as $entry) {
+            $entry = (array) $entry;
+            if (($entry['key'] ?? null) !== $key) {
+                continue;
+            }
+            $value = $entry['value'] ?? null;
+            if ($value === null || $value === '' || ! is_scalar($value)) {
+                return null;
+            }
+
+            return (string) $value;
+        }
+
+        return null;
     }
 
     /**

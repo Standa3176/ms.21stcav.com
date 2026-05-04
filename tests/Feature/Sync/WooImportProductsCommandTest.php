@@ -108,6 +108,55 @@ it('captures stock_quantity when manage_stock=true and null when manage_stock=fa
     expect(Product::where('woo_product_id', 603)->first()->stock_quantity)->toBe(0);
 });
 
+// Quick task 260504-imk follow-up — extract buy_price from Woo's _alg_wc_cog_cost meta.
+it('extracts buy_price from _alg_wc_cog_cost meta_data', function (): void {
+    app()->instance(WooClient::class, fakeWooPage([
+        [
+            'id' => 701, 'sku' => 'WITH-COG', 'name' => 'With COG', 'type' => 'simple',
+            'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '99.99',
+            'meta_data' => [
+                ['key' => 'rank_math_seo_score', 'value' => '85'],
+                ['key' => '_alg_wc_cog_cost', 'value' => '60.00'],
+                ['key' => '_supplier_field', 'value' => 'Ingram'],
+            ],
+        ],
+        [
+            'id' => 702, 'sku' => 'NO-COG', 'name' => 'No COG', 'type' => 'simple',
+            'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '49.99',
+            'meta_data' => [],
+        ],
+    ]));
+    app()->instance(SupplierClient::class, fakeSupplier([]));
+
+    $this->artisan('woo:import-products')->assertExitCode(0);
+
+    $withCog = Product::where('woo_product_id', 701)->first();
+    expect((string) $withCog->buy_price)->toBe('60.0000');
+    expect((string) $withCog->sell_price)->toBe('99.9900');
+
+    $noCog = Product::where('woo_product_id', 702)->first();
+    expect($noCog->buy_price)->toBeNull();
+});
+
+// --with-supplier overrides the meta-derived buy_price (supplier feed is authoritative).
+it('--with-supplier overrides meta-derived buy_price when supplier has the SKU', function (): void {
+    app()->instance(WooClient::class, fakeWooPage([
+        [
+            'id' => 801, 'sku' => 'BOTH-SOURCES', 'name' => 'Both Sources', 'type' => 'simple',
+            'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '99.99',
+            'meta_data' => [['key' => '_alg_wc_cog_cost', 'value' => '60.00']],
+        ],
+    ]));
+    app()->instance(SupplierClient::class, fakeSupplier([
+        'BOTH-SOURCES' => ['price' => '55.00', 'stock' => 10],
+    ]));
+
+    $this->artisan('woo:import-products', ['--with-supplier' => true])->assertExitCode(0);
+
+    // Supplier 55.00 wins over Woo meta 60.00
+    expect((string) Product::where('woo_product_id', 801)->first()->buy_price)->toBe('55.0000');
+});
+
 it('skips type=variation rows', function (): void {
     app()->instance(WooClient::class, fakeWooPage([
         ['id' => 401, 'sku' => 'SIMPLE', 'name' => 'Simple', 'type' => 'simple', 'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '10'],

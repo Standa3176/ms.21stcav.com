@@ -80,9 +80,14 @@ class CompetitorFtpFeedResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = CompetitorFtpFeed::query()
-            ->where('last_pull_status', CompetitorFtpFeed::STATUS_FAILED)
-            ->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = CompetitorFtpFeed::query()
+                ->where('last_pull_status', CompetitorFtpFeed::STATUS_FAILED)
+                ->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? (string) $count : null;
     }

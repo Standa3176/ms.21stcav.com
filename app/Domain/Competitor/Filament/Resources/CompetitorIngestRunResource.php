@@ -60,10 +60,15 @@ class CompetitorIngestRunResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = CompetitorIngestRun::query()
-            ->where('status', CompetitorIngestRun::STATUS_FAILED)
-            ->where('started_at', '>=', now()->subDay())
-            ->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = CompetitorIngestRun::query()
+                ->where('status', CompetitorIngestRun::STATUS_FAILED)
+                ->where('started_at', '>=', now()->subDay())
+                ->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? (string) $count : null;
     }

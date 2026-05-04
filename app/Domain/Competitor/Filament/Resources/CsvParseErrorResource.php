@@ -69,7 +69,12 @@ class CsvParseErrorResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = CsvParseError::query()->whereNull('resolved_at')->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = CsvParseError::query()->whereNull('resolved_at')->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? (string) $count : null;
     }

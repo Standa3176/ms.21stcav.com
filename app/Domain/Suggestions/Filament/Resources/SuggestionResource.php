@@ -48,7 +48,12 @@ class SuggestionResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = Suggestion::query()->where('status', Suggestion::STATUS_PENDING)->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = Suggestion::query()->where('status', Suggestion::STATUS_PENDING)->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? (string) $count : null;
     }

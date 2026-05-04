@@ -59,7 +59,12 @@ class CompetitorPriceResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = CompetitorPrice::query()->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = CompetitorPrice::query()->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? number_format($count) : null;
     }

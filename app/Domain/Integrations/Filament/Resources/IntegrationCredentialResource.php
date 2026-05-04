@@ -71,7 +71,12 @@ class IntegrationCredentialResource extends Resource
      */
     public static function getNavigationBadge(): ?string
     {
-        $count = IntegrationCredential::query()->where('is_active', false)->count();
+        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
+        try {
+            $count = IntegrationCredential::query()->where('is_active', false)->count();
+        } catch (\Throwable) {
+            return null;
+        }
 
         return $count > 0 ? (string) $count : null;
     }

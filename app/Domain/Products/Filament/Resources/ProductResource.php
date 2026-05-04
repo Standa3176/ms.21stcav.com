@@ -185,10 +185,35 @@ class ProductResource extends Resource
                         'external' => 'danger',
                         default => 'gray',
                     }),
-                TextColumn::make('status')->badge(),
+                // Quick task 260504-imk — translate Woo's internal status codes
+                // (publish/draft/private/pending) into ops-friendly labels.
+                TextColumn::make('status')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => match ($state) {
+                        'publish' => 'Live',
+                        'draft' => 'Pending',
+                        'private' => 'Hidden',
+                        default => \Illuminate\Support\Str::headline((string) $state),
+                    })
+                    ->color(fn ($state): string => match ($state) {
+                        'publish' => 'success',
+                        'draft' => 'warning',
+                        'private' => 'gray',
+                        default => 'gray',
+                    }),
+                TextColumn::make('stock_quantity')
+                    ->label('Stock Qty')
+                    ->placeholder('—')
+                    ->sortable()
+                    ->numeric(),
                 TextColumn::make('stock_status')->badge()->placeholder('—'),
                 TextColumn::make('buy_price')->money('GBP')->sortable(),
                 TextColumn::make('sell_price')->money('GBP')->sortable(),
+                TextColumn::make('short_description')
+                    ->label('Short description')
+                    ->limit(60)
+                    ->tooltip(fn ($record) => $record?->short_description)
+                    ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('is_custom_ms')->boolean()->label('Custom-MS'),
                 IconColumn::make('exclude_from_auto_update')->boolean()->label('Excluded'),
                 TextColumn::make('last_synced_at')->dateTime()->sortable()->placeholder('never'),
@@ -202,10 +227,10 @@ class ProductResource extends Resource
                     'external' => 'External',
                 ]),
                 SelectFilter::make('status')->multiple()->options([
-                    'publish' => 'Publish',
-                    'pending' => 'Pending',
-                    'draft' => 'Draft',
-                    'private' => 'Private',
+                    'publish' => 'Live',
+                    'draft' => 'Pending',
+                    'pending' => 'Pending Review (Woo)',
+                    'private' => 'Hidden',
                 ]),
                 TernaryFilter::make('is_custom_ms')->label('Custom-MS'),
                 TernaryFilter::make('exclude_from_auto_update')->label('Excluded from auto-update'),

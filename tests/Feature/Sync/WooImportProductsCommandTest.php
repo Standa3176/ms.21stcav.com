@@ -91,6 +91,23 @@ it('--limit caps the number of simple products imported', function (): void {
     expect(Product::count())->toBe(2);
 });
 
+// Quick task 260504-imk — stock_quantity capture rules.
+it('captures stock_quantity when manage_stock=true and null when manage_stock=false', function (): void {
+    app()->instance(WooClient::class, fakeWooPage([
+        ['id' => 601, 'sku' => 'TRACKED', 'name' => 'Tracked', 'type' => 'simple', 'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '10', 'manage_stock' => true, 'stock_quantity' => 42],
+        ['id' => 602, 'sku' => 'UNTRACKED', 'name' => 'Untracked', 'type' => 'simple', 'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '20', 'manage_stock' => false, 'stock_quantity' => 99],
+        ['id' => 603, 'sku' => 'ZERO-TRACKED', 'name' => 'Zero Tracked', 'type' => 'simple', 'status' => 'publish', 'stock_status' => 'outofstock', 'regular_price' => '30', 'manage_stock' => true, 'stock_quantity' => 0],
+    ]));
+    app()->instance(SupplierClient::class, fakeSupplier([]));
+
+    $this->artisan('woo:import-products')->assertExitCode(0);
+
+    expect(Product::where('woo_product_id', 601)->first()->stock_quantity)->toBe(42);
+    expect(Product::where('woo_product_id', 602)->first()->stock_quantity)->toBeNull();
+    // Critical: 0-tracked must persist as 0, not null — distinguishes "0 in stock" from "untracked"
+    expect(Product::where('woo_product_id', 603)->first()->stock_quantity)->toBe(0);
+});
+
 it('skips type=variation rows', function (): void {
     app()->instance(WooClient::class, fakeWooPage([
         ['id' => 401, 'sku' => 'SIMPLE', 'name' => 'Simple', 'type' => 'simple', 'status' => 'publish', 'stock_status' => 'instock', 'regular_price' => '10'],

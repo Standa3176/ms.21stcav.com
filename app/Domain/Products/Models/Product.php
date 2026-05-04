@@ -31,7 +31,7 @@ final class Product extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'woo_product_id', 'sku', 'name', 'type', 'status', 'stock_status',
+        'woo_product_id', 'sku', 'name', 'type', 'status', 'stock_status', 'stock_quantity',
         'brand_id', 'category_id',
         'buy_price', 'sell_price', 'cost_price',
         'is_custom_ms', 'exclude_from_auto_update', 'tags',
@@ -59,6 +59,7 @@ final class Product extends Model
         'sell_price' => 'decimal:4',
         'cost_price' => 'decimal:4',
         'last_sales_count_90d' => 'int',
+        'stock_quantity' => 'integer',
         'last_sales_count_computed_at' => 'datetime',
         // Phase 6 Plan 01 — auto-create casts.
         'requires_manual_image_review' => 'bool',

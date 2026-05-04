@@ -82,6 +82,10 @@ final class WooImportProductsCommand extends BaseCommand
             }
 
             foreach ($products as $p) {
+                // WooClient::normaliseResponseBody only json-rounds-trip the outer
+                // response, leaving each product as stdClass. Cast to array so the
+                // existing array-access pattern works for both shapes.
+                $p = (array) $p;
                 $type = (string) ($p['type'] ?? 'simple');
 
                 if ($type === 'variation') {
@@ -107,12 +111,22 @@ final class WooImportProductsCommand extends BaseCommand
                     continue;
                 }
 
+                // Quick task 260504-imk — capture stock_quantity only when Woo is
+                // actually managing stock. Woo returns stock_quantity=0 even when
+                // manage_stock=false (the field is meaningless in that case); we
+                // store null to distinguish "we have 0 in stock" from "stock isn't tracked."
+                $manageStock = (bool) ($p['manage_stock'] ?? false);
+                $stockQty = $manageStock && isset($p['stock_quantity'])
+                    ? (int) $p['stock_quantity']
+                    : null;
+
                 $payload = [
                     'sku' => $sku !== '' ? $sku : null,
                     'name' => (string) ($p['name'] ?? ''),
                     'type' => $type,
                     'status' => (string) ($p['status'] ?? 'publish'),
                     'stock_status' => (string) ($p['stock_status'] ?? 'instock'),
+                    'stock_quantity' => $stockQty,
                     'slug' => (string) ($p['slug'] ?? ''),
                     'short_description' => (string) ($p['short_description'] ?? ''),
                     'long_description' => (string) ($p['description'] ?? ''),

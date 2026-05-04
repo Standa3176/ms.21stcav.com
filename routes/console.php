@@ -60,15 +60,17 @@ Schedule::command('woo:import-products')
     ->timezone('Europe/London')
     ->description('Daily Woo catalogue import (publish + draft + private products)');
 
-// Quick task 260504-m5w — daily supplier DB pull from VPS MySQL.
-// Runs AFTER woo:import-products so any new Woo SKUs get matched same-day.
+// Quick task 260504-m5w + 260504-onx — Mon-Fri supplier DB pull at 07:00 London.
+// Re-pitched from daily 03:30 to Mon-Fri 07:00 per ops preference: aligns the
+// freshest supplier price + stock with start-of-day decisions and skips weekends
+// (supplier feed source itself doesn't refresh weekends per their cron cadence).
 // LIVE — no kill-switch (idempotent + ops verified manually pre-deployment).
 Schedule::command('supplier:db-sync')
-    ->dailyAt('03:30')
+    ->cron('0 7 * * 1-5') // Mon-Fri at 07:00 (cron DOW: 1=Mon ... 5=Fri)
     ->withoutOverlapping(60)
     ->onOneServer()
     ->timezone('Europe/London')
-    ->description('Daily supplier MySQL VPS price + stock sync');
+    ->description('Mon-Fri supplier MySQL VPS price + stock sync (07:00 London)');
 
 // Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive retention prune (COMP-12).
 // Default retention: config('competitor.csv_retention_days', 90). NEVER touches
@@ -81,20 +83,18 @@ Schedule::command('competitor:csv-prune')
     ->timezone('Europe/London')
     ->description('Prune competitor CSV archive files older than 90d (COMP-12; D-09 auditable)');
 
-// Phase 11.1 Plan 01 — twice-weekly competitor FTP pull (D-07).
-// Supplier updates competitor data Sunday + Wednesday at 06:00 London time;
-// polling more often is wasted load. Lands files in storage/app/competitors/incoming/
+// Phase 11.1 Plan 01 + Quick task 260504-onx — twice-weekly competitor FTP pull (D-07).
+// Re-pitched to Sun+Wed 02:00 London (was 06:00) to land competitor data well
+// before any morning ops review. Lands files in storage/app/competitors/incoming/
 // for competitor:watch to pick up on its next 5-min sweep via the >30s mtime gate.
 // Failures increment a per-source counter; 3 consecutive failures auto-disable
 // the source and notify recipients with receives_competitor_ftp_alerts=true (D-12).
-// Runs BEFORE competitor:watch so the "fetch then watch" mental model is
-// preserved at the schedule-list level.
 Schedule::command('competitor:ftp-pull --live')
-    ->cron('0 6 * * 0,3') // Sun + Wed at 06:00 (cron DOW: 0=Sun, 3=Wed)
+    ->cron('0 2 * * 0,3') // Sun + Wed at 02:00 (cron DOW: 0=Sun, 3=Wed)
     ->withoutOverlapping(20)
     ->onOneServer()
     ->timezone('Europe/London')
-    ->description('Pull competitor CSVs Sun+Wed 06:00 London (Phase 11.1 Plan 01)');
+    ->description('Pull competitor CSVs Sun+Wed 02:00 London (Phase 11.1 Plan 01)');
 
 // Phase 5 Plan 02 — 5-minute competitor CSV watcher (COMP-01 + COMP-04).
 // Picks up aged files from storage/app/competitors/incoming/ and dispatches

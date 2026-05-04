@@ -2,24 +2,8 @@
     <div class="space-y-6">
         <x-filament::section>
             <x-slot name="heading">Search Product</x-slot>
-            <div wire:ignore>
-                <select
-                    onchange="@this.set('productId', this.value)"
-                    class="fi-input block w-full rounded-lg border-gray-300 dark:border-gray-700 dark:bg-gray-900 shadow-sm"
-                >
-                    <option value="">— Pick a product —</option>
-                    @foreach (\App\Domain\Products\Models\Product::query()
-                        ->whereNotNull('sku')
-                        ->orderBy('sku')
-                        ->limit(500)
-                        ->get(['id', 'sku', 'name']) as $p)
-                        <option value="{{ $p->id }}" {{ $productId == $p->id ? 'selected' : '' }}>
-                            {{ $p->sku }} — {{ \Illuminate\Support\Str::limit($p->name, 60) }}
-                        </option>
-                    @endforeach
-                </select>
-                <p class="mt-2 text-xs text-gray-500">Showing first 500 SKUs alphabetically. Switch to a saved filter or use Eloquent search if you need more.</p>
-            </div>
+            <x-slot name="description">Type SKU, name, or description fragment — searches all 5,633 products.</x-slot>
+            {{ $this->form }}
         </x-filament::section>
 
         @if (! is_null($product ?? null))

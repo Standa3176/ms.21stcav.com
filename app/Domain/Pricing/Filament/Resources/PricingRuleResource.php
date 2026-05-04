@@ -47,12 +47,11 @@ class PricingRuleResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-scale';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). All
-    // pricing/competitor/CRM-log surfaces consolidated under "Catalogue"
-    // for a single product-related sidebar section.
+    // Quick task 260504-ev5 — 8-group nav restructure. Pricing rules sit
+    // in Catalogue at sort 30 (after Products@10 + Customer Groups@20).
     protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $recordTitleAttribute = 'id';
 

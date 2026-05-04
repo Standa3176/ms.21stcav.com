@@ -42,10 +42,11 @@ class CsvParseErrorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Moved to 'FTP & CSV'
+    // group at sort 40 (after Competitor Ingest Runs@30).
+    protected static ?string $navigationGroup = 'FTP & CSV';
 
-    protected static ?int $navigationSort = 60;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $pluralModelLabel = 'CSV Parse Errors';
 
@@ -59,6 +60,23 @@ class CsvParseErrorResource extends Resource
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with(['competitor']);
+    }
+
+    /**
+     * Quick task 260504-ev5 — danger badge for unresolved parse errors.
+     * Drives the operator to the quarantine triage page when CSV ingest
+     * starts producing rows that can't be parsed automatically.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = CsvParseError::query()->whereNull('resolved_at')->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function form(Form $form): Form

@@ -60,8 +60,8 @@ final class AgentRunRejectionInboxPage extends Page implements HasTable
 
     protected static ?string $slug = 'agent-runs/rejection-inbox';
 
-    // Phase 9 Plan 02 — sits after AutoCreateReviewResource@30 in Review group.
-    protected static ?int $navigationSort = 40;
+    // Quick task 260504-ev5 — Review group sort 30 (after Auto-Create@10 + Agent Runs@20).
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationIcon = 'heroicon-o-flag';
 

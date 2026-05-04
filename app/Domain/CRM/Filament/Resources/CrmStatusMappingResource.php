@@ -37,11 +37,11 @@ class CrmStatusMappingResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-queue-list';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). CRM status
-    // mapping is admin config — Admin group at sort 80.
-    protected static ?string $navigationGroup = 'Admin';
+    // Quick task 260504-ev5 — 8-group nav restructure. CRM status mapping
+    // moved to dedicated 'CRM & Bitrix' group at sort 20.
+    protected static ?string $navigationGroup = 'CRM & Bitrix';
 
-    protected static ?int $navigationSort = 80;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $recordTitleAttribute = 'woo_status';
 

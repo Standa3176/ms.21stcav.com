@@ -36,16 +36,32 @@ class ImportIssueResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Import
-    // issues affect product data — moved into Catalogue alongside the
-    // Competitor CSV ingest issues for a single triage surface.
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Import issues come
+    // from Woo↔supplier sync — moved into 'WooCommerce' group at sort 20.
+    protected static ?string $navigationGroup = 'WooCommerce';
 
-    protected static ?int $navigationSort = 90;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $recordTitleAttribute = 'sku';
 
     protected static ?string $pluralModelLabel = 'Import Issues';
+
+    /**
+     * Quick task 260504-ev5 — warning badge for unresolved import issues.
+     * Mirrors the table's TernaryFilter "Unresolved" path; pricing_manager
+     * triages these via the bulk Mark Resolved action.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = ImportIssue::query()->whereNull('resolved_at')->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
 
     public static function form(Form $form): Form
     {

@@ -51,8 +51,11 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
-    // Quick task 260503-rul — moved to Admin group (sort 30, below Integration Credentials at 20).
-    protected static ?string $navigationGroup = 'Admin';
+    // Quick task 260504-ev5 — 8-group nav restructure. Reverted from Admin
+    // (260503-rul "secrets together") to FTP & CSV (domain locality — these
+    // creds authenticate the feeds in this group). Integration credentials
+    // for Anthropic/OpenAI/Woo etc. stay in Admin.
+    protected static ?string $navigationGroup = 'FTP & CSV';
 
     protected static ?string $navigationLabel = 'FTP Credentials';
 
@@ -62,7 +65,7 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-credentials';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {

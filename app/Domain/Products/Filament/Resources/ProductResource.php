@@ -44,8 +44,8 @@ class ProductResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). ProductResource
-    // is the canonical first item under Catalogue.
+    // Quick task 260504-ev5 — 8-group nav restructure. ProductResource is the
+    // canonical first item under Catalogue.
     protected static ?string $navigationGroup = 'Catalogue';
 
     protected static ?int $navigationSort = 10;
@@ -53,6 +53,23 @@ class ProductResource extends Resource
     protected static ?string $recordTitleAttribute = 'name';
 
     protected static ?string $pluralModelLabel = 'Products';
+
+    /**
+     * Quick task 260504-ev5 — gray informational total-count badge with
+     * thousands separator (Woo catalogue is ~5k SKUs per v2 STACK assumption).
+     * Hidden when zero (clean install) so the sidebar stays uncluttered.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = Product::query()->count();
+
+        return $count > 0 ? number_format($count) : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'gray';
+    }
 
     public static function form(Form $form): Form
     {

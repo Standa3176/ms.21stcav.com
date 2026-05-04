@@ -54,8 +54,9 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cloud-arrow-down';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Moved from Catalogue
+    // to dedicated 'FTP & CSV' group at sort 20 (after FTP Credentials@10).
+    protected static ?string $navigationGroup = 'FTP & CSV';
 
     protected static ?string $navigationLabel = 'FTP Feeds';
 
@@ -65,11 +66,30 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-feeds';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 20;
 
     public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()->with(['competitor', 'credential']);
+    }
+
+    /**
+     * Quick task 260504-ev5 — danger badge when any feed last_pull_status='failed'.
+     * Surfaces silent FTP outages in the sidebar so ops doesn't wait for the
+     * 3-strike consecutive_failures auto-disable email to learn a feed broke.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = CompetitorFtpFeed::query()
+            ->where('last_pull_status', CompetitorFtpFeed::STATUS_FAILED)
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function form(Form $form): Form

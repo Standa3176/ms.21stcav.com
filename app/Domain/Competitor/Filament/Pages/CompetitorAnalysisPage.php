@@ -31,10 +31,11 @@ class CompetitorAnalysisPage extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Moved into the
+    // dedicated 'Competitors' group at sort 30.
+    protected static ?string $navigationGroup = 'Competitors';
 
-    protected static ?int $navigationSort = 35;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'Competitor Analysis';
 

@@ -41,11 +41,12 @@ class AutoCreateSettingsPage extends Page implements HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-adjustments-horizontal';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Settings
-    // page slot under Admin group at sort 40.
-    protected static ?string $navigationGroup = 'Admin';
+    // Quick task 260504-ev5 — 8-group nav restructure. Auto-Create config
+    // belongs with the WooCommerce group (alongside SyncRuns + ImportIssues +
+    // Skip Rules) for the auto-create-product workflow surface.
+    protected static ?string $navigationGroup = 'WooCommerce';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'Auto-Create Settings';
 

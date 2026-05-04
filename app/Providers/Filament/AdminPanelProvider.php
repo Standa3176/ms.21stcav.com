@@ -32,6 +32,27 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex('#5B21B6'),
             ])
+            // Quick task 260504-ev5 — explicit 8-group nav order. Filament defaults
+            // to alphabetical group ordering; this enforces the domain-aligned
+            // sequence matching ops mental model (left → top of the sidebar):
+            //   Operations  — daily ambient (Home, Horizon, Notifications)
+            //   Catalogue   — product/pricing master data
+            //   Competitors — competitor intelligence
+            //   FTP & CSV   — feed plumbing (creds + feeds + ingest forensics)
+            //   WooCommerce — Woo-bound jobs + import triage
+            //   CRM & Bitrix — CRM mapping + push log + pipeline config
+            //   Review      — human-in-the-loop triage queues
+            //   Admin       — credentials + alert recipients (rare-touch)
+            ->navigationGroups([
+                'Operations',
+                'Catalogue',
+                'Competitors',
+                'FTP & CSV',
+                'WooCommerce',
+                'CRM & Bitrix',
+                'Review',
+                'Admin',
+            ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
             // Phase 7 Plan 02 — D-03 native Horizon Pages (post-09.1 follow-up #3).

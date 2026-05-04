@@ -46,11 +46,11 @@ class CrmPushLogResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). CRM push
-    // log is product/pricing-data-flow forensics — slot under Catalogue.
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. CRM push log moved
+    // from Catalogue to dedicated 'CRM & Bitrix' group at sort 30.
+    protected static ?string $navigationGroup = 'CRM & Bitrix';
 
-    protected static ?int $navigationSort = 80;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $navigationLabel = 'CRM Push Log';
 

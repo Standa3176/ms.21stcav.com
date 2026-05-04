@@ -40,9 +40,8 @@ class AgentRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cpu-chip';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). AgentRuns
-    // are forensics rows for the Pricing/CSV/etc. agents — moved into Review
-    // alongside Suggestions + Auto-Create review queues for one-stop triage.
+    // Quick task 260504-ev5 — 8-group nav restructure. AgentRuns stay in the
+    // Review group at sort 20 (after AutoCreateReviewResource@10).
     protected static ?string $navigationGroup = 'Review';
 
     protected static ?int $navigationSort = 20;
@@ -57,6 +56,27 @@ class AgentRunResource extends Resource
     public static function canCreate(): bool
     {
         return false;
+    }
+
+    /**
+     * Quick task 260504-ev5 — danger badge when any agent run failed in the
+     * last 24h. Bounded window prevents the badge climbing forever as runs
+     * accumulate (5-year retention; D-07). Status enum-cast on the model
+     * stores the string value 'failed' in the DB column.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = AgentRun::query()
+            ->where('status', AgentRunStatus::Failed->value)
+            ->where('started_at', '>=', now()->subDay())
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function table(Table $table): Table

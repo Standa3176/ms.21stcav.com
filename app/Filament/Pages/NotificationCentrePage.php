@@ -44,7 +44,8 @@ class NotificationCentrePage extends Page
 
     protected static ?string $navigationLabel = 'Notification Centre';
 
-    protected static ?int $navigationSort = 30;
+    // Quick task 260504-ev5 — Operations group, sort 100 (after Horizon children).
+    protected static ?int $navigationSort = 100;
 
     protected static string $view = 'filament.pages.notification-centre';
 

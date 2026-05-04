@@ -28,11 +28,11 @@ class AlertRecipientResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-envelope';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Admin-only
-    // settings consolidated under the new 'Admin' group.
+    // Quick task 260504-ev5 — 8-group nav restructure. Alert recipients sit
+    // in Admin group at sort 20 (after Integration Credentials@10).
     protected static ?string $navigationGroup = 'Admin';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $navigationLabel = 'Alert Recipients';
 

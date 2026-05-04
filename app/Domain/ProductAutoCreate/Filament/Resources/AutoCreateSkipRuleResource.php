@@ -51,11 +51,11 @@ class AutoCreateSkipRuleResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-funnel';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Skip rules
-    // are vendor-exclusion config — Admin group, alongside other policy config.
-    protected static ?string $navigationGroup = 'Admin';
+    // Quick task 260504-ev5 — 8-group nav restructure. Skip rules are part
+    // of the auto-create flow — moved to 'WooCommerce' group at sort 40.
+    protected static ?string $navigationGroup = 'WooCommerce';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $navigationLabel = 'Auto-Create Skip Rules';
 

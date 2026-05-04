@@ -79,12 +79,11 @@ class AutoCreateReviewResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-check';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Auto-Create
-    // Review is a triage queue — slot under Review (alongside Suggestions +
-    // Agent Runs). Skip Rules + Settings move to Admin (config, not triage).
+    // Quick task 260504-ev5 — 8-group nav restructure. Auto-Create Review
+    // remains in Review group at sort 10 (first item — primary triage inbox).
     protected static ?string $navigationGroup = 'Review';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $navigationLabel = 'Auto-Create Review';
 
@@ -109,6 +108,25 @@ class AutoCreateReviewResource extends Resource
     {
         return parent::getEloquentQuery()
             ->whereIn('auto_create_status', self::REVIEW_STATUSES);
+    }
+
+    /**
+     * Quick task 260504-ev5 — warning badge for drafts awaiting review.
+     * Re-uses the same REVIEW_STATUSES set the table query scopes by, so
+     * the badge count and the table row count always agree.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = Product::query()
+            ->whereIn('auto_create_status', self::REVIEW_STATUSES)
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
     }
 
     public static function form(Form $form): Form

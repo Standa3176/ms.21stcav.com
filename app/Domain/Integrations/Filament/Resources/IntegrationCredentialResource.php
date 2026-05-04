@@ -48,8 +48,8 @@ class IntegrationCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-link';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Admin-only
-    // credential vault — slot under Admin group at sort 20.
+    // Quick task 260504-ev5 — 8-group nav restructure. Integration creds
+    // (Anthropic/OpenAI/Woo/Bitrix/Langfuse) stay in Admin group at sort 10.
     protected static ?string $navigationGroup = 'Admin';
 
     protected static ?string $navigationLabel = 'Integration Credentials';
@@ -60,7 +60,26 @@ class IntegrationCredentialResource extends Resource
 
     protected static ?string $slug = 'integration-credentials';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 10;
+
+    /**
+     * Quick task 260504-ev5 — warning badge when any credential row has been
+     * deactivated (is_active=false). Inactive integration creds typically
+     * mean an outage in progress — surface that in the sidebar so admins
+     * can fix the connection before downstream agents burn budget against
+     * a misconfigured upstream.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = IntegrationCredential::query()->where('is_active', false)->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
 
     public static function form(Form $form): Form
     {

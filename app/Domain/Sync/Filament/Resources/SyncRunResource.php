@@ -33,11 +33,11 @@ class SyncRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-arrow-path';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). SyncRuns
-    // are system-run logs / ops-pulse — keep under Operations alongside Horizon.
-    protected static ?string $navigationGroup = 'Operations';
+    // Quick task 260504-ev5 — 8-group nav restructure. SyncRuns are Woo
+    // bulk-sync forensics — moved to dedicated 'WooCommerce' group at sort 10.
+    protected static ?string $navigationGroup = 'WooCommerce';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 10;
 
     protected static ?string $recordTitleAttribute = 'id';
 
@@ -52,6 +52,26 @@ class SyncRunResource extends Resource
         return parent::getEloquentQuery()
             ->withCount(['errors', 'items'])
             ->latest('started_at');
+    }
+
+    /**
+     * Quick task 260504-ev5 — danger badge when a supplier sync failed in
+     * the last 24h. Bounded window so historical failures don't keep the
+     * badge red forever once ops has resolved them.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = SyncRun::query()
+            ->where('status', SyncRun::STATUS_FAILED)
+            ->where('started_at', '>=', now()->subDay())
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function table(Table $table): Table

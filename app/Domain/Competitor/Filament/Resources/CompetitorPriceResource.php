@@ -42,15 +42,32 @@ class CompetitorPriceResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-currency-pound';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups). Competitor
-    // price browser folded into Catalogue (sits next to product/pricing data).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Moved into the new
+    // dedicated 'Competitors' group (sort 20, after Competitors itself@10).
+    protected static ?string $navigationGroup = 'Competitors';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $pluralModelLabel = 'Competitor Prices';
 
     protected static ?string $modelLabel = 'Competitor Price';
+
+    /**
+     * Quick task 260504-ev5 — gray informational total-count badge with
+     * thousands separator (the table reaches 100k+ rows in production).
+     * Hidden when zero (clean install) so the sidebar stays uncluttered.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = CompetitorPrice::query()->count();
+
+        return $count > 0 ? number_format($count) : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'gray';
+    }
 
     /**
      * Eager-load the belongsTo Competitor so the relationship column doesn't

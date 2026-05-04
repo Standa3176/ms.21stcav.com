@@ -32,11 +32,31 @@ class SuggestionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-inbox';
 
-    protected static ?string $navigationGroup = 'Review';
+    // Quick task 260504-ev5 — 8-group nav restructure. Suggestions are
+    // primarily competitor-opportunity-driven (margin_change, new_product_opportunity)
+    // — moved from Review to Competitors at sort 40.
+    protected static ?string $navigationGroup = 'Competitors';
 
-    protected static ?int $navigationSort = 10;
+    protected static ?int $navigationSort = 40;
 
     protected static ?string $recordTitleAttribute = 'kind';
+
+    /**
+     * Quick task 260504-ev5 — pending-suggestion attention badge.
+     * Renders a warning-coloured count when there are pending suggestions
+     * awaiting human triage. Hides entirely when zero (?string null return).
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = Suggestion::query()->where('status', Suggestion::STATUS_PENDING)->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
 
     /**
      * Eager-load relations displayed in the table to prevent N+1 queries

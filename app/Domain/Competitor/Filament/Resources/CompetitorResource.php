@@ -39,7 +39,9 @@ class CompetitorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-building-storefront';
 
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Competitors moves to
+    // its own dedicated 'Competitors' group (was lumped under Catalogue).
+    protected static ?string $navigationGroup = 'Competitors';
 
     protected static ?string $navigationLabel = 'Competitors';
 
@@ -50,6 +52,23 @@ class CompetitorResource extends Resource
     protected static ?string $slug = 'competitors';
 
     protected static ?int $navigationSort = 10;
+
+    /**
+     * Quick task 260504-ev5 — gray informational total-count badge.
+     * Hidden when zero so a clean install doesn't show "0" against a
+     * prompt-to-add-competitors empty state.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = Competitor::query()->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'gray';
+    }
 
     public static function form(Form $form): Form
     {

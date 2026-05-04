@@ -33,10 +33,11 @@ class CompetitorIngestRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    // Phase 9 Plan 02 — Brand recolor + nav restructure (4 groups).
-    protected static ?string $navigationGroup = 'Catalogue';
+    // Quick task 260504-ev5 — 8-group nav restructure. Moved to dedicated
+    // 'FTP & CSV' group at sort 30 (after FTP Feeds@20).
+    protected static ?string $navigationGroup = 'FTP & CSV';
 
-    protected static ?int $navigationSort = 70;
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $pluralModelLabel = 'Competitor Ingest Runs';
 
@@ -51,6 +52,25 @@ class CompetitorIngestRunResource extends Resource
         return parent::getEloquentQuery()
             ->with(['competitor'])
             ->withCount(['parseErrors']);
+    }
+
+    /**
+     * Quick task 260504-ev5 — danger badge when a competitor CSV ingest run
+     * failed in the last 24h. Bounded window keeps the badge actionable.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        $count = CompetitorIngestRun::query()
+            ->where('status', CompetitorIngestRun::STATUS_FAILED)
+            ->where('started_at', '>=', now()->subDay())
+            ->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'danger';
     }
 
     public static function table(Table $table): Table

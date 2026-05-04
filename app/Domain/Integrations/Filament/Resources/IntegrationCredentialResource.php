@@ -111,13 +111,20 @@ class IntegrationCredentialResource extends Resource
             // D-05 — kind-aware sub-form. live() on the kind Select above triggers
             // a re-render; this Group's schema callback inspects $get('kind') and
             // emits the right fields per IntegrationCredentialKind::requiredFields().
-            Group::make()->schema(function (callable $get): array {
-                $kindValue = $get('kind');
+            //
+            // On edit the kind Select is disabledOn('edit') and `live()` doesn't
+            // fire on hydration — so $get('kind') returns null on the first
+            // schema-build pass. Fall back to $record->kind when present so the
+            // form renders the correct fields immediately on edit.
+            Group::make()->schema(function (callable $get, ?\App\Domain\Integrations\Models\IntegrationCredential $record): array {
+                $kindValue = $get('kind') ?? $record?->kind?->value;
                 if (! $kindValue) {
                     return [];
                 }
 
-                $kind = is_string($kindValue) ? IntegrationCredentialKind::tryFrom($kindValue) : $kindValue;
+                $kind = $kindValue instanceof IntegrationCredentialKind
+                    ? $kindValue
+                    : IntegrationCredentialKind::tryFrom((string) $kindValue);
                 if (! $kind instanceof IntegrationCredentialKind) {
                     return [];
                 }

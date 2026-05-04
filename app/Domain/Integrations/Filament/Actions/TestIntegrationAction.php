@@ -124,20 +124,18 @@ class TestIntegrationAction
 
             // Suppress mysqli's default warning-on-failure so we can return
             // a clean IntegrationTestResult instead of leaking PHP warnings
-            // into the Filament notification.
-            $previous = mysqli_report(MYSQLI_REPORT_OFF);
+            // into the Filament notification. mysqli_report() returns bool
+            // in PHP 8.4 (not the previous mode), so we don't try to restore
+            // it — the suppression is process-local to this request anyway.
+            mysqli_report(MYSQLI_REPORT_OFF);
 
-            try {
-                $mysqli = @new \mysqli(
-                    $creds['host'],
-                    $creds['username'],
-                    $creds['password'],
-                    $creds['database'],
-                    (int) $creds['port'],
-                );
-            } finally {
-                mysqli_report($previous);
-            }
+            $mysqli = @new \mysqli(
+                $creds['host'],
+                $creds['username'],
+                $creds['password'],
+                $creds['database'],
+                (int) $creds['port'],
+            );
 
             if ($mysqli->connect_errno !== 0) {
                 $latency = (int) round((microtime(true) - $start) * 1000);

@@ -447,6 +447,11 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->runningInConsole()) {
             $this->commands([
                 \App\Domain\Sync\Commands\SyncSupplierCommand::class,
+                // Quick task 260504-d7v — bulk Woo→products import.
+                // Closes the bootstrap gap where products table couldn't be
+                // populated from an existing Woo catalogue (sync:supplier
+                // updates existing rows but never creates).
+                \App\Domain\Sync\Commands\WooImportProductsCommand::class,
                 // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
                 // recompute. Default dry-run, --live opt-in (D-12). Lives
                 // under app/Domain/Pricing/Console/Commands/ so explicit

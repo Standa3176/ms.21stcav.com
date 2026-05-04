@@ -126,6 +126,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | Supplier DB host field accepts hostname or IP (kind-explicit URL detection) | fix(integrations) | 5cf41d0 |
 | 2026-05-04 | Supplier DB test action + edit-form rendering fixes (mysqli_report + Group $record) | fix(integrations) | 69b9273 |
 | 2026-05-04 | supplier:db-sync command + daily schedule (Phase 2; 3,939 of 5,629 SKUs matched) | feat(sync) | 7890d5c |
+| 2026-05-04 | 90-day price + stock history snapshots (5,632 product + 8,017 supplier-offer rows; per-supplier breakdown + Filament UI + history:prune) | feat(products) | 864a14e |
 
 ## Accumulated Context
 

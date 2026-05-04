@@ -117,6 +117,10 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | Was£X Save Y% £Z sale-price extraction + fallback SKU column (242 rows recovered) | feat(competitor-csv) | 53fa2ac |
 | 2026-05-04 | Default new competitors Active + cascade-impact delete modal | feat(competitor-feeds) | a9112e7 |
 | 2026-05-04 | 8-group nav restructure + colored attention badges (29 files) | feat(admin) | def23dc |
+| 2026-05-04 | Wire Domain/Integrations resource discovery (Admin → Integration Credentials) | fix(admin) | 5479e16 |
+| 2026-05-04 | Defensive try/catch on all 12 nav badge queries | fix(admin) | 660b25a |
+| 2026-05-04 | Clarify Integration Credential edit form (saved-value placeholder) | fix(admin) | b33f034 |
+| 2026-05-04 | Live Woo import — 5,633 products + stock_quantity + Live/Pending labels (24.8% competitor match) | feat(products) | 60dee1f |
 
 ## Accumulated Context
 

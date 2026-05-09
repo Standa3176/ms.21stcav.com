@@ -536,6 +536,17 @@ class AppServiceProvider extends ServiceProvider
                 // so the Plan 07-02 WeeklyReportStatusWidget picks up last_sent_at +
                 // recipient_count (Plan 07-02 computeWeeklyReportStatus preserves these).
                 \App\Console\Commands\Reports\WeeklyDigestCommand::class,
+                // Stock-updater parity glue — daily post-supplier-sync digest
+                // (replaces the legacy plugin's send_results_and_cleanup() email).
+                \App\Console\Commands\Reports\SupplierSyncDigestCommand::class,
+                // Stock-updater parity glue — auto-apply margin_change Suggestions
+                // whose delta crosses pricing.auto_apply_threshold_bps (legacy
+                // plugin's setPer() ≥ 8% rule).
+                \App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand::class,
+                // Stock-updater parity glue — flip published Products with
+                // NULL/zero buy_price to status=pending (legacy plugin's
+                // logProductChanges() / handle_pending_product() behaviour).
+                \App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand::class,
                 // ── Phase 7 Plan 05 — Cutover commands (CUT-01..07, D-12..D-21) ────
                 // Six artisan commands orchestrating the legacy-plugin → Laravel
                 // cutover. All extend BaseCommand (correlation_id threading) and

@@ -75,11 +75,9 @@ class QuoteResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-document-text';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Quotes are
-    // catalogue-driven proposals — slot in Catalogue at sort 50.
     protected static ?string $navigationGroup = 'Catalogue';
 
-    protected static ?int $navigationSort = 50;
+    protected static ?int $navigationSort = 20;
 
     protected static ?string $modelLabel = 'Quote';
 

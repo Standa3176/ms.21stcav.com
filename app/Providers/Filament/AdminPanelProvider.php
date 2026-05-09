@@ -32,25 +32,21 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex('#5B21B6'),
             ])
-            // Quick task 260504-ev5 — explicit 8-group nav order. Filament defaults
-            // to alphabetical group ordering; this enforces the domain-aligned
-            // sequence matching ops mental model (left → top of the sidebar):
+            // Explicit nav order — domain-aligned sequence matching ops mental model:
             //   Operations  — daily ambient (Home, Horizon, Notifications)
-            //   Catalogue   — product/pricing master data
-            //   Competitors — competitor intelligence
-            //   FTP & CSV   — feed plumbing (creds + feeds + ingest forensics)
+            //   Catalogue   — product/pricing master data + quotes
+            //   Review      — human-in-the-loop triage (Suggestions, Auto-Create, Agents)
+            //   Competitors — competitor intelligence + FTP feed plumbing
             //   WooCommerce — Woo-bound jobs + import triage
-            //   CRM & Bitrix — CRM mapping + push log + pipeline config
-            //   Review      — human-in-the-loop triage queues
-            //   Admin       — credentials + alert recipients (rare-touch)
+            //   CRM & Bitrix — CRM push log + mapping/pipeline config
+            //   Admin       — credentials + alert recipients + customer groups (rare-touch)
             ->navigationGroups([
                 'Operations',
                 'Catalogue',
+                'Review',
                 'Competitors',
-                'FTP & CSV',
                 'WooCommerce',
                 'CRM & Bitrix',
-                'Review',
                 'Admin',
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')

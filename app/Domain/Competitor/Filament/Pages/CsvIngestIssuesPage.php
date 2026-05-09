@@ -76,6 +76,11 @@ class CsvIngestIssuesPage extends Page implements HasTable
         return auth()->user()?->can('viewAny', CsvParseError::class) ?? false;
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     /** Tab keys → human label mapping used by the Blade view. */
     public function getTabs(): array
     {

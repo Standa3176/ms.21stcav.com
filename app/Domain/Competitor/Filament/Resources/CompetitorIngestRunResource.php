@@ -33,11 +33,9 @@ class CompetitorIngestRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Moved to dedicated
-    // 'FTP & CSV' group at sort 30 (after FTP Feeds@20).
-    protected static ?string $navigationGroup = 'FTP & CSV';
+    protected static ?string $navigationGroup = 'Competitors';
 
-    protected static ?int $navigationSort = 30;
+    protected static ?int $navigationSort = 70;
 
     protected static ?string $pluralModelLabel = 'Competitor Ingest Runs';
 

@@ -32,12 +32,9 @@ class SuggestionResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-inbox';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Suggestions are
-    // primarily competitor-opportunity-driven (margin_change, new_product_opportunity)
-    // — moved from Review to Competitors at sort 40.
-    protected static ?string $navigationGroup = 'Competitors';
+    protected static ?string $navigationGroup = 'Review';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 5;
 
     protected static ?string $recordTitleAttribute = 'kind';
 

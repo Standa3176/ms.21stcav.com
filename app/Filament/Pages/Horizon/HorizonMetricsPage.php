@@ -49,7 +49,7 @@ class HorizonMetricsPage extends Page
 
     public static function shouldRegisterNavigation(): bool
     {
-        return auth()->user()?->hasRole('admin') ?? false;
+        return false;
     }
 
     /**

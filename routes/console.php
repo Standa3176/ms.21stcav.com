@@ -72,6 +72,56 @@ Schedule::command('supplier:db-sync')
     ->timezone('Europe/London')
     ->description('Mon-Fri supplier MySQL VPS price + stock sync (07:00 London)');
 
+// Stock-updater parity glue — flip published Products with NULL/zero buy_price
+// to status='pending' so they fall out of the storefront until a real cost
+// lands. Port of the legacy plugin's logProductChanges() / handle_pending_product()
+// behaviour. Mon-Fri 07:15 London — 15 min after supplier:db-sync.
+Schedule::command('products:flag-missing-buy-price')
+    ->cron('15 7 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Flip products with missing buy_price to pending (post-supplier-sync)');
+
+// Stock-updater parity glue — auto-apply margin_change Suggestions whose delta
+// crosses pricing.auto_apply_threshold_bps (default 800bps = 8pp). Port of
+// the legacy plugin's setPer() rule. Mon-Fri 07:30 London — after the
+// pending-flip so margin changes for newly-published products are in scope.
+Schedule::command('suggestions:auto-apply')
+    ->cron('30 7 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Auto-apply margin_change Suggestions above threshold (post-supplier-sync)');
+
+// Stock-updater parity glue — daily post-supplier-sync digest email to
+// AlertRecipients with receives_sync_reports=true. Replaces the legacy
+// plugin's send_results_and_cleanup() 4-CSV email. Mon-Fri 08:00 London.
+Schedule::command('reports:supplier-sync-digest')
+    ->cron('0 8 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Daily supplier sync digest email (08:00 Mon-Fri)');
+
+// Stock-updater parity glue — safety-net second pass at 09:00 in case the
+// 03:00 woo:import-products or 07:00 supplier:db-sync silently failed. Both
+// commands are idempotent (updateOrCreate on snapshots, plain SET on prices),
+// so re-running them is a no-op when the morning runs succeeded.
+Schedule::command('woo:import-products')
+    ->cron('0 9 * * 1-5')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Woo catalogue import — safety-net retry (09:00 Mon-Fri)');
+
+Schedule::command('supplier:db-sync')
+    ->cron('5 9 * * 1-5')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Supplier DB sync — safety-net retry (09:05 Mon-Fri)');
+
 // Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive retention prune (COMP-12).
 // Default retention: config('competitor.csv_retention_days', 90). NEVER touches
 // competitor_prices / ingest_runs / csv_parse_errors rows — archive files only.

@@ -131,6 +131,11 @@ class CrmPipelineSettingsPage extends Page implements HasForms
         return auth()->user()?->hasRole('admin') ?? false;
     }
 
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
+
     /**
      * @return array<string, string>  pipeline_id => label
      */

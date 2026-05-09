@@ -54,9 +54,7 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cloud-arrow-down';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Moved from Catalogue
-    // to dedicated 'FTP & CSV' group at sort 20 (after FTP Credentials@10).
-    protected static ?string $navigationGroup = 'FTP & CSV';
+    protected static ?string $navigationGroup = 'Competitors';
 
     protected static ?string $navigationLabel = 'FTP Feeds';
 
@@ -66,7 +64,7 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $slug = 'competitor-ftp-feeds';
 
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 60;
 
     public static function getEloquentQuery(): Builder
     {

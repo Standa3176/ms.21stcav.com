@@ -42,11 +42,9 @@ class CsvParseErrorResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-exclamation-triangle';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Moved to 'FTP & CSV'
-    // group at sort 40 (after Competitor Ingest Runs@30).
-    protected static ?string $navigationGroup = 'FTP & CSV';
+    protected static ?string $navigationGroup = 'Competitors';
 
-    protected static ?int $navigationSort = 40;
+    protected static ?int $navigationSort = 80;
 
     protected static ?string $pluralModelLabel = 'CSV Parse Errors';
 

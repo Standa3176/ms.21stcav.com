@@ -1,0 +1,13 @@
+# Paste these into:  sudo -u stcav crontab -e
+# Verify with:        sudo -u stcav crontab -l
+#
+# THE CRITICAL ENTRY: the * * * * * line below is what drives every other
+# scheduled command in routes/console.php. Without it, NOTHING fires —
+# this is exactly what was missing from rams.21stcav.com when ops noticed
+# competitor data hadn't downloaded.
+
+# Laravel scheduler — every minute, picks up matching scheduled commands
+* * * * * cd /home/stcav/ms.21stcav.com && /usr/bin/php artisan schedule:run >> /dev/null 2>&1
+
+# (Optional — log-rotate Horizon's stdout log so it doesn't grow unbounded)
+0 3 * * * /usr/sbin/logrotate -f /etc/logrotate.d/meetingstore-horizon 2>/dev/null || true

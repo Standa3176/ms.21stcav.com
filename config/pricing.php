@@ -35,4 +35,11 @@ return [
     // Phase 3 ship gate fixture path. Re-baseline per D-04.
     'fixture_path' => base_path('tests/Fixtures/Pricing/golden-fixtures.json'),
 
+    // Auto-apply threshold for margin_change Suggestions — port of the legacy
+    // Stock Updater plugin's setPer() ≥ 8% rule. Suggestions with delta below
+    // this value sit in the inbox waiting for a human click; suggestions at
+    // or above it dispatch via ApplySuggestionJob from the daily
+    // `suggestions:auto-apply` command. Units: basis points (800 = 8.00pp).
+    'auto_apply_threshold_bps' => (int) env('PRICING_AUTO_APPLY_THRESHOLD_BPS', 800),
+
 ];

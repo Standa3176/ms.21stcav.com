@@ -45,13 +45,11 @@ class CustomerGroupResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
-    // Quick task 260504-ev5 — 8-group nav restructure. Customer groups sit
-    // under Catalogue at sort 20 (between Products@10 and Pricing Rules@30).
-    protected static ?string $navigationGroup = 'Catalogue';
+    protected static ?string $navigationGroup = 'Admin';
 
     // I-01 — distinct from PricingRuleResource::$navigationSort (now 30).
     // Reflection-based test in CustomerGroupResourceNavigationSortTest fails CI on collision.
-    protected static ?int $navigationSort = 20;
+    protected static ?int $navigationSort = 25;
 
     protected static ?string $recordTitleAttribute = 'name';
 

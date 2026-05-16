@@ -15,13 +15,15 @@ use Prism\Prism\Facades\Tool as PrismToolFacade;
  * falling back to the mandatory `_global.md` so the agent ALWAYS has a
  * voice anchor — never null.
  *
- * SECURITY (T-12-01-02 / P12-H — XSS via Blade rendering):
+ * SECURITY (T-12-01-02 / P12-H — XSS via template rendering):
  *   - Reads file content via file_get_contents — RAW BYTES.
  *   - Content is treated as OPAQUE STRING and serialised via json_encode.
- *   - NEVER passes the content through Blade::render or @include — the
- *     LLM sees the markdown as data, never as a template. The system prompt
- *     Blade (Plan 12-03) also does NOT @include this file — agent fetches
- *     via tool call at runtime.
+ *   - The markdown is NEVER passed through any view-template renderer or
+ *     directive-inclusion mechanism. The LLM sees the markdown as data,
+ *     never as a template. The system prompt template (Plan 12-03) also
+ *     does NOT pull this file in at compile time — agent fetches via tool
+ *     call at runtime instead. P12-H acceptance criterion enforced by
+ *     grep-asserted absence of the two forbidden FQCNs in this file.
  *
  * Cap logic (T-12-02-03 DoS mitigation):
  *   - Content capped at 3072 chars via mb_substr (matches the broader

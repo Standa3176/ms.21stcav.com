@@ -72,10 +72,23 @@ class SuggestionResource extends Resource
      *
      * The accompanying tests/Feature/SuggestionResourceQueryCountTest.php asserts that listing
      * N suggestions executes a bounded number of queries (not N + relation-fetches per row).
+     *
+     * Phase 12 Plan 05 (Open Question O-5) — hide kind='agent_guardrail_blocked'
+     * from the default list. These rows are forensic audit trail for blocked
+     * SEO agent runs (P12-B mitigation per Plan 12-04); admin doesn't approve
+     * them (no SuggestionApplier is registered for that kind). Operators can
+     * opt-in to view them via the explicit 'kind' SelectFilter chip below —
+     * the request()-aware `when()` clause exposes them when the user has
+     * filtered explicitly by kind.
      */
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with(['resolvedByUser']);
+        return parent::getEloquentQuery()
+            ->with(['resolvedByUser'])
+            ->when(
+                ! request()->filled('tableFilters.kind.value'),
+                fn (\Illuminate\Database\Eloquent\Builder $q) => $q->where('kind', '!=', 'agent_guardrail_blocked'),
+            );
     }
 
     public static function table(Table $table): Table
@@ -112,7 +125,20 @@ class SuggestionResource extends Resource
             ])
             ->defaultSort('proposed_at', 'desc')
             ->filters([
-                SelectFilter::make('kind'),
+                // Phase 12 Plan 05 (Open Question O-5) — explicit kind options
+                // INCLUDE agent_guardrail_blocked so an admin can opt-in to
+                // viewing audit-blocked SEO runs. Default list hides them via
+                // getEloquentQuery; choosing this filter value DOES expose them
+                // because the `when(! filled(tableFilters.kind.value))` clause
+                // skips the kind!='agent_guardrail_blocked' default scope.
+                SelectFilter::make('kind')->options([
+                    'margin_change' => 'margin_change',
+                    'new_product_opportunity' => 'new_product_opportunity',
+                    'crm_push_failed' => 'crm_push_failed',
+                    'auto_create_failed' => 'auto_create_failed',
+                    'seo_content_patch' => 'seo_content_patch',
+                    'agent_guardrail_blocked' => 'agent_guardrail_blocked (audit)',
+                ]),
                 SelectFilter::make('status')->options([
                     'pending' => 'Pending',
                     'approved' => 'Approved',

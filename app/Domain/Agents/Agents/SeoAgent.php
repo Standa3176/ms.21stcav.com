@@ -6,6 +6,9 @@ namespace App\Domain\Agents\Agents;
 
 use App\Domain\Agents\Contracts\RunsAsAgent;
 use App\Domain\Agents\Enums\TrustTier;
+use App\Domain\Agents\Guardrails\OutboundRegexFilterGuardrail;
+use App\Domain\Agents\Guardrails\SeoOutboundGuardrail;
+use App\Domain\Agents\Guardrails\SensitiveFieldsStripGuardrail;
 use App\Domain\Agents\Services\PromptRenderer;
 use App\Domain\Agents\Tools\Seo\ProposeContentPatchTool;
 use App\Domain\Agents\Tools\Seo\ReadBrandStyleGuideTool;
@@ -100,14 +103,26 @@ final class SeoAgent implements RunsAsAgent
     /**
      * @return array<int, \App\Domain\Agents\Contracts\Guardrail>
      *
-     * Plan 12-01 returns [] — Plan 12-03 adds:
-     *   - SensitiveFieldsStripGuardrail (per-tool I/O strip)
-     *   - OutboundRegexFilterGuardrail (post-flight base regex)
-     *   - SeoOutboundGuardrail (post-flight SEO brand-voice regex)
+     * Plan 12-03 wires the 3-guardrail chain in deterministic order. Plan 12-04
+     * tests AND RunSeoAgentJob's catch-block rely on this order:
+     *   [0] SensitiveFieldsStripGuardrail — per-tool I/O strip (mirrors Phase 10);
+     *       operates at the ToolBus boundary, NOT chained inside GuardrailEngine.
+     *   [1] OutboundRegexFilterGuardrail — post-flight base regex (Phase 8);
+     *       catches cost_price / supplier_price / internal-hostname leakage.
+     *   [2] SeoOutboundGuardrail — post-flight SEO brand-voice regex (Phase 12
+     *       Plan 03); scans propose_content_patch before+after against
+     *       config('seo_agent.guardrails') 3-category starter set. First match
+     *       → throws GuardrailViolationException with failedPatternKey +
+     *       matchedExcerpt → RunSeoAgentJob (Plan 12-04) writes
+     *       agent_guardrail_blocked Suggestion via mapper (P12-B mitigation).
      */
     public function guardrails(): array
     {
-        return [];
+        return [
+            app(SensitiveFieldsStripGuardrail::class),
+            app(OutboundRegexFilterGuardrail::class),
+            app(SeoOutboundGuardrail::class),
+        ];
     }
 
     /**

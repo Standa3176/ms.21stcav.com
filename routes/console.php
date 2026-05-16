@@ -245,6 +245,21 @@ Schedule::command('reports:weekly-digest')
     ->timezone('Europe/London')
     ->description('Weekly ops digest — Monday 07:00 Europe/London (DASH-05 / Phase 7 Plan 04)');
 
+// Phase 12 Plan 05 SEOAGT-05 — nightly SEO agent batch at 04:30 Europe/London.
+// Slots between competitor:ftp-pull (Sun+Wed 02:00) and supplier:db-sync
+// (Mon-Fri 07:00). Single nightly cadence per SEOAGT-05 success criterion 1.
+// Open Question O-2: env flag allows operator emergency disable without code
+// deploy (AGENT_SEO_BATCH_SCHEDULE_ENABLED default true). P12-E (between-
+// dispatch monthly budget recheck) is enforced inside the command itself.
+if ((bool) env('AGENT_SEO_BATCH_SCHEDULE_ENABLED', true)) {
+    Schedule::command('agents:run-seo-batch')
+        ->cron('30 4 * * *')
+        ->withoutOverlapping(60)
+        ->onOneServer()
+        ->timezone('Europe/London')
+        ->description('Phase 12 SEOAGT-05 — nightly SEO agent batch (04:30 Europe/London)');
+}
+
 // Phase 8 Plan 05 (D-07) — agents:prune-archive annual on 1 Jan 02:00 Europe/London.
 // Exports AgentRun rows where completed_at < NOW() - INTERVAL 5 YEAR to
 // storage/app/agent-archives/agent-runs-{YYYY-MM-DD-HHmmss}.json.gz then

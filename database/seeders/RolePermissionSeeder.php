@@ -181,6 +181,20 @@ class RolePermissionSeeder extends Seeder
         //                          pattern at step 4)
         Permission::firstOrCreate(['name' => 'run_pricing_agent', 'guard_name' => 'web']);
 
+        // 2e. Phase 12 Plan 05 — run_seo_agent permission (SEOAGT-05).
+        //
+        // Authorises the nightly RunSeoAgentBatchCommand + any future
+        // Filament action exposing manual SEO agent invocation.
+        //
+        // Assignment matrix per CONTEXT Claude's Discretion §"Permissions":
+        //   admin           — yes (covered by Permission::all() sync at step 3)
+        //   pricing_manager — yes (explicit givePermissionTo at step 5b below)
+        //   sales           — no  (NOT in the LIKE-pattern + NOT in the
+        //                          explicit whereIn whitelist at step 6)
+        //   read_only       — no  (NOT a `view_%` perm — outside the LIKE
+        //                          pattern at step 4)
+        Permission::firstOrCreate(['name' => 'run_seo_agent', 'guard_name' => 'web']);
+
         // ── Phase 9 Plan 05 — Customer Group permissions (TRDE-04 D-10) ──
         // W-05: findByName matches v1 RolePermissionSeeder pattern;
         // brittleness is accepted v1-parity. CI fails loudly if roles are
@@ -444,6 +458,14 @@ class RolePermissionSeeder extends Seeder
                     // get this perm (CONTEXT Claude's Discretion §"Admin permission").
                     // ═══════════════════════════════════════════════════════════
                     'run_pricing_agent',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 12 Plan 05 — pricing_manager gets run_seo_agent
+                    // (SEOAGT-05). Authorises the nightly RunSeoAgentBatchCommand
+                    // and any future Filament action exposing manual SEO agent
+                    // invocation. Sales + read_only do NOT get this perm
+                    // (CONTEXT Claude's Discretion §"Permissions").
+                    // ═══════════════════════════════════════════════════════════
+                    'run_seo_agent',
                     // ═══════════════════════════════════════════════════════════
                     // Phase 11.2 Plan 01 (D-09 + D-11) — replaces Phase 11.1's
                     // competitor_ftp_source-perm absence with explicit allow-list:

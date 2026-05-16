@@ -49,7 +49,7 @@ Categories reflect the 8 capabilities scoped for v2.0. Every v1 invariant (sugge
 - [x] **SEOAGT-01**: `SeoAgent implements RunsAsAgent` triggered when a Phase 6 AutoCreate draft enters `auto_create_status=pending_review` AND `completeness_score < 85`. Agent proposes content patches (title, short_description, long_description, meta_description) to raise the score.
 - [x] **SEOAGT-02**: Agent tools: `read_product_draft(sku)`, `read_brand_style_guide(brand)`, `read_similar_shipped_products(category, limit)`, `propose_content_patch(sku, field, before, after, reasoning)`.
 - [ ] **SEOAGT-03**: Suggestion kind `seo_content_patch` surfaces in existing Phase 6 `AutoCreateReviewResource` as a sidebar panel per product. Approving a patch writes through v1 Phase 6 `ProductOverride` pin column (auto-pin the approved field so subsequent supplier sync preserves it).
-- [ ] **SEOAGT-04**: Agent guardrail: outbound regex filter catches brand-voice violations (competitor brand names other than ours, absolute price claims without supplier data, marketing superlatives outside brand voice rules). Failed guardrail → suggestion kind `agent_guardrail_blocked` (does not surface to admin).
+- [x] **SEOAGT-04**: Agent guardrail: outbound regex filter catches brand-voice violations (competitor brand names other than ours, absolute price claims without supplier data, marketing superlatives outside brand voice rules). Failed guardrail → suggestion kind `agent_guardrail_blocked` (does not surface to admin).
 - [ ] **SEOAGT-05**: Budget ceiling `seo_agent.daily_pence_cap=300`. Batch-triggered: one scheduled run per night processes all eligible drafts in a single queue job (up to 20 drafts/run); remainder rolls to next night.
 
 ### E1. Trade Customer Pricing (TRDE) — Phase 9

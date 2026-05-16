@@ -166,7 +166,7 @@ Plans:
 **Plans**: 5 plans (waves 1—4; 12-02 and 12-03 run in parallel after 12-01; 12-04 consumes both; 12-05 closes out)
   - [x] 12-01-PLAN.md — SeoAgent skeleton + 4 tool stubs + TruncatingTool relocation to shared Tools/ + AgentRegistry wiring + agents.seo.temperature=0.4 config + brand-voice markdown scaffold (_global.md + logitech.md example)
   - [x] 12-02-PLAN.md — 4 Seo tool body implementations (read_product_draft, read_brand_style_guide, read_similar_shipped_products with Option B query + global fallback, propose_content_patch no-op) + 3-KB caps + BrandSlugResolver helper (P12-C)
-  - [ ] 12-03-PLAN.md — System prompt Blade view + config/seo_agent.php regex pattern library (3 categories × ≥4 patterns) + SeoOutboundGuardrail post-flight + GuardrailViolationException extension + SeoAgent::guardrails() wired
+  - [x] 12-03-PLAN.md — System prompt Blade view + config/seo_agent.php regex pattern library (3 categories × ≥4 patterns) + SeoOutboundGuardrail post-flight + GuardrailViolationException extension + SeoAgent::guardrails() wired
   - [ ] 12-04-PLAN.md — RunSeoAgentJob (Path A sibling) + SeoAgentResultMapper (last-wins per-field dedup) + SeoContentPatchApplier (title→Product.name mapping) + Filament EditAutoCreateReview sidebar Section (additive — P12-F)
   - [ ] 12-05-PLAN.md — RunSeoAgentBatchCommand (P12-E budget race) + 04:30 Europe/London schedule + AGENT_SEO_BATCH_SCHEDULE_ENABLED env flag + run_seo_agent Shield permission + agent_guardrail_blocked Suggestion filter + 12-VERIFICATION.md ship verdict
 **Research flag**: YES (resolved 2026-05-16) — Phase 8/10 framework mirror with 5 structural diffs; brand-voice regex starter set hand-curated; Filament 3.3 RepeatableEntry + Section pattern confirmed; hand-rolled side-by-side diff (no new packages); see 12-RESEARCH.md §Summary
@@ -234,7 +234,7 @@ Plans:
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
 | 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 5/5 | Complete   | 2026-05-01 |
-| 12. C3 SEO / Content Agent | v2.0 | 2/5 | In Progress|  |
+| 12. C3 SEO / Content Agent | v2.0 | 3/5 | In Progress|  |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |
 | 15. C2 Ad Optimisation Agent | v2.0 | 0/TBD | Not started (gated on cutover + UTM data) | - |

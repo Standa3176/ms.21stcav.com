@@ -611,6 +611,14 @@ class AppServiceProvider extends ServiceProvider
                 // Europe/London). Default --days=1825 covers the full D-07
                 // horizon; --dry-run for safe ops verification.
                 \App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand::class,
+                // Phase 12 Plan 05 (SEOAGT-05) — agents:run-seo-batch.
+                // Nightly batch dispatches up to 20 RunSeoAgentJob instances
+                // over Phase 6 AutoCreate drafts. Between-dispatch monthly
+                // budget recheck (P12-E mitigation) prevents overshoot when
+                // the £200 ceiling is already near. Schedule in
+                // routes/console.php at 04:30 Europe/London, env-flag gated
+                // (AGENT_SEO_BATCH_SCHEDULE_ENABLED, default true).
+                \App\Domain\Agents\Console\Commands\RunSeoAgentBatchCommand::class,
                 // Quick task 260504-muq — history:prune (90-day price + stock
                 // history retention). Deletes product_price_snapshots +
                 // supplier_offer_snapshots older than

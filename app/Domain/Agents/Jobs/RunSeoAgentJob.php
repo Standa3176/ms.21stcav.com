@@ -23,6 +23,7 @@ use App\Domain\Agents\Support\BrandSlugResolver;
 use App\Domain\Products\Models\Product;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Context;
@@ -72,7 +73,7 @@ use Prism\Prism\ValueObjects\Messages\UserMessage;
  */
 final class RunSeoAgentJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
+    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 1;
 

@@ -234,7 +234,7 @@ Plans:
 | 9. E1 Trade Customer Pricing | v2.0 | 0/TBD | Not started | - |
 | 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 5/5 | Complete   | 2026-05-01 |
-| 12. C3 SEO / Content Agent | v2.0 | 3/5 | In Progress|  |
+| 12. C3 SEO / Content Agent | v2.0 | 5/5 | Complete    | 2026-05-16 |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |
 | 15. C2 Ad Optimisation Agent | v2.0 | 0/TBD | Not started (gated on cutover + UTM data) | - |

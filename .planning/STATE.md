@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Intelligence + B2B
 status: executing
-stopped_at: "Completed 12-04-PLAN.md (Wave 3; next: 12-05 batch command + shield + 12-VERIFICATION)"
-last_updated: "2026-05-16T13:03:47.981Z"
+stopped_at: "Completed 12-05-PLAN.md — Phase 12 fully shipped (UAT deferred to production deploy); ready for phase verification + Phase 13 planning"
+last_updated: "2026-05-16T17:30:00.000Z"
 last_activity: 2026-05-16
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 29
-  completed_plans: 28
-  percent: 97
+  completed_plans: 29
+  percent: 100
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-24 — v2.0 milestone kicked off)
 
 **Core value:** One Laravel app owns product data, pricing rules, competitor intelligence and CRM sync — Woo is the display layer, nothing more.
-**Current focus:** Phase 12 — c3-seo-content-agent
+**Current focus:** Phase 12 complete — ready for phase verification + Phase 13 (E3 WhatsApp Channel) planning
 
 ## Current Position
 
 Milestone: v2.0 Intelligence + B2B
-Phase: 12 (c3-seo-content-agent) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
+Phase: 12 (c3-seo-content-agent) — COMPLETE (UAT deferred to production deploy per 12-UAT-DISPOSITION.md)
+Plan: 5 of 5 shipped
+Status: Phase ready for `gsd-tools phase complete 12`; Phase 13 ready for planning (run `/gsd-research-phase 13` first — research flag YES)
 Last activity: 2026-05-16
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
@@ -101,6 +101,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | Phase 12-c3-seo-content-agent P02 | 38 | 3 tasks | 11 files |
 | Phase 12-c3-seo-content-agent P03 | 14min | 3 tasks | 11 files |
 | Phase 12-c3-seo-content-agent P04 | 17 | 3 tasks | 12 files |
+| Phase 12-c3-seo-content-agent P05 | 75min | 5 tasks | 14 files |
 
 ## Quick Tasks Completed
 
@@ -219,6 +220,22 @@ None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
 
 ## Session Continuity
 
-Last session: 2026-05-16T13:03:47.967Z
-Stopped at: Completed 12-04-PLAN.md (Wave 3; next: 12-05 batch command + shield + 12-VERIFICATION)
-Resume: `/gsd-plan-phase 8` (begin C4 Agent Framework planning; research flag YES — run `/gsd-research-phase 8` first if research-before-plan workflow enabled)
+Last session: 2026-05-16T17:30:00.000Z
+Stopped at: Completed 12-05-PLAN.md — Phase 12 fully shipped (5/5 plans complete; UAT deferred to production deploy per 12-UAT-DISPOSITION.md; 120 Pest cases / 287 assertions; ship verdict PASS_WITH_DEFERRED_UAT in 12-VERIFICATION.md)
+Resume: Orchestrator runs `gsd-tools phase complete 12` to finalize the phase, then `/gsd-research-phase 13` (E3 WhatsApp Channel — research flag YES per WABA setup + Meta OBO BSP deprecation 2026 + 24h window state machine edge cases).
+
+### Phase 12 Decisions (logged 2026-05-16)
+
+- **O-1 Resolved YES** — Prism v0.100.1 supports `withEnumParameter`; ProposeContentPatchTool's `field` arg pinned to 4 valid SEO fields at the Anthropic schema level.
+- **O-2 Resolved env-flag default true** — `AGENT_SEO_BATCH_SCHEDULE_ENABLED=true` wraps the nightly schedule entry; operator can flip to false in `.env` for emergency disable without code deploy.
+- **O-3 Resolved subset stays pending** — Suggestion status only flips to `applied` when ALL patches in `payload.patches[]` have `applied_at` set; subset approvals stay `pending` so admin can return later.
+- **O-4 Resolved temperature=0.4** — `agents.seo.temperature` defaults to 0.4 (env override via `AGENTS_SEO_TEMPERATURE`) — balances creativity vs reproducibility for SEO copy.
+- **O-5 Resolved default-hide with escape-hatch filter** — SuggestionResource::getEloquentQuery hides `agent_guardrail_blocked` by default; explicit `tableFilters.kind.value=agent_guardrail_blocked` shows them.
+- **P12-A LAST-WINS dedup defended at 3 layers** — unconditional `$patchesByField[$field] = ...` + Pest fixture asserting second-call wins + source grep gate returning 0 for `isset($patchesByField`.
+- **P12-B catch-block audit before rethrow** — RunSeoAgentJob line 242 calls `createGuardrailBlockedSuggestion` BEFORE line 271's `throw $e`; one `agent_guardrail_blocked` Suggestion + zero `seo_content_patch` Suggestions after blocked run.
+- **P12-D TruncatingTool relocation clean (no shim)** — moved from `Tools/Pricing/` to shared `Tools/` parent; old FQCN absent; all 4 Phase 10 read_* tools updated.
+- **P12-E budget race 3-layer defence** — pre-flight Cache::get + between-dispatch Cache::get + BatchCommandBudgetRaceTest with 2 ceiling fixtures.
+- **P12-F additive Filament sidebar** — `seoPatchesInfolist` method name (NOT `infolist()`); EditAutoCreateReview declares neither `form()` nor `infolist()` locally; reflection check in AutoCreateEditFormUnchangedTest.
+- **P12-H brand-voice opacity** — ReadBrandStyleGuideTool + system.blade.php contain neither `Blade::render` nor `@include`; grep-asserted in test suite.
+- **Critical title→Product.name remap** — SEOAGT-01 user-facing 'title' field maps to Product.name column via `FIELD_TO_PRODUCT_COLUMN` constant; defended by SeoContentPatchApplierTitleToNameTest 3 cases.
+- **UAT deferred to production deploy** — `ms.21stcav.com` not yet bootstrapped; 10 of 10 manual UAT steps have direct Pest substitution; deferred items + re-run conditions captured in 12-UAT-DISPOSITION.md.

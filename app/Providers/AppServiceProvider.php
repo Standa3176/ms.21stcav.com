@@ -225,6 +225,21 @@ class AppServiceProvider extends ServiceProvider
                     \App\Domain\CRM\Appliers\QuotePushRetryApplier::class,
                 );
 
+                // Phase 12 Plan 04 — SeoContentPatchApplier writes through to
+                // Product.{name|*_description} + ProductOverride.pin_{field}=true
+                // when an admin approves a bundled seo_content_patch Suggestion.
+                // Title→name column mapping is fenced by
+                // SeoContentPatchApplierTitleToNameTest (P12 critical gotcha).
+                // NOTE: kind='agent_guardrail_blocked' is NOT registered here —
+                // those Suggestions are audit-only forensic rows from
+                // RunSeoAgentJob's catch(GuardrailViolationException) catch block;
+                // admin cannot approve them (Plan 12-05 filters them from the
+                // default Suggestion list).
+                $resolver->register(
+                    'seo_content_patch',
+                    \App\Domain\Agents\Appliers\SeoContentPatchApplier::class,
+                );
+
                 // ── Phase 10 Plan 01: EchoApplier deleted (P10-H sweep) ──────
                 // EchoApplier (kind='echo_health') was the Phase 8 framework
                 // smoke-test fixture. Phase 10 deletes it because PricingAgent

@@ -80,7 +80,22 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // creates new Suggestion rows. Mapper-as-writer pattern keeps
         // persistence side-effects testable independently of the LLM
         // round-trip; ProposeMarginBandTool stays a no-op writer per D-06.
-        ->notPath('Services/PricingAgentResultMapper.php');
+        ->notPath('Services/PricingAgentResultMapper.php')
+        // Phase 12 Plan 04 — Jobs/RunSeoAgentJob is the Path A SIBLING for
+        // the SeoAgent (mirrors RunPricingAgentJob shape). Writes AgentRun
+        // rows for kind='seo'; Suggestion writes flow through the mapper.
+        ->notPath('Jobs/RunSeoAgentJob.php')
+        // Phase 12 Plan 04 — SeoAgentResultMapper IS the sanctioned writer
+        // for kind='seo_content_patch' (bundled per-product Suggestion) AND
+        // kind='agent_guardrail_blocked' (audit-only forensic row). P12-A
+        // last-wins dedup + P12-B catch-block audit path documented in
+        // the class docblock.
+        ->notPath('Services/SeoAgentResultMapper.php')
+        // Phase 12 Plan 04 — SeoContentPatchApplier writes through approved
+        // patches to Product.{name|*_description} + ProductOverride.pin_*
+        // canonical columns + audit row. P12 CRITICAL title→name column
+        // mapping fenced by SeoContentPatchApplierTitleToNameTest.
+        ->notPath('Appliers/SeoContentPatchApplier.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

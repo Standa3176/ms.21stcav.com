@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Agents\Tools\Pricing\ProposeMarginBandTool;
-use App\Domain\Agents\Tools\Pricing\TruncatingTool;
+use App\Domain\Agents\Tools\TruncatingTool;
 
 /*
 |--------------------------------------------------------------------------

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Agents\Tools\Pricing;
 
+use App\Domain\Agents\Tools\TruncatingTool;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Collection;

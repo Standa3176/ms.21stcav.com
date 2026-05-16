@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Agents\Tools\Pricing;
+namespace App\Domain\Agents\Tools;
 
 use App\Domain\Agents\Services\Tools\Tool;
 
 /**
- * Phase 10 Plan 02 — 3 KB soft-cap helper for PricingAgent tools (CONTEXT D-05).
+ * Phase 12 Plan 01 — RELOCATED from app/Domain/Agents/Tools/Pricing/
+ * to the shared app/Domain/Agents/Tools/ parent so Phase 12 SeoAgent +
+ * Phase 14 ChatbotAgent + any future agent can extend the same 3-KB
+ * soft-cap helper without copy/paste.
+ *
+ * Original responsibility (Phase 10 Plan 02 — CONTEXT D-05):
  *
  * Each subclass implements reduceLargestArray() to define how its payload
  * shrinks when the JSON-encoded size exceeds SOFT_CAP_BYTES:
@@ -22,12 +27,16 @@ use App\Domain\Agents\Services\Tools\Tool;
  * signal to the agent that data exists beyond the cap so it can reflect
  * cap-driven sparseness in confidence reasoning.
  *
- * Architecture-test gate: PricingToolsObserveSoftCapTest enforces that every
- * read_* tool in this directory extends TruncatingTool. ProposeMarginBandTool
- * is exempt — it's a no-op writer with no payload to cap.
+ * Architecture-test gates:
+ *   - PricingToolsObserveSoftCapTest — enforces every read_* Pricing tool
+ *     extends this class.
+ *   - TruncatingToolRelocationTest (Phase 12) — enforces the OLD FQCN
+ *     (App\Domain\Agents\Tools\Pricing\TruncatingTool) no longer exists
+ *     and that Phase 10 tools' parent class is the NEW FQCN.
  *
- * RESEARCH §P10-B documents this pattern as the defence against silent cap
- * drift (50KB JSON outputs blowing past the £200/month budget on a few runs).
+ * RESEARCH §P12-D documents the relocation rationale: TruncatingTool is
+ * not Pricing-specific behaviour; it's a shared streaming-JSON cap helper
+ * for every agent tool that returns variable-size DB result payloads.
  */
 abstract class TruncatingTool extends Tool
 {

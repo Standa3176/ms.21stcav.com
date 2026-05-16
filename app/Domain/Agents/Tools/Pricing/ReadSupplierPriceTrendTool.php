@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Agents\Tools\Pricing;
 
+use App\Domain\Agents\Tools\TruncatingTool;
 use App\Domain\Products\Models\Product;
 use Prism\Prism\Facades\Tool as PrismToolFacade;
 use Spatie\Activitylog\Models\Activity;

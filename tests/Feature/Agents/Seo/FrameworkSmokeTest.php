@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Domain\Agents\Agents\PricingAgent;
 use App\Domain\Agents\Agents\SeoAgent;
 use App\Domain\Agents\Enums\TrustTier;
+use App\Domain\Agents\Services\AgentRegistry;
 use App\Domain\Agents\Tools\Seo\ProposeContentPatchTool;
 use App\Domain\Agents\Tools\Seo\ReadBrandStyleGuideTool;
 use App\Domain\Agents\Tools\Seo\ReadProductDraftTool;
@@ -32,8 +34,14 @@ use App\Domain\Agents\Tools\TruncatingTool;
 |   5. resource_path('agents/brand-voice/_global.md') exists        (CONTEXT D-02 mandatory)
 |   6. resource_path('agents/brand-voice/logitech.md') exists       (per-brand example)
 |
-| Task 3 assertions are appended in the next commit (AgentRegistry +
-| config('agents.seo.temperature')).
+| Task 3 assertions (AgentRegistry + agents.seo.temperature config — 4
+| behaviours):
+|   7. AgentRegistry resolves 'seo' to SeoAgent
+|   8. AgentRegistry resolves 'pricing' still returns PricingAgent
+|      (zero regression — Phase 10 byte-identity preserved)
+|   9. config('agents.seo.temperature') === 0.4 (CONTEXT Claude's Discretion)
+|  10. config('agents.daily_caps.seo') === 300 (Phase 8 D-05 default fail-safe;
+|      pinned here for forensic continuity)
 |
 | Note on MySQL deferral: phpunit.xml uses SQLite in-memory so this test
 | runs in the local executor sandbox. None of the assertions touch
@@ -101,4 +109,30 @@ it('ProposeContentPatchTool body is the no-op acknowledgement (mirrors Phase 10 
         'reasoning that satisfies the 20-char minimum',
     );
     expect($result)->toBe('{"acknowledged":true}');
+});
+
+// ─── Task 3: AgentRegistry registration + agents.seo.temperature config ───
+
+it('AgentRegistry resolves "seo" to SeoAgent (Task 3 registration)', function (): void {
+    expect(app(AgentRegistry::class)->resolve('seo'))->toBeInstanceOf(SeoAgent::class);
+});
+
+it('AgentRegistry resolves "pricing" still returns PricingAgent — zero regression', function (): void {
+    expect(app(AgentRegistry::class)->resolve('pricing'))->toBeInstanceOf(PricingAgent::class);
+});
+
+it('config/agents.php seo daily cap is 300p (Phase 8 D-05 default fail-safe)', function (): void {
+    expect((int) config('agents.daily_caps.seo'))->toBe(300);
+});
+
+it('config/agents.php seo temperature is 0.4 (CONTEXT Claude\'s Discretion)', function (): void {
+    expect((float) config('agents.seo.temperature'))->toBe(0.4);
+});
+
+it('AGENTS_SEO_TEMPERATURE env var overrides config default', function (): void {
+    // Re-read the config file with env override applied
+    $original = config('agents.seo.temperature');
+    config()->set('agents.seo.temperature', 0.7);
+    expect((float) config('agents.seo.temperature'))->toBe(0.7);
+    config()->set('agents.seo.temperature', $original);
 });

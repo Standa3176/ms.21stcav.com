@@ -255,6 +255,13 @@ class AppServiceProvider extends ServiceProvider
             \App\Domain\Agents\Services\AgentRegistry::class,
             function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
                 $registry->register('pricing', \App\Domain\Agents\Agents\PricingAgent::class);
+                // ── Phase 12 Plan 01: AgentRegistry — register SeoAgent ──
+                // Second REAL RunsAsAgent consumer of the Phase 8 framework.
+                // Plan 12-05 ships RunSeoAgentBatchCommand (nightly 04:30 London).
+                // Plan 12-04 ships RunSeoAgentJob + Filament sidebar.
+                // Plan 12-01 — this line — is the AgentRegistry binding so
+                // downstream plans wire against a stable interface.
+                $registry->register('seo', \App\Domain\Agents\Agents\SeoAgent::class);
             }
         );
 

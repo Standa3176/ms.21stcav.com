@@ -151,4 +151,22 @@ return [
     */
     'retention_days' => (int) env('AGENTS_RETENTION_DAYS', 1825),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Phase 12 — SeoAgent per-kind overrides (CONTEXT Claude's Discretion)
+    |--------------------------------------------------------------------------
+    |
+    | 0.4 balances creativity (genuine paraphrasing) with reproducibility.
+    | Set higher than pricing (0.0 deterministic) because REQUIREMENTS line
+    | 124 explicitly allows temp>0 for SEO/chatbot with guardrails. Plan
+    | 12-04 RunSeoAgentJob passes this to ClaudeClient::generate(temperature:).
+    |
+    | Threat anchor: T-12-01-04 — Denial of Service. Operator can hot-tune
+    | via env without redeploy if creative-output calibration goes sideways
+    | (high rejection rate during launch week).
+    */
+    'seo' => [
+        'temperature' => (float) env('AGENTS_SEO_TEMPERATURE', 0.4),
+    ],
+
 ];

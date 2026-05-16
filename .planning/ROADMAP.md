@@ -35,7 +35,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 - [x] **Phase 10: C1 Pricing Agent** â€” First concrete agent. Enriches existing `margin_change` Suggestions with LLM reasoning + confidence band. Validates the Phase 8 framework end-to-end with low blast radius. (completed 2026-04-30)
 - [x] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE.
  (completed 2026-05-01)
-- [ ] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns.
+- [x] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns. (completed 2026-05-16)
 - [ ] **Phase 13: E3 WhatsApp Business Channel** â€” Inbound webhook (Meta HMAC) + 24h-window outbound free-form + template registry. Marketing-template broadcasts deferred to v2.1. New `whatsapp-inbound` queue.
 - [ ] **Phase 14: E4 AI Product-Finder Chatbot** â€” Public REST endpoint (`/api/chat/message`) + `ProductFinderAgent` over MySQL FULLTEXT (~5k SKUs assumption). Anonymous PII posture: phone/email captured only on explicit quote request, hashed at rest.
 - [ ] **Phase 15: C2 Ad Optimisation Agent** â€” LATE phase. Reads Bitrix Deal UTM/GCLID data accumulated post-cutover. New `Marketing` Deptrac layer separate from `Agents`. Pre-flight: GCLID capture verified or v1 hotfix shipped.
@@ -168,7 +168,7 @@ Plans:
   - [x] 12-02-PLAN.md — 4 Seo tool body implementations (read_product_draft, read_brand_style_guide, read_similar_shipped_products with Option B query + global fallback, propose_content_patch no-op) + 3-KB caps + BrandSlugResolver helper (P12-C)
   - [x] 12-03-PLAN.md — System prompt Blade view + config/seo_agent.php regex pattern library (3 categories × ≥4 patterns) + SeoOutboundGuardrail post-flight + GuardrailViolationException extension + SeoAgent::guardrails() wired
   - [x] 12-04-PLAN.md — RunSeoAgentJob (Path A sibling) + SeoAgentResultMapper (last-wins per-field dedup) + SeoContentPatchApplier (title→Product.name mapping) + Filament EditAutoCreateReview sidebar Section (additive — P12-F)
-  - [ ] 12-05-PLAN.md — RunSeoAgentBatchCommand (P12-E budget race) + 04:30 Europe/London schedule + AGENT_SEO_BATCH_SCHEDULE_ENABLED env flag + run_seo_agent Shield permission + agent_guardrail_blocked Suggestion filter + 12-VERIFICATION.md ship verdict
+  - [x] 12-05-PLAN.md — RunSeoAgentBatchCommand (P12-E budget race) + 04:30 Europe/London schedule + AGENT_SEO_BATCH_SCHEDULE_ENABLED env flag + run_seo_agent Shield permission + agent_guardrail_blocked Suggestion filter + 12-VERIFICATION.md ship verdict
 **Research flag**: YES (resolved 2026-05-16) — Phase 8/10 framework mirror with 5 structural diffs; brand-voice regex starter set hand-curated; Filament 3.3 RepeatableEntry + Section pattern confirmed; hand-rolled side-by-side diff (no new packages); see 12-RESEARCH.md §Summary
 **UI hint**: yes
 

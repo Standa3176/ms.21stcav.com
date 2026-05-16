@@ -17,6 +17,22 @@ namespace App\Domain\Agents\Exceptions;
  * The `when` property tags pre vs post for downstream filtering ("show me
  * runs blocked at pre-flight by PromptInjectionXmlFence") — Plan 04 sets
  * this when catching the throwable inside the GuardrailEngine call site.
+ *
+ * Phase 12 Plan 03 — ADDITIVE extension for SeoOutboundGuardrail:
+ *   - $failedPatternKey: the config('seo_agent.guardrails') key whose regex
+ *     matched (e.g. 'marketing_superlatives'). Plan 12-04 RunSeoAgentJob
+ *     catch-block reads this to call
+ *     SeoAgentResultMapper::createGuardrailBlockedSuggestion(...) (P12-B
+ *     mitigation per RESEARCH §Pattern 7 Option B — guardrail does not
+ *     write Suggestions directly; the catching job does).
+ *   - $matchedExcerpt: up to 200 chars of $m[0] from the regex match — the
+ *     forensic excerpt for the agent_guardrail_blocked Suggestion's
+ *     evidence.matched_excerpt field.
+ *
+ * Both new fields are readonly and default to empty string so Phase 10's
+ * existing construction paths (`fromGuardrail()` factory + RunPricingAgentJob
+ * catch-site direct `->guardrailClass` access) continue to compile
+ * byte-identically (zero Phase 10 regression).
  */
 final class GuardrailViolationException extends \RuntimeException
 {
@@ -25,11 +41,24 @@ final class GuardrailViolationException extends \RuntimeException
     /** 'pre' | 'post' — RunAgentJob sets this in the engine catch-block. */
     public string $when = '';
 
+    public readonly string $failedPatternKey;
+
+    public readonly string $matchedExcerpt;
+
+    public function __construct(
+        string $guardrailClass = '',
+        string $message = '',
+        string $failedPatternKey = '',
+        string $matchedExcerpt = '',
+    ) {
+        parent::__construct($message);
+        $this->guardrailClass = $guardrailClass;
+        $this->failedPatternKey = $failedPatternKey;
+        $this->matchedExcerpt = $matchedExcerpt;
+    }
+
     public static function fromGuardrail(string $guardrailClass, string $message): self
     {
-        $e = new self($message);
-        $e->guardrailClass = $guardrailClass;
-
-        return $e;
+        return new self($guardrailClass, $message);
     }
 }

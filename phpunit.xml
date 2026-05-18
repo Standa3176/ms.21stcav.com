@@ -25,10 +25,11 @@
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
-        <!-- Plan 01-03: isolate testing from real dev DB so RefreshDatabase doesn't truncate live data.
-             Pre-created via: CREATE DATABASE meetingstore_ops_testing; GRANT ALL TO 'meetingstore'@'%'. -->
-        <env name="DB_CONNECTION" value="mysql"/>
-        <env name="DB_DATABASE" value="meetingstore_ops_testing"/>
+        <!-- SQLite in-memory — no external service needed (free Herd doesn't ship MySQL).
+             Prod uses MySQL; SQLite has subtle differences (JSON queries, datetime fns,
+             case sensitivity) so a small number of existing tests may diverge. -->
+        <env name="DB_CONNECTION" value="sqlite"/>
+        <env name="DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

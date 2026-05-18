@@ -2,9 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::redirect('/', '/admin');
 
 // Phase 7 Plan 03 — signed download route for queued CSV exports (D-06).
 // QueuedCsvExportJob generates a URL::temporarySignedRoute to this name with

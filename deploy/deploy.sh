@@ -18,6 +18,11 @@
 
 set -euo pipefail
 
+# CloudLinux/CageFS: invoked via `sudo -u stcav deploy.sh` the PATH is
+# non-login and omits /usr/local/bin, where `composer` (and the 8.3 `php` CLI)
+# live — prepend it so they resolve like they do in stcav's login shell.
+export PATH="/usr/local/bin:$PATH"
+
 PROJECT_ROOT="/home/stcav/ms.21stcav.com"
 WEB_GROUP="${WEB_GROUP:-nginx}"   # override with WEB_GROUP=apache ./deploy.sh if needed
 

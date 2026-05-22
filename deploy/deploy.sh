@@ -40,6 +40,14 @@ git reset --hard origin/main      # match origin exactly; discard any local edit
 echo "==> composer install"
 composer install --no-dev --optimize-autoloader --no-interaction
 
+# ── 2b. Publish Filament assets (CSS/JS) ──────────────────────────────────
+# MUST run after every composer install. Filament's published assets in
+# public/ are version-stamped from the INSTALLED package, so a composer bump
+# without re-publishing leaves the panel/dashboard styled by STALE CSS —
+# symptom: stats-overview widgets collapse tall and descriptions wrap narrow.
+echo "==> filament:assets"
+php artisan filament:assets
+
 # ── 3. Migrate (--force = required in non-interactive mode) ───────────────
 echo "==> migrate"
 php artisan migrate --force

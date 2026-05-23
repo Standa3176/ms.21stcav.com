@@ -32,9 +32,17 @@ abstract class DomainEvent implements ShouldDispatchAfterCommit
 {
     use Dispatchable, SerializesModels;
 
-    public readonly string $correlationId;
+    /*
+     * NOT readonly. A child event (e.g. CompetitorPriceRecorded) pulled off the
+     * queue is rehydrated in the child's scope, and PHP only allows a readonly
+     * property to be initialised from the scope that DECLARED it — so readonly
+     * here threw "Cannot initialize readonly property DomainEvent::$correlationId"
+     * for every queued listener (worked in tests' sync queue, broke on Redis).
+     * Plain public props serialise/rehydrate cleanly; treat them as write-once.
+     */
+    public string $correlationId;
 
-    public readonly string $occurredAt;
+    public string $occurredAt;
 
     public function __construct()
     {

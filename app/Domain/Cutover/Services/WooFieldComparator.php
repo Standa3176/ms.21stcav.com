@@ -47,11 +47,18 @@ class WooFieldComparator
      * Compare a Laravel Product against a Woo-live product dict.
      *
      * @param  Product  $local  Laravel row
-     * @param  array<string, mixed>|null  $wooProduct  Woo REST response; null = missing
+     * @param  array<string, mixed>|object|null  $wooProduct  Woo REST response; null = missing
      * @return array<int, array{field:string, laravel:mixed, live:mixed, pin_column:?string}>
      */
-    public function diff(Product $local, ?array $wooProduct): array
+    public function diff(Product $local, array|object|null $wooProduct): array
     {
+        // Woo SDK list responses (e.g. products?sku=…) return a stdClass per item,
+        // not an array. Deep-normalise to an associative array so the array-access
+        // comparisons below (including nested meta_data) behave uniformly.
+        if (is_object($wooProduct)) {
+            $wooProduct = json_decode((string) json_encode($wooProduct), true);
+        }
+
         if ($wooProduct === null || $wooProduct === []) {
             return [[
                 'field' => 'exists',

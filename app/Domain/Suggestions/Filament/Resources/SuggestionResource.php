@@ -95,7 +95,54 @@ class SuggestionResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('kind')->badge()->sortable(),
+                // Part / SKU — the actual product identifier (from evidence JSON;
+                // also present on margin_change rows). Searchable so an 8k-row
+                // inbox is navigable by part number.
+                TextColumn::make('sku')
+                    ->label('Part / SKU')
+                    ->state(fn (Suggestion $record) => data_get($record->evidence, 'sku'))
+                    ->fontFamily('mono')
+                    ->copyable()
+                    ->placeholder('—')
+                    ->searchable(query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder => $query->where('evidence->sku', 'like', "%{$search}%")),
+                // Comp — # of competitors tracking this orphan SKU. Sortable, and
+                // the table default-sorts on it DESC so the strongest
+                // opportunities (most competitors) surface first.
+                TextColumn::make('supporting_competitors')
+                    ->label('Comp')
+                    ->badge()
+                    ->color('info')
+                    ->state(fn (Suggestion $record) => $record->kind === 'new_product_opportunity'
+                        ? (int) (data_get($record->evidence, 'supporting_competitors', 0))
+                        : null)
+                    ->placeholder('—')
+                    ->sortable(query: fn (\Illuminate\Database\Eloquent\Builder $query, string $direction): \Illuminate\Database\Eloquent\Builder => $query->orderBy('evidence->supporting_competitors', $direction)),
+                // Which competitors list it (names from competitor_sightings[]).
+                TextColumn::make('competitors')
+                    ->label('Competitors')
+                    ->state(fn (Suggestion $record) => collect((array) data_get($record->evidence, 'competitor_sightings', []))
+                        ->pluck('name')->filter()->implode(', ') ?: null)
+                    ->wrap()
+                    ->placeholder('—'),
+                // Competitor price / range — gross pennies → £.
+                TextColumn::make('comp_price')
+                    ->label('Comp price')
+                    ->state(function (Suggestion $record): ?string {
+                        $prices = collect((array) data_get($record->evidence, 'competitor_sightings', []))
+                            ->pluck('price_gross_pennies')
+                            ->filter(fn ($p) => $p !== null && $p !== '')
+                            ->map(fn ($p) => (int) $p);
+                        if ($prices->isEmpty()) {
+                            return null;
+                        }
+                        $min = $prices->min() / 100;
+                        $max = $prices->max() / 100;
+
+                        return $min === $max
+                            ? '£'.number_format($min, 2)
+                            : '£'.number_format($min, 2).' – £'.number_format($max, 2);
+                    })
+                    ->placeholder('—'),
                 TextColumn::make('status')->badge()->color(fn ($state) => match ($state) {
                     'pending' => 'warning',
                     'approved' => 'primary',
@@ -104,26 +151,17 @@ class SuggestionResource extends Resource
                     'failed' => 'danger',
                     default => 'gray',
                 })->sortable(),
-                // Phase 5 Plan 04a — supporting_competitors badge for new_product_opportunity rows.
-                // Renders as a count badge; blank for other kinds (no accessor trip because
-                // data_get on an array returns null if the key is missing).
-                TextColumn::make('supporting_competitors')
-                    ->label('Comp')
-                    ->badge()
-                    ->color('info')
-                    ->state(fn (Suggestion $record) => $record->kind === 'new_product_opportunity'
-                        ? (int) (data_get($record->evidence, 'supporting_competitors', 0))
-                        : null)
-                    ->placeholder('—'),
+                TextColumn::make('kind')->badge()->sortable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('correlation_id')
                     ->fontFamily('mono')
                     ->copyable()
                     ->limit(8)
-                    ->tooltip(fn ($record) => $record->correlation_id),
-                TextColumn::make('proposed_at')->dateTime()->sortable(),
-                TextColumn::make('resolvedByUser.name')->label('Resolved by')->placeholder('—'),
+                    ->tooltip(fn ($record) => $record->correlation_id)
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('proposed_at')->dateTime()->sortable()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('resolvedByUser.name')->label('Resolved by')->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->defaultSort('proposed_at', 'desc')
+            ->defaultSort('supporting_competitors', 'desc')
             ->filters([
                 // Phase 12 Plan 05 (Open Question O-5) — explicit kind options
                 // INCLUDE agent_guardrail_blocked so an admin can opt-in to

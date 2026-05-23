@@ -60,6 +60,14 @@ class HomeDashboardPage extends Dashboard
     protected static ?int $navigationSort = 10;
 
     /**
+     * Dashboard redesign — render the home widgets in four priority-ordered,
+     * labelled sections (triage flow) instead of one undifferentiated grid.
+     * Layout lives in resources/views/filament/pages/home-dashboard.blade.php;
+     * the grouping is defined in getDashboardSections().
+     */
+    protected static string $view = 'filament.pages.home-dashboard';
+
+    /**
      * Sub-heading rendered under the page title — gives ops a single
      * "when did the dashboard last refresh?" anchor instead of having
      * to read each widget's `extraAttributes` ring.
@@ -136,5 +144,84 @@ class HomeDashboardPage extends Dashboard
             'md' => 3,
             'xl' => 3,
         ];
+    }
+
+    /**
+     * Dashboard redesign — group the home widgets into four priority-ordered
+     * sections so the operator triages top-to-bottom:
+     *   1. Needs attention — error queues + review backlogs (act first)
+     *   2. Today's sync     — did the daily pipelines run?
+     *   3. Catalogue        — product counts across the publish pipeline
+     *   4. System health    — jobs, parity, integrations, schedule (reference)
+     *
+     * Each entry's widgets are canView()-filtered so RBAC still applies.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getDashboardSections(): array
+    {
+        return [
+            [
+                'title' => 'Needs attention',
+                'description' => 'Errors and review queues waiting on you',
+                'icon' => 'heroicon-o-exclamation-triangle',
+                'tone' => 'danger',
+                'columns' => 2,
+                'widgets' => $this->visibleSectionWidgets([
+                    ImportIssuesWidget::class,
+                    PendingReviewsWidget::class,
+                ]),
+            ],
+            [
+                'title' => "Today's sync",
+                'description' => 'Did the daily pipelines run cleanly?',
+                'icon' => 'heroicon-o-arrow-path',
+                'tone' => 'primary',
+                'columns' => 3,
+                'widgets' => $this->visibleSectionWidgets([
+                    LastSyncRunWidget::class,
+                    CrmPushSuccessRateWidget::class,
+                    CompetitorFreshnessWidget::class,
+                ]),
+            ],
+            [
+                'title' => 'Catalogue & pipeline',
+                'description' => 'Product counts across the publish pipeline',
+                'icon' => 'heroicon-o-cube',
+                'tone' => 'primary',
+                'columns' => 1,
+                'widgets' => $this->visibleSectionWidgets([
+                    ProductCatalogueHealthWidget::class,
+                ]),
+            ],
+            [
+                'title' => 'System health',
+                'description' => 'Background jobs, parity, integrations, schedule',
+                'icon' => 'heroicon-o-heart',
+                'tone' => 'gray',
+                'columns' => 2,
+                'widgets' => $this->visibleSectionWidgets([
+                    SyncDiffsParityWidget::class,
+                    HorizonFailedJobsWidget::class,
+                    WeeklyReportStatusWidget::class,
+                    IntegrationHealthWidget::class,
+                ]),
+            ],
+        ];
+    }
+
+    /**
+     * Filter a section's widget classes by canView() so the grouped view
+     * honours the same RBAC gates as the default Filament widget render.
+     *
+     * @param  array<int, class-string>  $classes
+     * @return array<int, class-string>
+     */
+    protected function visibleSectionWidgets(array $classes): array
+    {
+        return array_values(array_filter(
+            $classes,
+            static fn (string $class): bool => method_exists($class, 'canView') ? $class::canView() : true,
+        ));
     }
 }

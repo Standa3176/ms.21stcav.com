@@ -76,11 +76,22 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
             return SymfonyCommand::FAILURE;
         }
+        // Auto-detect the supplier's own description/spec columns so the model
+        // grounds in the supplier's actual product data (the nearest thing to a
+        // datasheet we have) rather than just the title.
+        $detailColumns = $this->detectDetailColumns($m);
+        if ($detailColumns !== []) {
+            $this->line('Supplier detail column(s) used as datasheet basis: '.implode(', ', $detailColumns));
+        } else {
+            $this->line('No supplier description/spec column found — grounding on title + identifiers only.');
+        }
+        $selectCols = array_merge(['title', 'manufacturer', 'mpn', 'suppliersku', 'ean', 'price', 'rrp'], $detailColumns);
+        $selectList = implode(', ', array_map(static fn (string $col): string => "`{$col}`", $selectCols));
         $stmt = $m->prepare(
-            'SELECT title, manufacturer, mpn, suppliersku, ean, price, rrp
+            "SELECT {$selectList}
              FROM supplier_products
              WHERE (suppliersku = ? OR mpn = ?) AND product_excluded = 0
-             ORDER BY updated_at DESC LIMIT 1',
+             ORDER BY updated_at DESC LIMIT 1",
         );
 
         $system = $this->systemPrompt();
@@ -96,6 +107,14 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 continue;
             }
 
+            $details = [];
+            foreach ($detailColumns as $col) {
+                $v = trim(strip_tags((string) ($row[$col] ?? '')));
+                if ($v !== '') {
+                    $details[$col] = Str::limit($v, 2500, '');
+                }
+            }
+
             $facts = [
                 'sku' => $sku,
                 'brand' => (string) ($row['manufacturer'] ?? ''),
@@ -105,6 +124,9 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 'supplier_cost' => $row['price'] ?? null,
                 'rrp' => $row['rrp'] ?? null,
             ];
+            if ($details !== []) {
+                $facts['supplier_details'] = $details;
+            }
 
             $this->newLine();
             $this->line("→ <info>{$sku}</info>  {$facts['brand']} — ".Str::limit($facts['supplier_title'], 60));
@@ -114,7 +136,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
                     systemPrompt: $system,
                     messages: [new UserMessage(json_encode($facts, JSON_THROW_ON_ERROR))],
                     maxTokens: 2500,
-                    temperature: 0.3,
+                    temperature: 0.0,
                 );
             } catch (\Throwable $e) {
                 $this->error('  Claude error: '.$e->getMessage());
@@ -139,30 +161,44 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 continue;
             }
 
+            $contentValues = [
+                'name' => (string) ($content['title'] ?? $facts['supplier_title']),
+                'slug' => Str::slug($facts['brand'].' '.($content['title'] ?? $sku)),
+                'short_description' => $this->normaliseHtml($content['short_description'] ?? null),
+                'long_description' => $this->normaliseHtml($content['long_description'] ?? null),
+                'meta_description' => isset($content['meta_description'])
+                    ? Str::limit((string) $content['meta_description'], 255, '')
+                    : null,
+            ];
+
+            $existing = Product::query()->where('sku', $sku)->first();
+            if ($existing !== null) {
+                // Regenerate CONTENT only — preserve taxonomy (brand/category/
+                // category_ids/auto_create_status) and image state (image_url/
+                // gallery_image_urls/requires_manual_image_review) set by the later
+                // assign-taxonomy + source-images steps. Re-running is now safe.
+                $existing->forceFill($contentValues)->save();
+                $made++;
+                $this->info("  ✓ updated content for Product #{$existing->id} (taxonomy + images preserved)");
+
+                continue;
+            }
+
+            // New product — full first-time setup (primary taxonomy + review flag).
             $brandId = $this->taxonomy->resolveBrand($facts['brand'] !== '' ? $facts['brand'] : null);
             $categoryId = $this->taxonomy->resolveCategory(isset($content['category']) ? (string) $content['category'] : null);
-
-            $product = Product::updateOrCreate(
-                ['sku' => $sku],
-                [
-                    'name' => (string) ($content['title'] ?? $facts['supplier_title']),
-                    'slug' => Str::slug($facts['brand'].' '.($content['title'] ?? $sku)),
-                    'type' => 'simple',
-                    'status' => 'draft',
-                    'auto_create_status' => ($brandId !== null && $categoryId !== null)
-                        ? 'draft'
-                        : 'needs_brand_or_category_assignment',
-                    'short_description' => $this->normaliseHtml($content['short_description'] ?? null),
-                    'long_description' => $this->normaliseHtml($content['long_description'] ?? null),
-                    'meta_description' => isset($content['meta_description'])
-                        ? Str::limit((string) $content['meta_description'], 255, '')
-                        : null,
-                    'brand_id' => $brandId,
-                    'category_id' => $categoryId,
-                    'buy_price' => is_numeric($facts['supplier_cost']) ? $facts['supplier_cost'] : null,
-                    'requires_manual_image_review' => true,
-                ],
-            );
+            $product = Product::create($contentValues + [
+                'sku' => $sku,
+                'type' => 'simple',
+                'status' => 'draft',
+                'auto_create_status' => ($brandId !== null && $categoryId !== null)
+                    ? 'draft'
+                    : 'needs_brand_or_category_assignment',
+                'brand_id' => $brandId,
+                'category_id' => $categoryId,
+                'buy_price' => is_numeric($facts['supplier_cost']) ? $facts['supplier_cost'] : null,
+                'requires_manual_image_review' => true,
+            ]);
             $made++;
             $this->info("  ✓ draft Product #{$product->id} [{$product->auto_create_status}]  brand_id="
                 .($brandId ?? '—').' category_id='.($categoryId ?? '—'));
@@ -191,11 +227,22 @@ final class GenerateProductDraftsCommand extends BaseCommand
         audio-visual and video-conferencing retailer selling to IT/AV professionals.
 
         You receive supplier facts as a JSON object (brand, supplier_title, mpn, ean,
-        supplier_cost, rrp). Write clean, benefit-led product content GROUNDED STRICTLY in
-        those facts and in what is genuinely standard for this TYPE of product. NEVER invent
-        precise specifications — exact dimensions, weights, port counts, resolutions, refresh
-        rates, model numbers — that are not stated or clearly implied by the brand/title/model.
-        When a detail is not given, stay general rather than guess. UK English throughout.
+        supplier_cost, rrp, and possibly supplier_details with the supplier's own product
+        text). TREAT THESE FACTS AS THE PRODUCT'S DATASHEET. State ONLY what the facts
+        contain.
+
+        HARD RULES (datasheet-only — the operator requires this):
+        - Do NOT state any specification, port or connector (HDMI, USB, USB-C, VGA, RJ45,
+          DisplayPort, SD/TF card slot, OPS slot, etc.), interface, resolution, refresh rate,
+          brightness, capacity (RAM/storage), dimension, weight, operating system,
+          certification, or model variant that is not EXPLICITLY present in the supplied facts.
+        - Do NOT invent in-the-box contents. List only items explicitly named in the facts;
+          if none are given, write exactly one line: "Supplied as standard — refer to the
+          manufacturer's specification for full box contents."
+        - If the facts don't support a section's specifics, keep that section brief and general
+          (describe the product type's typical role) WITHOUT asserting any unverified detail.
+        - Benefit-led phrasing is fine; inventing facts is not. When unsure, leave it out.
+        UK English throughout.
 
         Return ONLY a single valid JSON object — no prose, no markdown code fences — with EXACTLY these keys:
 
@@ -207,21 +254,51 @@ final class GenerateProductDraftsCommand extends BaseCommand
             "Professional Displays", "Interactive Flat Panel Displays", "ClickShare & Collaboration").
 
           "short_description": an HTML "<ul>" containing 4 "<li>" benefit bullets (minimum 3,
-            maximum 5), each a concise feature/benefit grounded in the facts.
+            maximum 5), each grounded in the facts — no invented specs.
 
           "long_description": HTML that follows THIS EXACT section structure and ORDER so every
             product on the site is consistent. Use only "<h3>" for headings:
-              <h3>Product Overview</h3><p>2-3 sentence overview of what the product is and who it suits.</p>
-              <h3>Key Features</h3><ul> 4 to 5 <li> feature bullets </ul>
-              <h3>Use Cases</h3><ul> 3 to 4 <li> realistic environments/scenarios </ul>
-              <h3>Compatibility</h3><p>General compatibility — platforms, standard ports/standards — WITHOUT inventing specific model compatibility.</p>
-              <h3>What's in the Box</h3><ul> the product itself plus standard/likely items (cables, mount, quick-start guide); keep general, do NOT invent exact accessory part numbers </ul>
+              <h3>Product Overview</h3><p>2-3 sentence overview of what the product is and who it suits, using only given facts.</p>
+              <h3>Key Features</h3><ul> 4 to 5 <li> features, each supported by the facts </ul>
+              <h3>Use Cases</h3><ul> 3 to 4 <li> realistic environments/scenarios (these are usage contexts, not specs) </ul>
+              <h3>Compatibility</h3><p>Only compatibility the facts support; if the facts name no ports/platforms, keep to ONE general sentence and name NO specific ports/standards.</p>
+              <h3>What's in the Box</h3><ul> only items explicitly in the facts; otherwise the single "Supplied as standard…" line above </ul>
               <h3>Why Buy from MeetingStore?</h3><ul> exactly 4 <li>: UK audio-visual specialists; expert pre-sales advice; fast UK delivery; competitive trade pricing </ul>
 
-          "meta_description": a single line, 155 characters or fewer, for SEO.
+          "meta_description": a single line, 155 characters or fewer, for SEO — facts only.
 
-        Be accurate and concise. When unsure of a spec, stay general rather than fabricate.
+        Be accurate and concise. A thinner, fully-accurate description is REQUIRED over a richer one that guesses.
         PROMPT;
+    }
+
+    /**
+     * Auto-detect supplier_products columns that hold descriptive/spec text, so
+     * the model can ground in the supplier's own product data (the nearest thing
+     * to a datasheet) — not just the title. Matches desc/spec/feature/detail/
+     * overview/highlight/bullet/body names; excludes image columns. Identifier
+     * names are validated before use in the SELECT.
+     *
+     * @return array<int, string>
+     */
+    private function detectDetailColumns(\mysqli $m): array
+    {
+        $res = $m->query('SHOW COLUMNS FROM supplier_products');
+        if ($res === false) {
+            return [];
+        }
+        $cols = [];
+        while ($row = $res->fetch_assoc()) {
+            $name = (string) ($row['Field'] ?? '');
+            if ($name === '' || preg_match('/^[A-Za-z0-9_]+$/', $name) !== 1) {
+                continue;
+            }
+            if (preg_match('/desc|spec|feature|detail|overview|highlight|bullet|body|long_?text/i', $name) === 1
+                && preg_match('/image|img|picture|photo|thumb/i', $name) !== 1) {
+                $cols[] = $name;
+            }
+        }
+
+        return $cols;
     }
 
     /**

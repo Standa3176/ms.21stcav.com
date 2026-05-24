@@ -12,7 +12,7 @@ namespace App\Domain\Pricing\Services;
  *
  *   - On at least one competitor → land `undercutPennies` BELOW the lowest
  *     competitor gross, but NEVER below cost + the minimum-margin floor
- *     (config competitor.min_margin_floor_bps, default 5%). When the competitor
+ *     (config competitor.min_margin_floor_bps, default 6%). When the competitor
  *     is so cheap that beating it would breach the floor, we hold at the floor
  *     price (source = competitor_floor) rather than sell at a loss.
  *   - On NO competitor → cost-plus the resolved rule margin (the "set margin"

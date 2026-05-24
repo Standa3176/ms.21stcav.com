@@ -14,8 +14,9 @@ declare(strict_types=1);
 |   A competitor-vs-our-margin delta must exceed this before a margin_change
 |   suggestion fires.
 |
-| min_margin_floor_bps — 5% safety guard (Pitfall P5-E). Never recommend a
-|   rule change that would drive our margin below 5% — that's a money-loser
+| min_margin_floor_bps — 6% safety guard (operator decision 2026-05-24; was 5%
+|   Pitfall P5-E). Never price below cost + 6% margin (the undercut command's
+|   loss guard) and never recommend a rule change below it — that's a money-loser
 |   regardless of what competitors charge.
 |
 | consecutive_scrapes_required — 3 (REQUIREMENTS.md default). Prevents
@@ -51,7 +52,7 @@ return [
     'margin_delta_threshold_bps'   => (int) env('COMPETITOR_MARGIN_DELTA_BPS', 800),       // 8% in bps
     'consecutive_scrapes_required' => (int) env('COMPETITOR_SCRAPES_REQUIRED', 3),
     'sales_threshold_90d'          => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
-    'min_margin_floor_bps'         => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 500),   // 5% safety floor (P5-E)
+    'min_margin_floor_bps'         => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
     'beat_by_pennies'              => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
     'csv_retention_days'           => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
     'stale_feed_hours'             => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),

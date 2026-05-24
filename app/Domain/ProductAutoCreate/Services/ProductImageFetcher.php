@@ -87,47 +87,42 @@ final class ProductImageFetcher
     {
         $headStart = microtime(true);
         try {
-            // Pitfall P6-A — HEAD pre-flight (3-hop redirect budget)
+            // Pitfall P6-A — HEAD pre-flight (3-hop redirect budget).
+            // ADVISORY ONLY: many manufacturer/CDN hosts (e.g. sony.com) block
+            // HEAD, omit Content-Type, or 403 the default client user-agent. We
+            // send a browser UA + Accept and treat HEAD as a HINT — never reject
+            // on it. The GET status + size bounds + the Processor's image decode
+            // are the real validation gate (a non-image GET fails decode).
             $headTimeout = (int) config('product_auto_create.image_fetch_timeout_seconds', 10);
-            $head = Http::timeout($headTimeout)
-                ->withOptions(['allow_redirects' => ['max' => 3]])
-                ->head($url);
+            try {
+                $head = Http::timeout($headTimeout)
+                    ->withHeaders(self::browserHeaders())
+                    ->withOptions(['allow_redirects' => ['max' => 3]])
+                    ->head($url);
 
-            $headLatency = (int) round((microtime(true) - $headStart) * 1000);
-            $contentType = (string) $head->header('Content-Type', '');
+                $headLatency = (int) round((microtime(true) - $headStart) * 1000);
+                $contentType = (string) $head->header('Content-Type', '');
 
-            if (! $head->successful()) {
-                $this->logAttempt(
-                    url: $url,
-                    attemptNum: $attemptNum,
-                    method: 'HEAD',
-                    status: $head->status(),
-                    outcome: 'failed',
-                    extra: ['reason' => 'non_200', 'content_type' => $contentType],
-                    latencyMs: $headLatency,
-                );
-
-                return null;
+                if (! $head->successful() || ! str_starts_with($contentType, 'image/')) {
+                    $this->logAttempt(
+                        url: $url,
+                        attemptNum: $attemptNum,
+                        method: 'HEAD',
+                        status: $head->status(),
+                        outcome: 'success',
+                        extra: ['note' => 'head_inconclusive_proceeding_to_get', 'content_type' => $contentType],
+                        latencyMs: $headLatency,
+                    );
+                }
+            } catch (\Throwable) {
+                // HEAD unsupported / timed out — ignore, let GET decide.
             }
 
-            if (! str_starts_with($contentType, 'image/')) {
-                $this->logAttempt(
-                    url: $url,
-                    attemptNum: $attemptNum,
-                    method: 'HEAD',
-                    status: $head->status(),
-                    outcome: 'failed',
-                    extra: ['reason' => 'non_image_content_type', 'content_type' => $contentType],
-                    latencyMs: $headLatency,
-                );
-
-                return null;
-            }
-
-            // GET — body download with size bounds
+            // GET — body download with size bounds (the real gate).
             $getStart = microtime(true);
             $getTimeout = max(30, $headTimeout * 3);
             $get = Http::timeout($getTimeout)
+                ->withHeaders(self::browserHeaders())
                 ->withOptions(['allow_redirects' => ['max' => 3]])
                 ->get($url);
 
@@ -246,6 +241,21 @@ final class ProductImageFetcher
 
             return null;
         }
+    }
+
+    /**
+     * Browser-like request headers so manufacturer/CDN hosts that reject the
+     * default client user-agent (403/406) or omit Content-Type still serve the
+     * image bytes.
+     *
+     * @return array<string, string>
+     */
+    private static function browserHeaders(): array
+    {
+        return [
+            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept' => 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        ];
     }
 
     private function logAttempt(

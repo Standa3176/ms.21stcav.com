@@ -77,7 +77,7 @@ final class TaxonomyResolver
     public function allCategories(): array
     {
         return Cache::remember('taxonomy.categories', self::CACHE_TTL_SECONDS, function (): array {
-            return $this->paginate('/products/categories');
+            return $this->paginate('products/categories');
         });
     }
 
@@ -95,7 +95,7 @@ final class TaxonomyResolver
             // 1) Brand-as-attribute: find the attribute id for the slug.
             $attributeId = $this->brandAttributeId($taxonomy);
             if ($attributeId !== null) {
-                $terms = $this->paginate("/products/attributes/{$attributeId}/terms");
+                $terms = $this->paginate("products/attributes/{$attributeId}/terms");
                 if ($terms !== []) {
                     return $terms;
                 }
@@ -103,7 +103,7 @@ final class TaxonomyResolver
 
             // 2) Native Woo Brands taxonomy fallback.
             try {
-                $terms = $this->paginate('/products/brands');
+                $terms = $this->paginate('products/brands');
                 if ($terms !== []) {
                     return $terms;
                 }
@@ -118,7 +118,7 @@ final class TaxonomyResolver
     private function brandAttributeId(string $slug): ?int
     {
         try {
-            $attributes = $this->woo->get('/products/attributes', ['per_page' => 100]);
+            $attributes = $this->woo->get('products/attributes', ['per_page' => 100]);
         } catch (\Throwable) {
             return null;
         }
@@ -151,7 +151,12 @@ final class TaxonomyResolver
         $out = [];
         $page = 1;
         do {
-            $batch = $this->woo->get($endpoint, ['per_page' => 100, 'page' => $page]);
+            try {
+                $batch = $this->woo->get($endpoint, ['per_page' => 100, 'page' => $page]);
+            } catch (\Throwable) {
+                // Endpoint missing (rest_no_route) / transient — stop, return what we have.
+                break;
+            }
             if (! is_array($batch) || $batch === []) {
                 break;
             }

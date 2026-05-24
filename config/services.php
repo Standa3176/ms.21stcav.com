@@ -117,4 +117,22 @@ return [
         'language' => env('ICECAT_LANGUAGE', 'EN'),
     ],
 
+    // Web image search (manufacturer product images by "{brand} {mpn}" query).
+    // Resolver env-fallback for IntegrationCredentialKind::ImageSearch; operator
+    // typically stores the api_key via /admin → Integration Credentials.
+    // provider: 'serper' (default, serper.dev). country biases results (gl=uk).
+    // blocked_domains: domains to drop from results (e.g. your competitors) so we
+    // never pull a rival's product photography — the Claude-vision validator also
+    // rejects competitor-branded images as a second line of defence.
+    'image_search' => [
+        'provider' => env('IMAGE_SEARCH_PROVIDER', 'serper'),
+        'api_key' => env('IMAGE_SEARCH_API_KEY'),
+        'base_url' => env('IMAGE_SEARCH_BASE_URL', 'https://google.serper.dev'),
+        'country' => env('IMAGE_SEARCH_COUNTRY', 'uk'),
+        'blocked_domains' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('IMAGE_SEARCH_BLOCKED_DOMAINS', '')),
+        ))),
+    ],
+
 ];

@@ -10,6 +10,7 @@ use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\ProductImageFetcher;
 use App\Domain\ProductAutoCreate\Services\ProductImageProcessor;
 use App\Domain\ProductAutoCreate\Services\ProductImageVisionValidator;
+use App\Domain\ProductAutoCreate\Services\WebImageSearchClient;
 use App\Domain\Products\Models\Product;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -53,11 +54,12 @@ final class SourceProductImagesCommand extends BaseCommand
         {--max-spend-pence=2000 : Abort once cumulative Claude spend exceeds this (safety)}
         {--dry-run : Source + validate + print verdicts only; do NOT store or write}';
 
-    protected $description = 'Source product images (Icecat by EAN + supplier feed), Claude-vision validate (no watermarks/overlays), store up to N per draft Product';
+    protected $description = 'Source product images (Icecat by EAN + supplier feed + web image search), Claude-vision validate (no watermarks/overlays), store up to N per draft Product';
 
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
         private readonly IcecatClient $icecat,
+        private readonly WebImageSearchClient $webSearch,
         private readonly ProductImageFetcher $fetcher,
         private readonly ProductImageProcessor $processor,
         private readonly ProductImageVisionValidator $vision,
@@ -115,7 +117,7 @@ final class SourceProductImagesCommand extends BaseCommand
             $this->newLine();
             $this->line("→ <info>{$sku}</info>  {$brand} — ".Str::limit($title, 60));
 
-            // ── Candidate URLs: Icecat first (clean, licensed), then supplier feed ──
+            // ── Candidate URLs: Icecat (licensed) → supplier feed → web search ──
             $icecatUrls = $this->icecat->fetchImageUrls(
                 $ean !== '' ? $ean : null,
                 $brand !== '' ? $brand : null,
@@ -123,6 +125,11 @@ final class SourceProductImagesCommand extends BaseCommand
                 $candidateCap,
             );
             $supplierUrls = $this->supplierImageUrls($facts, $imageColumns);
+            $webUrls = $this->webSearch->searchImageUrls(
+                $this->searchQuery($brand, $mpn, $title),
+                $candidateCap,
+                $brand !== '' ? $brand : null,
+            );
 
             $candidates = [];
             foreach ($icecatUrls as $u) {
@@ -131,9 +138,12 @@ final class SourceProductImagesCommand extends BaseCommand
             foreach ($supplierUrls as $u) {
                 $candidates[] = ['url' => $u, 'source' => 'supplier'];
             }
+            foreach ($webUrls as $u) {
+                $candidates[] = ['url' => $u, 'source' => 'web'];
+            }
             $candidates = $this->dedupeByUrl($candidates);
 
-            $this->line('  candidates: '.count($icecatUrls).' icecat + '.count($supplierUrls).' supplier ('.count($candidates).' unique)'
+            $this->line('  candidates: '.count($icecatUrls).' icecat + '.count($supplierUrls).' supplier + '.count($webUrls).' web ('.count($candidates).' unique)'
                 .($ean === '' ? '  [no EAN]' : "  [EAN {$ean}]"));
 
             if ($candidates === []) {
@@ -310,6 +320,22 @@ final class SourceProductImagesCommand extends BaseCommand
         }
 
         return array_values(array_unique($out));
+    }
+
+    /**
+     * Build the web image-search query. "{brand} {mpn}" is the most precise
+     * (e.g. "Sony FW-50EZ20L"); fall back to the product title when MPN is
+     * missing.
+     */
+    private function searchQuery(string $brand, string $mpn, string $title): string
+    {
+        $brand = trim($brand);
+        $mpn = trim($mpn);
+        if ($mpn !== '') {
+            return trim($brand.' '.$mpn);
+        }
+
+        return trim($title) !== '' ? trim($title) : $brand;
     }
 
     /**

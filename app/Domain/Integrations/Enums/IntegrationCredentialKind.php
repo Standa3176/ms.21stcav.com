@@ -25,6 +25,7 @@ enum IntegrationCredentialKind: string
     case LangfuseObservability = 'langfuse_observability';
     case SupplierDb = 'supplier_db';
     case Icecat = 'icecat';
+    case ImageSearch = 'image_search';
 
     /**
      * Field names required in payload_encrypted per D-04.
@@ -46,6 +47,8 @@ enum IntegrationCredentialKind: string
             // them in the payload when saved, but they aren't required for the
             // row to be considered valid — Open Icecat works username-only).
             self::Icecat => ['username'],
+            // Web image-search provider (Serper.dev by default) — single API key.
+            self::ImageSearch => ['api_key'],
         };
     }
 
@@ -81,6 +84,7 @@ enum IntegrationCredentialKind: string
             self::LangfuseObservability => 'Langfuse Observability',
             self::SupplierDb => 'Supplier DB (Remote MySQL)',
             self::Icecat => 'Icecat Product Content',
+            self::ImageSearch => 'Web Image Search (Serper)',
         };
     }
 
@@ -107,7 +111,8 @@ enum IntegrationCredentialKind: string
             // AnthropicApi, OpenAiApi: no URL fields (just api_key)
             // SupplierDb: host is MySQL hostname or IP — NOT URL-validated
             // Icecat: username + token fields, no URL field
-            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat => [],
+            // ImageSearch: api_key only, no URL field
+            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat, self::ImageSearch => [],
         };
     }
 
@@ -123,6 +128,7 @@ enum IntegrationCredentialKind: string
             self::LangfuseObservability => 'gray',
             self::SupplierDb => 'success', // data-side green palette (Catalogue group)
             self::Icecat => 'info', // content-enrichment source
+            self::ImageSearch => 'info', // content-enrichment source
         };
     }
 }

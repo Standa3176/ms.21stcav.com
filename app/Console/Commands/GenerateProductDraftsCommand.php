@@ -152,8 +152,8 @@ final class GenerateProductDraftsCommand extends BaseCommand
                     'auto_create_status' => ($brandId !== null && $categoryId !== null)
                         ? 'draft'
                         : 'needs_brand_or_category_assignment',
-                    'short_description' => $content['short_description'] ?? null,
-                    'long_description' => $content['long_description'] ?? null,
+                    'short_description' => $this->normaliseHtml($content['short_description'] ?? null),
+                    'long_description' => $this->normaliseHtml($content['long_description'] ?? null),
                     'meta_description' => isset($content['meta_description'])
                         ? Str::limit((string) $content['meta_description'], 255, '')
                         : null,
@@ -222,6 +222,24 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
         Be accurate and concise. When unsure of a spec, stay general rather than fabricate.
         PROMPT;
+    }
+
+    /**
+     * Repair the one malformed-tag class a model occasionally emits: a closing
+     * tag whose ">" is missing before the next tag, e.g. "</li<li>" → "</li><li>".
+     *
+     * Deliberately surgical — the pattern cannot match well-formed HTML
+     * ("</li><li>" already has its ">") and never touches text content, so £,
+     * ™, curly quotes and valid markup are left exactly as written. Returns null
+     * for empty/non-string input (keeps the column nullable).
+     */
+    private function normaliseHtml(mixed $html): ?string
+    {
+        if (! is_string($html) || trim($html) === '') {
+            return null;
+        }
+
+        return (string) preg_replace('#</([a-zA-Z][a-zA-Z0-9]*)\s*<#', '</$1><', $html);
     }
 
     /**

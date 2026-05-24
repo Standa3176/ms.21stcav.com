@@ -98,36 +98,42 @@ final class IcecatClient
                 ->get($this->baseUrl(), [
                     'lang' => $this->language(),
                     'shopname' => $username,
-                    // Dummy GTIN — we only care that the account is accepted.
-                    'GTIN' => '00000000000000',
+                    // A real, well-formed example GTIN (Icecat's own docs use it)
+                    // so we don't trip GTIN-format validation. We only care that
+                    // the account/endpoint are accepted — not that this product
+                    // is in the account's catalogue.
+                    'GTIN' => '0711719709695',
                 ]);
 
             $latency = (int) round((microtime(true) - $start) * 1000);
 
-            if ($resp->status() === 401 || $resp->status() === 403) {
-                return IntegrationTestResult::failed("Icecat HTTP {$resp->status()} (auth).", $latency);
-            }
-            if (! $resp->successful()) {
-                return IntegrationTestResult::failed("Icecat HTTP {$resp->status()}.", $latency);
-            }
-
             $json = $resp->json();
-            if (! is_array($json)) {
-                return IntegrationTestResult::failed('Icecat returned a non-JSON body.', $latency);
+            $msg = is_array($json) ? $this->extractMessage($json) : '';
+            // Surface SOMETHING useful in the failure notification — Icecat's
+            // own message if present, else a trimmed raw body.
+            $detail = $msg !== '' ? $msg : Str::limit((string) $resp->body(), 200, '');
+
+            // Explicit auth / account problems (any status code, or 401/403).
+            $authProblem = $resp->status() === 401
+                || $resp->status() === 403
+                || ($msg !== '' && preg_match('/access|denied|unauthor|not known|shopname|invalid (?:user|shop|account|username)|blocked|forbidden/i', $msg) === 1);
+            if ($authProblem) {
+                return IntegrationTestResult::failed('Icecat auth/access: '.($detail !== '' ? $detail : "HTTP {$resp->status()}"), $latency);
             }
 
-            // Product genuinely present → auth definitely fine.
-            if (isset($json['data']) && is_array($json['data'])) {
+            // Product data returned → account + endpoint definitely working.
+            if (is_array($json) && isset($json['data']) && is_array($json['data'])) {
                 return IntegrationTestResult::ok($latency);
             }
 
-            $msg = $this->extractMessage($json);
-            if ($msg !== '' && preg_match('/access|denied|unauthor|not known|invalid|blocked|forbidden/i', $msg) === 1) {
-                return IntegrationTestResult::failed("Icecat: {$msg}", $latency);
+            // 2xx but no data (e.g. "product not found") → reachable + accepted.
+            if ($resp->successful()) {
+                return IntegrationTestResult::ok($latency);
             }
 
-            // "No product found" for the dummy GTIN is the expected happy path.
-            return IntegrationTestResult::ok($latency);
+            // Other non-2xx (e.g. 400) with no auth signal — report the body so
+            // the operator can see what Icecat actually objected to.
+            return IntegrationTestResult::failed("Icecat HTTP {$resp->status()}: ".($detail !== '' ? $detail : '(empty body)'), $latency);
         } catch (\Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
 

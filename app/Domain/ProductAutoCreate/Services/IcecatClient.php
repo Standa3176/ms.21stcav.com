@@ -189,7 +189,16 @@ final class IcecatClient
         $latency = (int) round((microtime(true) - $start) * 1000);
 
         if (! $resp->successful()) {
-            $this->log($identifier, $resp->status(), 'failed', ['reason' => 'non_2xx'], $latency);
+            $body = $resp->json();
+            $message = is_array($body)
+                ? $this->extractMessage($body)
+                : (string) $resp->body();
+            $this->log($identifier, $resp->status(), 'failed', [
+                'reason' => 'non_2xx',
+                // Capture Icecat's actual complaint so a 400/403 is diagnosable
+                // from integration_events without re-running.
+                'icecat_message' => Str::limit($message, 400, ''),
+            ], $latency);
 
             return [];
         }

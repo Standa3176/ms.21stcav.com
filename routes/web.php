@@ -10,3 +10,9 @@ Route::redirect('/', '/admin');
 Route::middleware(['auth', 'signed'])
     ->get('/exports/download', [\App\Http\Controllers\Dashboard\ExportDownloadController::class, 'download'])
     ->name('exports.download');
+
+// Draft product preview — renders a local draft as a customer-facing product
+// page for sign-off before any Woo push. Auth-gated (admin panel session).
+Route::middleware('auth')
+    ->get('/preview/product/{product}', \App\Http\Controllers\ProductPreviewController::class)
+    ->name('preview.product');

@@ -113,7 +113,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 $resp = $this->claude->generate(
                     systemPrompt: $system,
                     messages: [new UserMessage(json_encode($facts, JSON_THROW_ON_ERROR))],
-                    maxTokens: 1600,
+                    maxTokens: 2500,
                     temperature: 0.3,
                 );
             } catch (\Throwable $e) {
@@ -192,18 +192,35 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
         You receive supplier facts as a JSON object (brand, supplier_title, mpn, ean,
         supplier_cost, rrp). Write clean, benefit-led product content GROUNDED STRICTLY in
-        those facts. NEVER invent specifications, dimensions, ports, resolutions, or features
-        that are not clearly stated or implied by the brand/title/model. If a detail is not
-        given, leave it out rather than guess. UK English throughout.
+        those facts and in what is genuinely standard for this TYPE of product. NEVER invent
+        precise specifications — exact dimensions, weights, port counts, resolutions, refresh
+        rates, model numbers — that are not stated or clearly implied by the brand/title/model.
+        When a detail is not given, stay general rather than guess. UK English throughout.
 
         Return ONLY a single valid JSON object — no prose, no markdown code fences — with EXACTLY these keys:
-          "title": clean customer-facing product title (Brand + model + short descriptor; no raw SKUs/codes unless part of the model name).
-          "category": one natural retail category name for this product (e.g. "Video Conferencing Cameras", "Professional Displays", "ClickShare & Collaboration").
-          "short_description": an HTML "<ul>" with 3-5 "<li>" benefit bullets, each grounded in the facts.
-          "long_description": HTML — one 2-3 sentence overview paragraph ("<p>...</p>"), then "<h3>Key features</h3>" and a "<ul>" of feature bullets. No fabricated specs.
+
+          "title": clean customer-facing product title in the form "Brand Model Descriptor" that
+            INCLUDES the manufacturer model/part number (e.g. "Sony FW-50EZ20L 50\" Commercial
+            Display"). Do NOT put a bare EAN/barcode number in the title.
+
+          "category": one natural retail category name (e.g. "Video Conferencing Cameras",
+            "Professional Displays", "Interactive Flat Panel Displays", "ClickShare & Collaboration").
+
+          "short_description": an HTML "<ul>" containing 4 "<li>" benefit bullets (minimum 3,
+            maximum 5), each a concise feature/benefit grounded in the facts.
+
+          "long_description": HTML that follows THIS EXACT section structure and ORDER so every
+            product on the site is consistent. Use only "<h3>" for headings:
+              <h3>Product Overview</h3><p>2-3 sentence overview of what the product is and who it suits.</p>
+              <h3>Key Features</h3><ul> 4 to 5 <li> feature bullets </ul>
+              <h3>Use Cases</h3><ul> 3 to 4 <li> realistic environments/scenarios </ul>
+              <h3>Compatibility</h3><p>General compatibility — platforms, standard ports/standards — WITHOUT inventing specific model compatibility.</p>
+              <h3>What's in the Box</h3><ul> the product itself plus standard/likely items (cables, mount, quick-start guide); keep general, do NOT invent exact accessory part numbers </ul>
+              <h3>Why Buy from MeetingStore?</h3><ul> exactly 4 <li>: UK audio-visual specialists; expert pre-sales advice; fast UK delivery; competitive trade pricing </ul>
+
           "meta_description": a single line, 155 characters or fewer, for SEO.
 
-        Be accurate and concise. When unsure, stay general rather than fabricate.
+        Be accurate and concise. When unsure of a spec, stay general rather than fabricate.
         PROMPT;
     }
 

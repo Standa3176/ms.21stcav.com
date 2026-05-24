@@ -87,20 +87,41 @@ final class AssignProductTaxonomyCommand extends BaseCommand
             $manufacturer = $manufacturers[$sku] ?? $this->brandFromName((string) $product->name);
             $brandId = $this->taxonomy->resolveBrand($manufacturer !== '' ? $manufacturer : null);
 
-            [$categoryName, $costPence] = $this->pickCategory($product, $categoryNames);
+            [$categoryNamesChosen, $costPence] = $this->pickCategories($product, $categoryNames);
             $totalPence += $costPence;
-            $categoryId = $categoryName !== null ? $this->taxonomy->categoryIdByName($categoryName) : null;
+
+            // Map each chosen name → Woo term id (dedup, preserve order). The
+            // FIRST is the primary (drives single-valued pricing rules); the full
+            // set goes to category_ids for the Woo categories[] payload.
+            $categoryIds = [];
+            $resolvedNames = [];
+            foreach ($categoryNamesChosen as $cn) {
+                $cid = $this->taxonomy->categoryIdByName($cn);
+                if ($cid !== null && ! in_array($cid, $categoryIds, true)) {
+                    $categoryIds[] = $cid;
+                    $resolvedNames[] = $cn;
+                }
+            }
+            $primaryCategoryId = $categoryIds[0] ?? null;
 
             $this->newLine();
             $this->line("→ <info>{$sku}</info>  ".Str::limit((string) $product->name, 60));
             $this->line('  brand:    '.($manufacturer !== '' ? $manufacturer : '(unknown)').'  → '.($brandId !== null ? "term #{$brandId}" : '— no match'));
-            $this->line('  category: '.($categoryName ?? '(none chosen)').'  → '.($categoryId !== null ? "term #{$categoryId}" : '— no match'));
+            if ($categoryIds === []) {
+                $this->line('  categories: (none chosen) — no match');
+            } else {
+                $pairs = [];
+                foreach ($resolvedNames as $i => $rn) {
+                    $pairs[] = $rn.' #'.$categoryIds[$i].($i === 0 ? ' [primary]' : '');
+                }
+                $this->line('  categories: '.implode(', ', $pairs));
+            }
 
-            $bothResolved = $brandId !== null && $categoryId !== null;
+            $bothResolved = $brandId !== null && $primaryCategoryId !== null;
             $newStatus = $bothResolved ? 'draft' : 'needs_brand_or_category_assignment';
 
             if ($dryRun) {
-                $this->line('  would set status='.$newStatus.' [dry-run]');
+                $this->line('  would set status='.$newStatus.' ['.count($categoryIds).' categor'.(count($categoryIds) === 1 ? 'y' : 'ies').'] [dry-run]');
                 if ($bothResolved) {
                     $assigned++;
                 }
@@ -109,7 +130,8 @@ final class AssignProductTaxonomyCommand extends BaseCommand
 
             $product->forceFill([
                 'brand_id' => $brandId,
-                'category_id' => $categoryId,
+                'category_id' => $primaryCategoryId,
+                'category_ids' => $categoryIds !== [] ? $categoryIds : null,
                 'auto_create_status' => $newStatus,
             ])->saveQuietly();
 
@@ -133,13 +155,13 @@ final class AssignProductTaxonomyCommand extends BaseCommand
     }
 
     /**
-     * Ask Claude to choose the single best category NAME (verbatim) from the
-     * live Woo list, or NONE. Returns [chosenName|null, costPence].
+     * Ask Claude for ALL suitable category NAMES (verbatim) from the live Woo
+     * list, most-specific first. Returns [names[], costPence].
      *
      * @param  array<int, string>  $categoryNames
-     * @return array{0: ?string, 1: int}
+     * @return array{0: array<int, string>, 1: int}
      */
-    private function pickCategory(Product $product, array $categoryNames): array
+    private function pickCategories(Product $product, array $categoryNames): array
     {
         $list = '';
         foreach ($categoryNames as $name) {
@@ -147,13 +169,21 @@ final class AssignProductTaxonomyCommand extends BaseCommand
         }
 
         $system = <<<'PROMPT'
-        You map a product to the single most appropriate retail category for a UK
-        audio-visual / video-conferencing store. You are given the product and a
-        fixed LIST of allowed category names. Choose the ONE best fit.
+        You map a product to its categories for a UK audio-visual / video-
+        conferencing store. WooCommerce products belong to MULTIPLE categories.
+        You are given the product and a fixed LIST of allowed category names.
 
-        Reply with ONLY the chosen category name, copied VERBATIM from the list
-        (exact spelling/punctuation). If none is a reasonable fit, reply exactly:
-        NONE. No other words, no quotes, no explanation.
+        Select EVERY category from the list that genuinely fits this product — the
+        specific product-type category PLUS any clearly-relevant broader or
+        use-case categories (e.g. a USB conference camera → "USB Cameras",
+        "Conference Cameras", "Video Conferencing"). Typically 1-4. Do NOT force
+        weak matches; only include categories a shopper would expect to find it under.
+
+        Reply with ONLY a JSON array of the chosen category names, copied VERBATIM
+        from the list (exact spelling/punctuation), MOST SPECIFIC FIRST. Example:
+        ["USB Cameras","Conference Cameras","Video Conferencing"]
+        If none fit, reply exactly: []
+        No other text, no markdown fences.
         PROMPT;
 
         $user = "Product: {$product->name}\n"
@@ -164,22 +194,44 @@ final class AssignProductTaxonomyCommand extends BaseCommand
             $resp = $this->claude->generate(
                 systemPrompt: $system,
                 messages: [new UserMessage($user)],
-                maxTokens: 60,
+                maxTokens: 200,
                 temperature: 0.0,
             );
         } catch (\Throwable $e) {
-            $this->error('  Claude error picking category: '.$e->getMessage());
+            $this->error('  Claude error picking categories: '.$e->getMessage());
 
-            return [null, 0];
+            return [[], 0];
         }
 
-        $choice = trim($resp->text);
-        $choice = trim($choice, " \t\n\r\0\x0B\"'`");
-        if ($choice === '' || strcasecmp($choice, 'NONE') === 0) {
-            return [null, $resp->costPence];
+        return [$this->parseNameList($resp->text), $resp->costPence];
+    }
+
+    /**
+     * Parse a JSON array of category names from model output (tolerant of fences).
+     *
+     * @return array<int, string>
+     */
+    private function parseNameList(string $text): array
+    {
+        $text = trim($text);
+        $text = (string) preg_replace('/^```[a-zA-Z]*\s*|\s*```$/m', '', $text);
+
+        $decoded = json_decode(trim($text), true);
+        if (! is_array($decoded) && preg_match('/\[.*\]/s', $text, $m) === 1) {
+            $decoded = json_decode($m[0], true);
+        }
+        if (! is_array($decoded)) {
+            return [];
         }
 
-        return [$choice, $resp->costPence];
+        $out = [];
+        foreach ($decoded as $v) {
+            if (is_string($v) && trim($v) !== '') {
+                $out[] = trim($v);
+            }
+        }
+
+        return $out;
     }
 
     /**

@@ -32,7 +32,7 @@ final class Product extends Model
 
     protected $fillable = [
         'woo_product_id', 'sku', 'name', 'type', 'status', 'stock_status', 'stock_quantity',
-        'brand_id', 'category_id',
+        'brand_id', 'category_id', 'category_ids',
         'buy_price', 'sell_price', 'cost_price',
         'is_custom_ms', 'exclude_from_auto_update', 'tags',
         'last_synced_at', 'last_sync_run_id',
@@ -63,6 +63,7 @@ final class Product extends Model
         'stock_quantity' => 'integer',
         'last_sales_count_computed_at' => 'datetime',
         // Phase 6 Plan 01 — auto-create casts.
+        'category_ids' => 'array',
         'gallery_image_urls' => 'array',
         'requires_manual_image_review' => 'bool',
         'completeness_score' => 'int',

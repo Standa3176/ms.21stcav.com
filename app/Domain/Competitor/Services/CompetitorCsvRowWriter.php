@@ -113,15 +113,20 @@ final class CompetitorCsvRowWriter
             $run->increment('rows_orphaned');
         }
 
-        // COMP-06 — reuse Phase 3 stripVat (NEVER duplicate VAT math)
-        $exVatPennies = $this->priceCalculator->stripVat($grossPennies, 2000);
+        // Competitor feeds are EX-VAT (net/trade) prices — operator-confirmed
+        // 2026-05-24. The raw parsed value ($grossPennies) is therefore the
+        // EX-VAT price; the VAT-inclusive gross is derived by adding VAT.
+        // COMP-06 — reuse Phase 3 VAT math (NEVER duplicate it here).
+        $vatBps = (int) config('pricing.vat_basis_points', 2000);
+        $exVatPennies = $grossPennies;
+        $grossInclPennies = $this->priceCalculator->addVat($grossPennies, $vatBps);
 
         try {
             CompetitorPrice::create([
                 'competitor_id' => $run->competitor_id,
                 'sku' => $sku,
                 'mpn' => null,
-                'price_pennies_gross' => $grossPennies,
+                'price_pennies_gross' => $grossInclPennies,
                 'price_pennies_ex_vat' => $exVatPennies,
                 'recorded_at' => now(),
                 'ingest_run_id' => $run->id,

@@ -19,9 +19,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * (~3.6M rows/year at 5 competitors × 2000 SKUs × 365 days). Phase 2
  * ProductVariant established this precedent for write-heavy tables.
  *
- * Price columns:
- * - price_pennies_ex_vat: analyser input (MarginAnalyser reads this).
- * - price_pennies_gross:  raw CSV value preserved for audit / legal.
+ * Price columns (feeds are EX-VAT / net trade prices — operator-confirmed 2026-05-24):
+ * - price_pennies_ex_vat: the raw net CSV value (analyser input; MarginAnalyser reads this).
+ * - price_pennies_gross:  VAT-inclusive shelf price = ex_vat + VAT (the figure the
+ *   undercut pricer compares against). Migration 2026_05_24_120000 backfilled
+ *   historical rows after the ingest was corrected (was: gross=raw, ex_vat=stripVat).
  */
 final class CompetitorPrice extends Model
 {

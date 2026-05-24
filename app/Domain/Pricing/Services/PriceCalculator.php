@@ -105,4 +105,35 @@ final class PriceCalculator
             (int) config('pricing.rounding_mode', PHP_ROUND_HALF_UP),
         );
     }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // addVat — inverse of stripVat (single-place VAT math, COMP-06)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Add VAT to a net (ex-VAT) price. Inverse of stripVat() — same single-place
+     * discipline so callers (e.g. competitor ingest, which receives ex-VAT trade
+     * feed prices) never reimplement VAT math.
+     *
+     * Formula: gross = net × (10000 + vat_bps) / 10000, rounded once.
+     *
+     * @param  int  $exVatPennies  Net ex-VAT price in pennies
+     * @param  int  $vatBasisPoints  VAT percent × 100 (default 2000)
+     * @return int Gross VAT-inclusive price in pennies (0 for non-positive input)
+     */
+    public function addVat(int $exVatPennies, int $vatBasisPoints = 2000): int
+    {
+        if ($exVatPennies <= 0) {
+            return 0;
+        }
+
+        $numerator = $exVatPennies * (10000 + $vatBasisPoints);
+        $denominator = 10000;
+
+        return (int) round(
+            $numerator / $denominator,
+            0,
+            (int) config('pricing.rounding_mode', PHP_ROUND_HALF_UP),
+        );
+    }
 }

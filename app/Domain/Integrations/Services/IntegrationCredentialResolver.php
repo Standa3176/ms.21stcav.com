@@ -122,6 +122,13 @@ class IntegrationCredentialResolver
                 'username' => (string) config('services.supplier_db.username', ''),
                 'password' => (string) config('services.supplier_db.password', ''),
             ],
+            IntegrationCredentialKind::Icecat => [
+                'username' => (string) config('services.icecat.username', ''),
+                // Optional (Full Icecat). Empty string when unset — IcecatClient
+                // treats blank tokens as absent and falls back to Open Icecat.
+                'api_token' => (string) config('services.icecat.api_token', ''),
+                'content_token' => (string) config('services.icecat.content_token', ''),
+            ],
         };
 
         return $this->payloadHasAllRequiredFields($kind, $envMap) ? $envMap : null;

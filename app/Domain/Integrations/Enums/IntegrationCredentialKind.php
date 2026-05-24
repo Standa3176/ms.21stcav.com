@@ -24,6 +24,7 @@ enum IntegrationCredentialKind: string
     case OpenAiApi = 'openai_api';
     case LangfuseObservability = 'langfuse_observability';
     case SupplierDb = 'supplier_db';
+    case Icecat = 'icecat';
 
     /**
      * Field names required in payload_encrypted per D-04.
@@ -40,6 +41,30 @@ enum IntegrationCredentialKind: string
             self::OpenAiApi => ['api_key'],
             self::LangfuseObservability => ['host', 'public_key', 'secret_key'],
             self::SupplierDb => ['host', 'port', 'database', 'username', 'password'],
+            // Open Icecat needs only the account username; the Full-Icecat
+            // api_token + content_token are optionalFields() (resolver returns
+            // them in the payload when saved, but they aren't required for the
+            // row to be considered valid — Open Icecat works username-only).
+            self::Icecat => ['username'],
+        };
+    }
+
+    /**
+     * Optional, non-required credential fields rendered in the form after the
+     * required ones. The resolver returns these in the decrypted payload when
+     * present, but they are NOT part of the validity check in requiredFields().
+     *
+     * Icecat: Full Icecat (non-sponsored brands — Sony/Barco/ViewSonic/etc.)
+     * needs api_token (product data) + content_token (image/asset access),
+     * passed as HTTP headers. Open Icecat ignores them.
+     *
+     * @return array<int, string>
+     */
+    public function optionalFields(): array
+    {
+        return match ($this) {
+            self::Icecat => ['api_token', 'content_token'],
+            default => [],
         };
     }
 
@@ -53,6 +78,7 @@ enum IntegrationCredentialKind: string
             self::OpenAiApi => 'OpenAI / ChatGPT API',
             self::LangfuseObservability => 'Langfuse Observability',
             self::SupplierDb => 'Supplier DB (Remote MySQL)',
+            self::Icecat => 'Icecat Product Content',
         };
     }
 
@@ -78,7 +104,8 @@ enum IntegrationCredentialKind: string
             self::LangfuseObservability => ['host'],
             // AnthropicApi, OpenAiApi: no URL fields (just api_key)
             // SupplierDb: host is MySQL hostname or IP — NOT URL-validated
-            self::AnthropicApi, self::OpenAiApi, self::SupplierDb => [],
+            // Icecat: username + token fields, no URL field
+            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat => [],
         };
     }
 
@@ -93,6 +120,7 @@ enum IntegrationCredentialKind: string
             self::OpenAiApi => 'danger', // expensive — parity with Anthropic visual treatment
             self::LangfuseObservability => 'gray',
             self::SupplierDb => 'success', // data-side green palette (Catalogue group)
+            self::Icecat => 'info', // content-enrichment source
         };
     }
 }

@@ -78,6 +78,7 @@ class TestIntegrationAction
             IntegrationCredentialKind::AnthropicApi => app(ClaudeClient::class)->testConnection(),
             IntegrationCredentialKind::LangfuseObservability => self::testLangfuse(),
             IntegrationCredentialKind::SupplierDb => self::testSupplierDb(),
+            IntegrationCredentialKind::Icecat => app(\App\Domain\ProductAutoCreate\Services\IcecatClient::class)->testConnection(),
             default => IntegrationTestResult::failed('Unknown kind: ' . ($record->kind?->value ?? 'null'), 0),
         };
     }

@@ -97,4 +97,21 @@ return [
         'push_retry_attempts' => (int) env('BITRIX_PUSH_RETRY_ATTEMPTS', 3),
     ],
 
+    // Icecat product-content syndication (product images by GTIN/EAN).
+    // Resolver env-fallback for IntegrationCredentialKind::Icecat. Operator
+    // typically stores the username via /admin → Integration Credentials.
+    // ICECAT_USERNAME — Icecat account name (Open Icecat works username-only).
+    // ICECAT_API_TOKEN / ICECAT_CONTENT_TOKEN — Full Icecat only (non-sponsored
+    //   brands + asset/image access); passed as request headers, optional.
+    // NOTE: Icecat image URLs may be IP-restricted to your account's whitelisted
+    //   IP — the source-images command downloads server-side, so whitelist the
+    //   production server IP (or use Access Tokens) in your Icecat account.
+    'icecat' => [
+        'username' => env('ICECAT_USERNAME'),
+        'api_token' => env('ICECAT_API_TOKEN'),
+        'content_token' => env('ICECAT_CONTENT_TOKEN'),
+        'base_url' => env('ICECAT_BASE_URL', 'https://live.icecat.biz/api'),
+        'language' => env('ICECAT_LANGUAGE', 'EN'),
+    ],
+
 ];

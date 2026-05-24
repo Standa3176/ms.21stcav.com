@@ -43,6 +43,7 @@ final class Product extends Model
         'long_description',
         'meta_description',
         'image_url',
+        'gallery_image_urls',
         'requires_manual_image_review',
         'auto_create_status',
         'completeness_score',
@@ -62,6 +63,7 @@ final class Product extends Model
         'stock_quantity' => 'integer',
         'last_sales_count_computed_at' => 'datetime',
         // Phase 6 Plan 01 — auto-create casts.
+        'gallery_image_urls' => 'array',
         'requires_manual_image_review' => 'bool',
         'completeness_score' => 'int',
         'completeness_computed_at' => 'datetime',

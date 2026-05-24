@@ -166,6 +166,25 @@ class IntegrationCredentialResource extends Resource
                     $fields[] = $input;
                 }
 
+                // Optional credential fields (e.g. Icecat Full-tier api_token +
+                // content_token). Rendered AFTER the required ones, never
+                // ->required(), and dehydrated only when filled so leaving them
+                // blank keeps any existing value on edit.
+                foreach ($kind->optionalFields() as $field) {
+                    $fields[] = TextInput::make("payload_encrypted.{$field}")
+                        ->label(Str::headline($field).' (optional)')
+                        ->maxLength(2048)
+                        ->password()
+                        ->revealable()
+                        ->dehydrated(fn ($state): bool => filled($state))
+                        ->placeholder(fn (string $context): string => $context === 'edit'
+                            ? '•••••••• (saved — leave blank to keep)'
+                            : 'Optional — leave blank if not used')
+                        ->helperText(fn (string $context): string => $context === 'edit'
+                            ? '✓ Stored encrypted if set. Leave blank to keep — type a new value to replace.'
+                            : 'Optional. Encrypted at rest.');
+                }
+
                 return $fields;
             })->columnSpanFull(),
 

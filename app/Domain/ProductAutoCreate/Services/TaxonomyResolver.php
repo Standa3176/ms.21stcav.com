@@ -126,6 +126,9 @@ final class TaxonomyResolver
             return null;
         }
         foreach ($attributes as $attr) {
+            if (is_object($attr)) {
+                $attr = (array) $attr;
+            }
             if (! is_array($attr)) {
                 continue;
             }
@@ -161,6 +164,10 @@ final class TaxonomyResolver
                 break;
             }
             foreach ($batch as $term) {
+                // Woo SDK list responses are arrays of stdClass — cast each item.
+                if (is_object($term)) {
+                    $term = (array) $term;
+                }
                 if (! is_array($term)) {
                     continue;
                 }

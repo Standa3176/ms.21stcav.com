@@ -55,15 +55,17 @@ enum IntegrationCredentialKind: string
      * present, but they are NOT part of the validity check in requiredFields().
      *
      * Icecat: Full Icecat (non-sponsored brands — Sony/Barco/ViewSonic/etc.)
-     * needs api_token (product data) + content_token (image/asset access),
-     * passed as HTTP headers. Open Icecat ignores them.
+     * needs an app_key (QUERY param, from the Icecat "My Profile" page) — that
+     * is what unlocks Full Icecat content. api_token + content_token are the
+     * newer UUID HEADER tokens (optional); only sent when they are valid UUIDs.
+     * Open Icecat ignores all three.
      *
      * @return array<int, string>
      */
     public function optionalFields(): array
     {
         return match ($this) {
-            self::Icecat => ['api_token', 'content_token'],
+            self::Icecat => ['app_key', 'content_token', 'api_token'],
             default => [],
         };
     }

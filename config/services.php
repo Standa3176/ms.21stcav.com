@@ -108,6 +108,9 @@ return [
     //   production server IP (or use Access Tokens) in your Icecat account.
     'icecat' => [
         'username' => env('ICECAT_USERNAME'),
+        // Full Icecat: app_key (QUERY param, from the Icecat "My Profile" page)
+        // unlocks Full content; api/content tokens are optional UUID headers.
+        'app_key' => env('ICECAT_APP_KEY'),
         'api_token' => env('ICECAT_API_TOKEN'),
         'content_token' => env('ICECAT_CONTENT_TOKEN'),
         'base_url' => env('ICECAT_BASE_URL', 'https://live.icecat.biz/api'),

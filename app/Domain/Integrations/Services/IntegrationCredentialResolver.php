@@ -125,7 +125,9 @@ class IntegrationCredentialResolver
             IntegrationCredentialKind::Icecat => [
                 'username' => (string) config('services.icecat.username', ''),
                 // Optional (Full Icecat). Empty string when unset — IcecatClient
-                // treats blank tokens as absent and falls back to Open Icecat.
+                // treats blanks as absent and falls back to Open Icecat. app_key
+                // (My Profile page) unlocks Full content; tokens are UUID headers.
+                'app_key' => (string) config('services.icecat.app_key', ''),
                 'api_token' => (string) config('services.icecat.api_token', ''),
                 'content_token' => (string) config('services.icecat.content_token', ''),
             ],

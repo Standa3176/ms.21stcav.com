@@ -18,14 +18,19 @@ use Illuminate\Support\Str;
  * Brand + ProductCode/MPN fallback).
  *
  * Endpoint (live.icecat.biz/api, GET):
- *   ?lang=EN&shopname={username}&GTIN={ean}
- *   ?lang=EN&shopname={username}&Brand={brand}&ProductCode={mpn}
+ *   ?lang=EN&shopname={username}&app_key={appKey}&GTIN={ean}
+ *   ?lang=EN&shopname={username}&app_key={appKey}&Brand={brand}&ProductCode={mpn}
  *
  * Auth (see config/services.php 'icecat'):
  *   - Open Icecat: username (shopname) only — sponsored brands.
- *   - Full Icecat: + `api-token` (product data) and `content-token` (image/
- *     asset access) HTTP HEADERS — needed for non-sponsored brands (Sony,
- *     Barco, ViewSonic, etc.) and for the image URLs to resolve.
+ *   - Full Icecat: + an `app_key` (QUERY param) — found on the Icecat "My
+ *     Profile" page; this is what unlocks Full Icecat content (Sony, Barco,
+ *     ViewSonic, Huddly, …). Icecat returns HTTP 400 "an app_key is required"
+ *     without it.
+ *   - Optionally also `api-token` / `content-token` HTTP HEADERS (the newer
+ *     token scheme). These MUST be UUIDs — Icecat 400s ("API Token is not
+ *     valid UUID") on a non-UUID value, so we only send them when they look
+ *     like UUIDs and silently drop junk.
  *
  * Response: data.Image (main: HighPic/Pic500x500/LowPic) + data.Gallery[]
  * (each: Pic/Pic500x500/LowPic, No serial, IsMain "Y"). We return ordered,
@@ -38,6 +43,8 @@ use Illuminate\Support\Str;
  */
 final class IcecatClient
 {
+    private const UUID_REGEX = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
+
     public function __construct(
         private IntegrationCredentialResolver $resolver,
         private IntegrationLogger $logger,
@@ -56,22 +63,18 @@ final class IcecatClient
         if ($creds === null) {
             return [];
         }
-        [$username, $apiToken, $contentToken] = $creds;
 
         $urls = [];
 
         $ean = $ean !== null ? trim($ean) : '';
         if ($ean !== '') {
-            $urls = $this->request($username, $apiToken, $contentToken, ['GTIN' => $ean]);
+            $urls = $this->request($creds, ['GTIN' => $ean]);
         }
 
         $brand = $brand !== null ? trim($brand) : '';
         $mpn = $mpn !== null ? trim($mpn) : '';
         if ($urls === [] && $brand !== '' && $mpn !== '') {
-            $urls = $this->request($username, $apiToken, $contentToken, [
-                'Brand' => $brand,
-                'ProductCode' => $mpn,
-            ]);
+            $urls = $this->request($creds, ['Brand' => $brand, 'ProductCode' => $mpn]);
         }
 
         return array_slice($urls, 0, max(1, $limit));
@@ -79,7 +82,7 @@ final class IcecatClient
 
     /**
      * Probe reachability + auth. A JSON response (even "product not found")
-     * proves the endpoint + username are accepted; an explicit account/auth
+     * proves the endpoint + account are accepted; an explicit account/auth
      * error message or a 401/403 is a failure.
      */
     public function testConnection(): IntegrationTestResult
@@ -90,49 +93,36 @@ final class IcecatClient
         if ($creds === null) {
             return IntegrationTestResult::failed('Icecat username not configured.', 0);
         }
-        [$username, $apiToken, $contentToken] = $creds;
 
         try {
+            // A real, well-formed example GTIN (Icecat's own docs use it) so we
+            // don't trip GTIN-format validation — we only care that the account
+            // is accepted, not that this product is in the catalogue.
             $resp = Http::timeout(15)
-                ->withHeaders($this->headers($apiToken, $contentToken))
-                ->get($this->baseUrl(), [
-                    'lang' => $this->language(),
-                    'shopname' => $username,
-                    // A real, well-formed example GTIN (Icecat's own docs use it)
-                    // so we don't trip GTIN-format validation. We only care that
-                    // the account/endpoint are accepted — not that this product
-                    // is in the account's catalogue.
-                    'GTIN' => '0711719709695',
-                ]);
+                ->withHeaders($this->headers($creds))
+                ->get($this->baseUrl(), $this->query($creds, ['GTIN' => '0711719709695']));
 
             $latency = (int) round((microtime(true) - $start) * 1000);
 
             $json = $resp->json();
             $msg = is_array($json) ? $this->extractMessage($json) : '';
-            // Surface SOMETHING useful in the failure notification — Icecat's
-            // own message if present, else a trimmed raw body.
             $detail = $msg !== '' ? $msg : Str::limit((string) $resp->body(), 200, '');
 
-            // Explicit auth / account problems (any status code, or 401/403).
             $authProblem = $resp->status() === 401
                 || $resp->status() === 403
-                || ($msg !== '' && preg_match('/access|denied|unauthor|not known|shopname|invalid (?:user|shop|account|username)|blocked|forbidden/i', $msg) === 1);
+                || ($msg !== '' && preg_match('/access|denied|unauthor|not known|shopname|app_key|api token|invalid (?:user|shop|account|username)|blocked|forbidden/i', $msg) === 1);
             if ($authProblem) {
                 return IntegrationTestResult::failed('Icecat auth/access: '.($detail !== '' ? $detail : "HTTP {$resp->status()}"), $latency);
             }
 
-            // Product data returned → account + endpoint definitely working.
             if (is_array($json) && isset($json['data']) && is_array($json['data'])) {
                 return IntegrationTestResult::ok($latency);
             }
 
-            // 2xx but no data (e.g. "product not found") → reachable + accepted.
             if ($resp->successful()) {
                 return IntegrationTestResult::ok($latency);
             }
 
-            // Other non-2xx (e.g. 400) with no auth signal — report the body so
-            // the operator can see what Icecat actually objected to.
             return IntegrationTestResult::failed("Icecat HTTP {$resp->status()}: ".($detail !== '' ? $detail : '(empty body)'), $latency);
         } catch (\Throwable $e) {
             $latency = (int) round((microtime(true) - $start) * 1000);
@@ -142,7 +132,7 @@ final class IcecatClient
     }
 
     /**
-     * @return array{0:string,1:string,2:string}|null  [username, apiToken, contentToken]
+     * @return array{username:string, app_key:string, api_token:string, content_token:string}|null
      */
     private function credentials(): ?array
     {
@@ -158,28 +148,65 @@ final class IcecatClient
         }
 
         return [
-            $username,
-            trim((string) ($c['api_token'] ?? '')),
-            trim((string) ($c['content_token'] ?? '')),
+            'username' => $username,
+            'app_key' => trim((string) ($c['app_key'] ?? '')),
+            'api_token' => trim((string) ($c['api_token'] ?? '')),
+            'content_token' => trim((string) ($c['content_token'] ?? '')),
         ];
     }
 
     /**
+     * Build the query string: lang + shopname + (app_key if set) + identifier.
+     *
+     * @param  array{username:string, app_key:string, api_token:string, content_token:string}  $creds
+     * @param  array<string, string>  $identifier  GTIN, or Brand+ProductCode
+     * @return array<string, string>
+     */
+    private function query(array $creds, array $identifier): array
+    {
+        $query = [
+            'lang' => $this->language(),
+            'shopname' => $creds['username'],
+        ];
+        if ($creds['app_key'] !== '') {
+            $query['app_key'] = $creds['app_key'];
+        }
+
+        return array_merge($query, $identifier);
+    }
+
+    /**
+     * api-token / content-token headers — only sent when they are valid UUIDs
+     * (Icecat 400s on a non-UUID value).
+     *
+     * @param  array{username:string, app_key:string, api_token:string, content_token:string}  $creds
+     * @return array<string, string>
+     */
+    private function headers(array $creds): array
+    {
+        $headers = [];
+        if (preg_match(self::UUID_REGEX, $creds['api_token']) === 1) {
+            $headers['api-token'] = $creds['api_token'];
+        }
+        if (preg_match(self::UUID_REGEX, $creds['content_token']) === 1) {
+            $headers['content-token'] = $creds['content_token'];
+        }
+
+        return $headers;
+    }
+
+    /**
+     * @param  array{username:string, app_key:string, api_token:string, content_token:string}  $creds
      * @param  array<string, string>  $identifier  GTIN, or Brand+ProductCode
      * @return array<int, string>
      */
-    private function request(string $username, string $apiToken, string $contentToken, array $identifier): array
+    private function request(array $creds, array $identifier): array
     {
-        $query = array_merge([
-            'lang' => $this->language(),
-            'shopname' => $username,
-        ], $identifier);
-
         $start = microtime(true);
         try {
             $resp = Http::timeout(20)
-                ->withHeaders($this->headers($apiToken, $contentToken))
-                ->get($this->baseUrl(), $query);
+                ->withHeaders($this->headers($creds))
+                ->get($this->baseUrl(), $this->query($creds, $identifier));
         } catch (\Throwable $e) {
             $this->log($identifier, 0, 'failed', ['exception' => $e::class, 'message' => $e->getMessage()], 0);
 
@@ -279,15 +306,6 @@ final class IcecatClient
         }
 
         return null;
-    }
-
-    /** @return array<string, string> */
-    private function headers(string $apiToken, string $contentToken): array
-    {
-        return array_filter([
-            'api-token' => $apiToken !== '' ? $apiToken : null,
-            'content-token' => $contentToken !== '' ? $contentToken : null,
-        ]);
     }
 
     /** @param array<string, mixed> $json */

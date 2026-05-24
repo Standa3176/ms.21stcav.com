@@ -4,8 +4,8 @@ milestone: v2.0
 milestone_name: Intelligence + B2B
 status: planning
 stopped_at: Completed 12-05-PLAN.md — Phase 12 fully shipped (5/5 plans complete; UAT deferred to production deploy per 12-UAT-DISPOSITION.md; 120 Pest cases / 287 assertions; ship verdict PASS_WITH_DEFERRED_UAT in 12-VERIFICATION.md)
-last_updated: "2026-05-16T14:03:57.438Z"
-last_activity: 2026-05-16
+last_updated: "2026-05-24T18:15:10.257Z"
+last_activity: 2026-05-24
 progress:
   total_phases: 11
   completed_phases: 8
@@ -29,7 +29,7 @@ Milestone: v2.0 Intelligence + B2B
 Phase: 13
 Plan: Not started
 Status: Phase ready for `gsd-tools phase complete 12`; Phase 13 ready for planning (run `/gsd-research-phase 13` first — research flag YES)
-Last activity: 2026-05-16
+Last activity: 2026-05-24 - Completed quick task 260524-qqn: AI product-page creation (extends Phase 6 auto-create)
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
 
@@ -134,6 +134,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | supplier:db-sync command + daily schedule (Phase 2; 3,939 of 5,629 SKUs matched) | feat(sync) | 7890d5c |
 | 2026-05-04 | 90-day price + stock history snapshots (5,632 product + 8,017 supplier-offer rows; per-supplier breakdown + Filament UI + history:prune) | feat(products) | 864a14e |
 | 2026-05-04 | Price History searchable picker (sku/name/desc) + reschedule supplier Mon-Fri 07:00 + competitor Sun+Wed 02:00 | feat(price-history) | 4afd884 |
+| 2026-05-24 | AI product-page creation (extends Phase 6): products:generate-drafts (Claude content, meetingstore 6-section structure) + products:source-images (Icecat+Serper web search+Claude-vision validation, woo_product_id nullable, gallery_image_urls) + products:assign-taxonomy (fuzzy brand+Claude category) + /preview/product/{id} page + Icecat/ImageSearch credential kinds + Langfuse OTel silenced | feat(autocreate) | 9b7f094 |
 
 ## Accumulated Context
 

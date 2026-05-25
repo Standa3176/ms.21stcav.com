@@ -20,18 +20,28 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * Phase 2 of the remote supplier mirror. Where Phase 1's TestIntegrationAction
  * proves auth + reachability, this command does the actual data pull: connects
  * to the remote supplier MySQL VPS via the SupplierDb integration credential,
- * queries supplier_products on stcav_dash for rows matching local Woo SKUs,
- * and updates products.buy_price + stock_quantity on each match.
+ * queries the per-supplier feeds_products table on stcav_dash for rows matching
+ * local Woo SKUs, and updates products.buy_price + stock_quantity on each match.
  *
- * Match key precedence (verified live on the 646,985-row supplier_products
- * table — 68.8% coverage on mpn, 27.2% fallback on suppliersku):
+ * Match key precedence:
  *   1. LOWER(TRIM(mpn))         — manufacturer part number (preferred)
  *   2. LOWER(TRIM(suppliersku)) — supplier internal SKU (fallback)
  *
- * Always filters product_excluded=0; ORDER BY updated_at DESC so the latest row
- * wins on tie. mysqli is used directly (NOT a registered Laravel connection)
- * so this command does not pollute config/database.php for what is a per-run
- * external query.
+ * buy_price selection (2026-05-25 fix): a SKU is usually carried by MULTIPLE
+ * suppliers at different prices + stock. We must buy at the CHEAPEST IN-STOCK
+ * supplier, so buildBestOfferMap picks min(price) among offers with stock>0,
+ * falling back to min(price) overall only when nothing is in stock. (The old
+ * code read supplier_products ORDER BY updated_at DESC — the latest-updated
+ * row, ignoring price + stock — which mis-costed multi-supplier SKUs, e.g. a
+ * part costing 42p in-stock at Ingram was recorded at £4.78 from out-of-stock
+ * Westcoast.) stock_quantity is the SUM across in-stock suppliers (total we can
+ * source). feeds_products is the per-supplier table (one row per supplier ×
+ * SKU); supplier_products is the remote's own deduped winner table, whose
+ * dedup rule is NOT cheapest-in-stock, so we bypass it.
+ *
+ * Always filters product_excluded=0. mysqli is used directly (NOT a registered
+ * Laravel connection) so this command does not pollute config/database.php for
+ * what is a per-run external query.
  *
  * Operator entry points:
  *   php artisan supplier:db-sync --dry-run               (full match count, no writes)
@@ -110,12 +120,14 @@ final class SupplierDbSyncCommand extends BaseCommand
 
         foreach ($chunks as $chunkIndex => $chunk) {
             $placeholders = implode(',', array_fill(0, count($chunk), '?'));
-            $sql = "SELECT id, mpn, suppliersku, price, stock, updated_at
-                    FROM supplier_products
-                    WHERE product_excluded = 0
-                      AND (LOWER(TRIM(mpn)) IN ({$placeholders})
-                           OR LOWER(TRIM(suppliersku)) IN ({$placeholders}))
-                    ORDER BY updated_at DESC";
+            // Pull EVERY supplier's offer (feeds_products) so buildBestOfferMap
+            // can pick the cheapest in-stock — not the remote's deduped winner.
+            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, fp.stock, f.name AS supplier_name
+                    FROM feeds_products fp
+                    LEFT JOIN feeds f ON fp.supplierid = f.id
+                    WHERE fp.product_excluded = 0
+                      AND (LOWER(TRIM(fp.mpn)) IN ({$placeholders})
+                           OR LOWER(TRIM(fp.suppliersku)) IN ({$placeholders}))";
 
             $stmt = $mysqli->prepare($sql);
             if ($stmt === false) {
@@ -145,9 +157,9 @@ final class SupplierDbSyncCommand extends BaseCommand
             ));
         }
 
-        // ── Build SKU map ──
-        $map = $this->buildSkuMap($supplierRows);
-        $this->info('Built lookup map: '.count($map).' unique keys (from '.count($supplierRows).' supplier rows).');
+        // ── Build best-offer map (cheapest in-stock per key) ──
+        $map = $this->buildBestOfferMap($supplierRows);
+        $this->info('Built best-offer map: '.count($map).' unique keys (cheapest in-stock) from '.count($supplierRows).' supplier offers.');
 
         // ── Iterate local Products ──
         $matched = 0;
@@ -167,14 +179,17 @@ final class SupplierDbSyncCommand extends BaseCommand
                 $key = strtolower(trim((string) $local->sku));
                 if ($key === '' || ! isset($map[$key])) {
                     $unmatched++;
+
                     continue;
                 }
 
                 $matched++;
                 $row = $map[$key];
 
-                $newBuy = $this->parsePrice($row['price'] ?? null);
-                $newStock = $this->parseStock($row['stock'] ?? null);
+                // Pre-computed by buildBestOfferMap: cheapest IN-STOCK price
+                // (fallback cheapest overall) + total stock across suppliers.
+                $newBuy = $row['buy'];     // string|null (parsePrice form)
+                $newStock = $row['stock']; // int|null
 
                 // Normalise existing values for comparison. buy_price is cast
                 // to decimal:4 so it returns "60.0000" on the model — compare
@@ -190,6 +205,7 @@ final class SupplierDbSyncCommand extends BaseCommand
 
                 if (! $buyChanged && ! $stockChanged) {
                     $unchanged++;
+
                     continue;
                 }
 
@@ -323,6 +339,7 @@ final class SupplierDbSyncCommand extends BaseCommand
             $stmt = $db->prepare($sql);
             if ($stmt === false) {
                 $this->warn("syncSupplierOfferSnapshots: prepare failed on chunk {$chunkIndex}: {$db->error}");
+
                 continue;
             }
 
@@ -413,32 +430,79 @@ final class SupplierDbSyncCommand extends BaseCommand
     }
 
     /**
-     * Build a lowercased-key lookup map from supplier rows. The caller pre-sorts
-     * input by updated_at DESC so the FIRST occurrence of any key wins (latest
-     * supplier_products row for that mpn / suppliersku).
+     * Build a lowercased-key lookup map choosing the BEST offer per key across
+     * all suppliers. Each supplier offer is indexed under BOTH its mpn and its
+     * suppliersku (so a local product matches by either), and per key we keep:
      *
-     * mpn match takes precedence over suppliersku match: when both keys are
-     * non-empty for a single row, the mpn key entry is tagged matched_via='mpn'
-     * and the suppliersku key entry is tagged matched_via='suppliersku' — both
-     * keys are independently lookup-able by callers.
+     *   - buy   : cheapest price among IN-STOCK offers (stock > 0); if no offer
+     *             is in stock, the cheapest price overall (so we still have a
+     *             cost, flagged in_stock=false).
+     *   - stock : SUM of stock across in-stock offers (total we can source).
+     *   - supplier / in_stock / matched_via : transparency for logging.
+     *
+     * Replaces the old "first row wins (latest updated_at)" rule, which ignored
+     * price + stock and so mis-costed multi-supplier SKUs.
      *
      * @param  array<int, array<string, mixed>>  $rows
-     * @return array<string, array<string, mixed>>
+     * @return array<string, array{buy:?string, stock:int, supplier:?string, in_stock:bool, matched_via:string}>
      */
-    public function buildSkuMap(array $rows): array
+    public function buildBestOfferMap(array $rows): array
     {
-        $map = [];
+        /** @var array<string, array<string, mixed>> $acc */
+        $acc = [];
+
         foreach ($rows as $row) {
+            $priceStr = $this->parsePrice(isset($row['price']) ? (string) $row['price'] : null);
+            $price = $priceStr === null ? null : (float) $priceStr;
+            $stock = $this->parseStock(isset($row['stock']) ? (string) $row['stock'] : null);
+            $supplier = (string) ($row['supplier_name'] ?? $row['supplierid'] ?? '');
+            $inStock = $stock !== null && $stock > 0;
+
             $mpn = strtolower(trim((string) ($row['mpn'] ?? '')));
             $sku = strtolower(trim((string) ($row['suppliersku'] ?? '')));
 
-            // mpn match takes precedence — only set if not already present.
-            if ($mpn !== '' && ! isset($map[$mpn])) {
-                $map[$mpn] = ['matched_via' => 'mpn'] + $row;
+            foreach ([['mpn', $mpn], ['suppliersku', $sku]] as [$via, $key]) {
+                if ($key === '') {
+                    continue;
+                }
+                if (! isset($acc[$key])) {
+                    $acc[$key] = [
+                        'matched_via' => $via,
+                        'instock_price' => null, 'instock_str' => null, 'instock_supplier' => null,
+                        'any_price' => null, 'any_str' => null, 'any_supplier' => null,
+                        'total_stock' => 0,
+                    ];
+                }
+
+                if ($inStock) {
+                    $acc[$key]['total_stock'] += $stock;
+                }
+
+                if ($price !== null && $price > 0) {
+                    if ($acc[$key]['any_price'] === null || $price < $acc[$key]['any_price']) {
+                        $acc[$key]['any_price'] = $price;
+                        $acc[$key]['any_str'] = $priceStr;
+                        $acc[$key]['any_supplier'] = $supplier;
+                    }
+                    if ($inStock && ($acc[$key]['instock_price'] === null || $price < $acc[$key]['instock_price'])) {
+                        $acc[$key]['instock_price'] = $price;
+                        $acc[$key]['instock_str'] = $priceStr;
+                        $acc[$key]['instock_supplier'] = $supplier;
+                    }
+                }
             }
-            if ($sku !== '' && ! isset($map[$sku])) {
-                $map[$sku] = ['matched_via' => 'suppliersku'] + $row;
-            }
+        }
+
+        $map = [];
+        foreach ($acc as $key => $a) {
+            $useInStock = $a['instock_price'] !== null;
+            $map[$key] = [
+                'buy' => $useInStock ? $a['instock_str'] : $a['any_str'],
+                'stock' => (int) $a['total_stock'],
+                'supplier' => $useInStock ? $a['instock_supplier'] : $a['any_supplier'],
+                'in_stock' => $useInStock,
+                'matched_via' => $a['matched_via'],
+            ];
         }
 
         return $map;

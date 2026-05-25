@@ -47,62 +47,75 @@ it('parseStock handles null, empty, plain integer, "n/a", malformed, and negativ
     expect($cmd->parseStock(' 42 '))->toBe(42);
 });
 
-it('buildSkuMap preserves the FIRST row per key — caller pre-sorts by updated_at DESC', function (): void {
+it('buildBestOfferMap picks the cheapest IN-STOCK supplier (the MUYHSMFFADW case)', function (): void {
     $cmd = makeSupplierDbSyncCommand();
 
-    // Two rows with the SAME mpn — first is "newer" by caller contract (ORDER
-    // BY updated_at DESC). buildSkuMap must keep the first (newer) one.
-    $map = $cmd->buildSkuMap([
-        ['id' => 1, 'mpn' => 'WIDGET-A', 'suppliersku' => 'SUP-1', 'price' => '10.00', 'stock' => '5',  'updated_at' => '2026-05-04 10:00:00'],
-        ['id' => 2, 'mpn' => 'WIDGET-A', 'suppliersku' => 'SUP-2', 'price' => '99.99', 'stock' => '0',  'updated_at' => '2026-01-01 09:00:00'],
+    // Same mpn at two suppliers: Ingram 42p in stock vs Westcoast £4.78 no stock.
+    // We can only buy what's in stock at the cheapest — Ingram 42p.
+    $map = $cmd->buildBestOfferMap([
+        ['mpn' => 'PART-X', 'suppliersku' => 'ING-1', 'supplierid' => '1', 'supplier_name' => 'Ingram',    'price' => '0.42', 'stock' => '15'],
+        ['mpn' => 'PART-X', 'suppliersku' => 'WC-9',  'supplierid' => '2', 'supplier_name' => 'Westcoast', 'price' => '4.78', 'stock' => '0'],
     ]);
 
-    expect($map['widget-a']['id'])->toBe(1);
-    expect($map['widget-a']['price'])->toBe('10.00');
-    expect($map['widget-a']['matched_via'])->toBe('mpn');
+    expect($map['part-x']['buy'])->toBe('0.42')
+        ->and($map['part-x']['supplier'])->toBe('Ingram')
+        ->and($map['part-x']['in_stock'])->toBeTrue()
+        ->and($map['part-x']['stock'])->toBe(15);
 });
 
-it('buildSkuMap registers BOTH the mpn and suppliersku key for the same row', function (): void {
+it('buildBestOfferMap falls back to cheapest overall when nothing is in stock', function (): void {
     $cmd = makeSupplierDbSyncCommand();
 
-    // One row, two distinct identifying columns. Both keys must point at the
-    // same row data, but the matched_via tag differs so callers can tell
-    // which path the lookup took.
-    $map = $cmd->buildSkuMap([
-        ['id' => 7, 'mpn' => 'MPN-X', 'suppliersku' => 'SUP-X', 'price' => '40.00', 'stock' => '12', 'updated_at' => '2026-05-04 12:00:00'],
+    $map = $cmd->buildBestOfferMap([
+        ['mpn' => 'OOS', 'suppliersku' => 'A', 'supplier_name' => 'SupA', 'price' => '9.00', 'stock' => '0'],
+        ['mpn' => 'OOS', 'suppliersku' => 'B', 'supplier_name' => 'SupB', 'price' => '7.50', 'stock' => '0'],
     ]);
 
-    expect($map)->toHaveKey('mpn-x');
-    expect($map)->toHaveKey('sup-x');
-    expect($map['mpn-x']['matched_via'])->toBe('mpn');
-    expect($map['sup-x']['matched_via'])->toBe('suppliersku');
-    // Same row data on both lookups.
-    expect($map['mpn-x']['id'])->toBe(7);
-    expect($map['sup-x']['id'])->toBe(7);
+    expect($map['oos']['buy'])->toBe('7.50')
+        ->and($map['oos']['supplier'])->toBe('SupB')
+        ->and($map['oos']['in_stock'])->toBeFalse()
+        ->and($map['oos']['stock'])->toBe(0);
 });
 
-it('buildSkuMap skips rows where both mpn and suppliersku are empty', function (): void {
+it('buildBestOfferMap ignores a cheaper out-of-stock offer + sums in-stock units', function (): void {
     $cmd = makeSupplierDbSyncCommand();
 
-    $map = $cmd->buildSkuMap([
-        ['id' => 1, 'mpn' => '',       'suppliersku' => '',      'price' => '5.00',  'stock' => '1', 'updated_at' => '2026-05-04 10:00:00'],
-        ['id' => 2, 'mpn' => 'WIDGET', 'suppliersku' => '',      'price' => '6.00',  'stock' => '2', 'updated_at' => '2026-05-04 10:00:00'],
-        ['id' => 3, 'mpn' => '',       'suppliersku' => 'SUP-1', 'price' => '7.00',  'stock' => '3', 'updated_at' => '2026-05-04 10:00:00'],
+    $map = $cmd->buildBestOfferMap([
+        ['mpn' => 'M', 'suppliersku' => 'S1', 'supplier_name' => 'A', 'price' => '5.00', 'stock' => '10'],
+        ['mpn' => 'M', 'suppliersku' => 'S2', 'supplier_name' => 'B', 'price' => '6.00', 'stock' => '4'],
+        ['mpn' => 'M', 'suppliersku' => 'S3', 'supplier_name' => 'C', 'price' => '4.00', 'stock' => '0'], // cheapest but OOS → ignored
     ]);
 
-    expect($map)->toHaveCount(2);
-    expect($map)->toHaveKey('widget');
-    expect($map)->toHaveKey('sup-1');
+    expect($map['m']['buy'])->toBe('5.00')      // cheapest in-stock, not the £4.00 OOS
+        ->and($map['m']['supplier'])->toBe('A')
+        ->and($map['m']['stock'])->toBe(14);    // 10 + 4 (in-stock only)
 });
 
-it('buildSkuMap normalises keys via lowercase + trim', function (): void {
+it('buildBestOfferMap registers BOTH the mpn and suppliersku key for the same offer', function (): void {
     $cmd = makeSupplierDbSyncCommand();
 
-    $map = $cmd->buildSkuMap([
-        ['id' => 1, 'mpn' => '  WIDGET-A  ', 'suppliersku' => 'sup-1', 'price' => '10.00', 'stock' => '5', 'updated_at' => '2026-05-04 10:00:00'],
+    $map = $cmd->buildBestOfferMap([
+        ['mpn' => 'MPN-X', 'suppliersku' => 'SUP-X', 'supplier_name' => 'A', 'price' => '40.00', 'stock' => '12'],
     ]);
 
-    expect($map)->toHaveKey('widget-a');
-    expect($map)->not->toHaveKey('  WIDGET-A  ');
-    expect($map['widget-a']['id'])->toBe(1);
+    expect($map)->toHaveKey('mpn-x')->toHaveKey('sup-x')
+        ->and($map['mpn-x']['matched_via'])->toBe('mpn')
+        ->and($map['sup-x']['matched_via'])->toBe('suppliersku')
+        ->and($map['mpn-x']['buy'])->toBe('40.00')
+        ->and($map['sup-x']['buy'])->toBe('40.00');
+});
+
+it('buildBestOfferMap skips empty-key rows + normalises keys via lowercase + trim', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    $map = $cmd->buildBestOfferMap([
+        ['mpn' => '',           'suppliersku' => '',      'supplier_name' => 'A', 'price' => '5.00', 'stock' => '1'],
+        ['mpn' => '  WIDGET  ', 'suppliersku' => '',      'supplier_name' => 'B', 'price' => '6.00', 'stock' => '2'],
+        ['mpn' => '',           'suppliersku' => 'SUP-1', 'supplier_name' => 'C', 'price' => '7.00', 'stock' => '3'],
+    ]);
+
+    expect($map)->toHaveCount(2)
+        ->and($map)->toHaveKey('widget')
+        ->and($map)->toHaveKey('sup-1')
+        ->and($map)->not->toHaveKey('  WIDGET  ');
 });

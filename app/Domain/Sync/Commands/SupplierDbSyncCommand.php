@@ -55,7 +55,8 @@ final class SupplierDbSyncCommand extends BaseCommand
 {
     protected $signature = 'supplier:db-sync
         {--dry-run : Report what would change without writing}
-        {--limit=0 : Stop after N matches (0 = no limit)}';
+        {--limit=0 : Stop after N matches (0 = no limit)}
+        {--flag-obsolete : Demote published, non-custom products with NO supplier offer to status=pending (possibly obsolete; review)}';
 
     protected $description = 'Sync price + stock from the remote supplier MySQL into local products.';
 
@@ -69,9 +70,11 @@ final class SupplierDbSyncCommand extends BaseCommand
     {
         $dryRun = (bool) $this->option('dry-run');
         $limit = (int) $this->option('limit');
+        $flagObsolete = (bool) $this->option('flag-obsolete');
 
         $this->info('supplier:db-sync — '.($dryRun ? 'DRY-RUN' : 'LIVE')
-            .($limit > 0 ? " (limit={$limit})" : ''));
+            .($limit > 0 ? " (limit={$limit})" : '')
+            .($flagObsolete ? ' [+flag-obsolete]' : ''));
 
         // ── Resolve credentials ──
         $creds = $this->resolver->for(IntegrationCredentialKind::SupplierDb);
@@ -169,16 +172,31 @@ final class SupplierDbSyncCommand extends BaseCommand
         $errored = 0;
         $wouldUpdate = 0;
         $processed = 0;
+        $flaggedObsolete = 0;
+        $wouldFlagObsolete = 0;
 
         Product::whereNotNull('sku')->orderBy('id')->chunk(500, function ($batch) use (
             &$matched, &$unmatched, &$updated, &$unchanged, &$errored, &$wouldUpdate,
-            &$processed, $map, $dryRun, $limit
+            &$processed, &$flaggedObsolete, &$wouldFlagObsolete, $map, $dryRun, $limit, $flagObsolete
         ) {
             foreach ($batch as $local) {
                 $processed++;
                 $key = strtolower(trim((string) $local->sku));
                 if ($key === '' || ! isset($map[$key])) {
                     $unmatched++;
+
+                    // No supplier offer → possibly obsolete. With --flag-obsolete,
+                    // demote published / non-custom / non-excluded products to
+                    // status=pending for review (operator rule 2026-05-25; mirrors
+                    // MarkMissingSkusJob on the supplier_api path).
+                    if ($flagObsolete && $key !== '' && $this->isObsoleteCandidate($local)) {
+                        if ($dryRun) {
+                            $wouldFlagObsolete++;
+                        } else {
+                            Product::where('id', $local->id)->update(['status' => 'pending']);
+                            $flaggedObsolete++;
+                        }
+                    }
 
                     continue;
                 }
@@ -288,7 +306,39 @@ final class SupplierDbSyncCommand extends BaseCommand
             $dryRun ? " would_update={$wouldUpdate}" : '',
         ));
 
+        if ($flagObsolete) {
+            $this->warn(sprintf(
+                $dryRun
+                    ? 'Obsolete (no supplier offer): %d published/non-custom products WOULD be demoted to status=pending.'
+                    : 'Obsolete (no supplier offer): %d published/non-custom products demoted to status=pending for review.',
+                $dryRun ? $wouldFlagObsolete : $flaggedObsolete,
+            ));
+        }
+
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * A published, supplier-sourced simple product the feed no longer carries —
+     * an obsolete/discontinued candidate to demote to 'pending' for review.
+     * Skips custom-ms (is_custom_ms OR 'custom-ms' tag) + manually-excluded
+     * products (mirrors FlagProductsMissingBuyPriceCommand + MarkMissingSkusJob
+     * carve-outs). Only `publish` rows are touched — never re-demote pending/
+     * draft/private.
+     */
+    public function isObsoleteCandidate(Product $product): bool
+    {
+        if ((string) $product->status !== 'publish') {
+            return false;
+        }
+        if ((bool) $product->is_custom_ms === true) {
+            return false;
+        }
+        if ((bool) $product->exclude_from_auto_update === true) {
+            return false;
+        }
+
+        return ! in_array('custom-ms', (array) ($product->tags ?? []), true);
     }
 
     /**

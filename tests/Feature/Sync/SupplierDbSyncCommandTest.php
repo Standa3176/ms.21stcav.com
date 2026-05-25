@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 
 /**
@@ -118,4 +119,22 @@ it('buildBestOfferMap skips empty-key rows + normalises keys via lowercase + tri
         ->and($map)->toHaveKey('widget')
         ->and($map)->toHaveKey('sup-1')
         ->and($map)->not->toHaveKey('  WIDGET  ');
+});
+
+it('isObsoleteCandidate flags a published, non-custom product', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    $p = new Product(['status' => 'publish', 'is_custom_ms' => false, 'exclude_from_auto_update' => false, 'tags' => []]);
+
+    expect($cmd->isObsoleteCandidate($p))->toBeTrue();
+});
+
+it('isObsoleteCandidate skips non-published / custom-ms (field or tag) / excluded products', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    expect($cmd->isObsoleteCandidate(new Product(['status' => 'pending', 'tags' => []])))->toBeFalse()
+        ->and($cmd->isObsoleteCandidate(new Product(['status' => 'draft', 'tags' => []])))->toBeFalse()
+        ->and($cmd->isObsoleteCandidate(new Product(['status' => 'publish', 'is_custom_ms' => true, 'tags' => []])))->toBeFalse()
+        ->and($cmd->isObsoleteCandidate(new Product(['status' => 'publish', 'exclude_from_auto_update' => true, 'tags' => []])))->toBeFalse()
+        ->and($cmd->isObsoleteCandidate(new Product(['status' => 'publish', 'tags' => ['custom-ms']])))->toBeFalse();
 });

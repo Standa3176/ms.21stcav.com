@@ -154,6 +154,8 @@ class AdminPanelProvider extends PanelProvider
             // Quick task 260504-muq — Price History page (Catalogue → Price History).
             ->discoverPages(in: app_path('Domain/Products/Filament/Pages'), for: 'App\\Domain\\Products\\Filament\\Pages')
             ->discoverResources(in: app_path('Domain/Pricing/Filament/Resources'), for: 'App\\Domain\\Pricing\\Filament\\Resources')
+            // 2026-05-25 — Pricing Operations dashboard page (Operations → Pricing Operations).
+            ->discoverPages(in: app_path('Domain/Pricing/Filament/Pages'), for: 'App\\Domain\\Pricing\\Filament\\Pages')
             // Phase 4 Plan 04 — CRM Resources + Pages (CrmPipelineSettingsPage is a singleton Page).
             ->discoverResources(in: app_path('Domain/CRM/Filament/Resources'), for: 'App\\Domain\\CRM\\Filament\\Resources')
             ->discoverPages(in: app_path('Domain/CRM/Filament/Pages'), for: 'App\\Domain\\CRM\\Filament\\Pages')

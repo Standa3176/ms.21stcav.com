@@ -1,38 +1,41 @@
 <x-filament-panels::page>
-    {{-- Pricing Operations — built 2026-05-25 (operator request). Four panels:
-         recent price changes / new SKUs / competitor-at-floor / competitor-below-cost.
-         Panels 3-4 come from CompetitorPositionScanner (cached; "Recompute" busts it). --}}
+    {{-- Pricing Operations — 4 clickable summary tiles (mountAction → modal + CSV)
+         over 4 preview panels. Data from PricingOpsReport. --}}
 
     @php
-        $floorPct = number_format(($scan['floor_bps'] ?? 600) / 100, 1);
         $money = fn (?int $pennies) => '£' . number_format(((int) $pennies) / 100, 2);
         $gbp = fn ($decimal) => '£' . number_format((float) $decimal, 2);
-        $pct = fn (int $bps) => number_format($bps / 100, 1) . '%';
+        $floorPct = number_format(($scan['floor_bps'] ?? 600) / 100, 1);
+        $exportUrl = fn (string $bucket) => route('pricing-ops.export', ['bucket' => $bucket]);
     @endphp
 
-    {{-- ── Summary strip ──────────────────────────────────────────────── --}}
+    {{-- ── Clickable summary tiles ───────────────────────────────────── --}}
     <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs text-gray-500 dark:text-gray-400">Matched (cost + competitor)</div>
+        <button type="button" wire:click="mountAction('matched')"
+            class="rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs text-gray-500 dark:text-gray-400">Matched (cost + competitor) ↗</div>
             <div class="text-2xl font-semibold">{{ number_format($scan['matched_count'] ?? 0) }}</div>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs text-gray-500 dark:text-gray-400">Winnable (undercut OK)</div>
+        </button>
+        <button type="button" wire:click="mountAction('winnable')"
+            class="rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs text-gray-500 dark:text-gray-400">Winnable (undercut OK) ↗</div>
             <div class="text-2xl font-semibold text-success-600">{{ number_format($scan['winnable_count'] ?? 0) }}</div>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs text-gray-500 dark:text-gray-400">At/below floor ({{ $floorPct }}%)</div>
+        </button>
+        <button type="button" wire:click="mountAction('atFloor')"
+            class="rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs text-gray-500 dark:text-gray-400">At/below floor ({{ $floorPct }}%) ↗</div>
             <div class="text-2xl font-semibold text-warning-600">{{ number_format($scan['at_floor_count'] ?? 0) }}</div>
-        </div>
-        <div class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-            <div class="text-xs text-gray-500 dark:text-gray-400">Below our cost</div>
+        </button>
+        <button type="button" wire:click="mountAction('belowCost')"
+            class="rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div class="text-xs text-gray-500 dark:text-gray-400">Below our cost ↗</div>
             <div class="text-2xl font-semibold text-danger-600">{{ number_format($scan['below_cost_count'] ?? 0) }}</div>
-        </div>
+        </button>
     </div>
     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-        Competitor positions computed
+        Click any number for the full list + CSV export. Positions computed
         {{ \Illuminate\Support\Carbon::parse($scan['computed_at'])->diffForHumans() }}
-        (competitor prices ≤ {{ $scan['max_age_days'] ?? 30 }} days old, all ex-VAT). Use “Recompute positions” to refresh.
+        (competitor prices ≤ {{ $scan['max_age_days'] ?? 30 }} days old, ex-VAT). “Recompute positions” refreshes.
     </p>
 
     {{-- ── Panel 1 — Recent price changes ────────────────────────────── --}}
@@ -64,6 +67,9 @@
                     </tbody>
                 </table>
             </div>
+            <div class="mt-3">
+                <a href="{{ $exportUrl('recent_changes') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+            </div>
         @endif
     </x-filament::section>
 
@@ -93,8 +99,9 @@
                     </tbody>
                 </table>
             </div>
-            <div class="mt-3">
+            <div class="mt-3 flex gap-4">
                 <a href="/admin/auto-create-reviews" class="text-sm text-primary-600 hover:underline">Open the review inbox →</a>
+                <a href="{{ $exportUrl('new_skus') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
             </div>
         @endif
     </x-filament::section>
@@ -102,9 +109,9 @@
     {{-- ── Panel 3 — Competitor at/below our floor ───────────────────── --}}
     <x-filament::section icon="heroicon-o-exclamation-triangle" class="mt-6">
         <x-slot name="heading">Competitor at/below our {{ $floorPct }}% floor ({{ number_format($scan['at_floor_count'] ?? 0) }})</x-slot>
-        <x-slot name="description">Competitor is above our cost but so close that undercutting would breach the floor — we hold at the floor price. Worst margins first.</x-slot>
+        <x-slot name="description">Competitor is above our cost but so close that undercutting would breach the floor. Worst margins first — click the tile above for the full list.</x-slot>
 
-        @php $atFloor = $scan['at_floor'] ?? []; @endphp
+        @php $atFloor = array_slice($scan['at_floor'] ?? [], 0, 25); @endphp
         @if (count($atFloor) === 0)
             <p class="text-sm text-gray-500 dark:text-gray-400">No products currently held at the floor. 🎯</p>
         @else
@@ -120,15 +127,16 @@
                                 <td class="py-1 pr-4">{{ \Illuminate\Support\Str::limit($r['name'], 45) }}</td>
                                 <td class="py-1 pr-4 text-gray-500">{{ $money($r['cost_ex']) }}</td>
                                 <td class="py-1 pr-4">{{ $money($r['comp_ex']) }}</td>
-                                <td class="py-1 text-warning-600">{{ $pct($r['margin_bps']) }}</td>
+                                <td class="py-1 text-warning-600">{{ number_format($r['margin_bps'] / 100, 1) }}%</td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
-            @if (($scan['at_floor_count'] ?? 0) > count($atFloor))
-                <p class="mt-2 text-xs text-gray-500">Showing the worst {{ count($atFloor) }} of {{ number_format($scan['at_floor_count']) }}.</p>
-            @endif
+            <div class="mt-3 flex gap-4">
+                <button type="button" wire:click="mountAction('atFloor')" class="text-sm text-primary-600 hover:underline">View all {{ number_format($scan['at_floor_count'] ?? 0) }} →</button>
+                <a href="{{ $exportUrl('at_floor') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+            </div>
         @endif
     </x-filament::section>
 
@@ -137,7 +145,7 @@
         <x-slot name="heading">Competitor below our cost ({{ number_format($scan['below_cost_count'] ?? 0) }})</x-slot>
         <x-slot name="description">Lowest competitor sells at or under what we pay — unwinnable on price. A supplier-renegotiation list. Worst first.</x-slot>
 
-        @php $belowCost = $scan['below_cost'] ?? []; @endphp
+        @php $belowCost = array_slice($scan['below_cost'] ?? [], 0, 25); @endphp
         @if (count($belowCost) === 0)
             <p class="text-sm text-gray-500 dark:text-gray-400">No products are priced below our cost by competitors. 🎉</p>
         @else
@@ -153,15 +161,19 @@
                                 <td class="py-1 pr-4">{{ \Illuminate\Support\Str::limit($r['name'], 45) }}</td>
                                 <td class="py-1 pr-4 text-gray-500">{{ $money($r['cost_ex']) }}</td>
                                 <td class="py-1 pr-4 text-danger-600 font-medium">{{ $money($r['comp_ex']) }}</td>
-                                <td class="py-1 text-danger-600">{{ $pct($r['margin_bps']) }}</td>
+                                <td class="py-1 text-danger-600">{{ number_format($r['margin_bps'] / 100, 1) }}%</td>
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
             </div>
-            @if (($scan['below_cost_count'] ?? 0) > count($belowCost))
-                <p class="mt-2 text-xs text-gray-500">Showing the worst {{ count($belowCost) }} of {{ number_format($scan['below_cost_count']) }}.</p>
-            @endif
+            <div class="mt-3 flex gap-4">
+                <button type="button" wire:click="mountAction('belowCost')" class="text-sm text-primary-600 hover:underline">View all {{ number_format($scan['below_cost_count'] ?? 0) }} →</button>
+                <a href="{{ $exportUrl('below_cost') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+            </div>
         @endif
     </x-filament::section>
+
+    {{-- Mounted tile-action modals --}}
+    <x-filament-actions::modals />
 </x-filament-panels::page>

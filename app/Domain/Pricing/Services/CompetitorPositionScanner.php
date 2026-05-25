@@ -28,17 +28,19 @@ use Illuminate\Support\Facades\DB;
  * Performance: one windowed SQL pass reduces competitor_prices to the latest
  * row per (competitor, sku) within the window; the rest is in-memory. Cheap
  * enough to run on page load behind a short cache (the page wraps it in
- * Cache::remember). Lists are capped (worst-margin first) — the counts are exact.
+ * Cache::remember). Lists are full + sorted worst-margin first.
  */
 final class CompetitorPositionScanner
 {
-    /** Hard cap on rows returned per bucket (counts stay exact). */
-    private const LIST_CAP = 200;
-
     /**
+     * Lists are FULL (uncapped) so the dashboard modals + CSV export can show
+     * every row; the page slices for the inline preview. competitor_prices is
+     * small + the scan is cheap, so the full result caches fine.
+     *
      * @return array{
      *   below_cost: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int}>,
      *   at_floor: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int}>,
+     *   winnable: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int}>,
      *   below_cost_count:int, at_floor_count:int, winnable_count:int, matched_count:int,
      *   floor_bps:int, max_age_days:int, computed_at:string
      * }
@@ -53,10 +55,7 @@ final class CompetitorPositionScanner
 
         $belowCost = [];
         $atFloor = [];
-        $belowCostCount = 0;
-        $atFloorCount = 0;
-        $winnable = 0;
-        $matched = 0;
+        $winnable = [];
 
         Product::query()
             ->where('type', 'simple')
@@ -64,8 +63,7 @@ final class CompetitorPositionScanner
             ->where('buy_price', '>', 0)
             ->orderBy('id')
             ->chunkById(500, function ($products) use (
-                &$belowCost, &$atFloor, &$belowCostCount, &$atFloorCount, &$winnable, &$matched,
-                $lowestByKey, $floorBps
+                &$belowCost, &$atFloor, &$winnable, $lowestByKey, $floorBps
             ): void {
                 foreach ($products as $product) {
                     $key = strtolower(trim((string) $product->sku));
@@ -78,7 +76,6 @@ final class CompetitorPositionScanner
                     }
 
                     $compEx = $lowestByKey[$key];
-                    $matched++;
                     $marginBps = intdiv(($compEx - $costEx) * 10000, $costEx);
 
                     $row = [
@@ -90,32 +87,29 @@ final class CompetitorPositionScanner
                     ];
 
                     if ($marginBps <= 0) {
-                        $belowCostCount++;
-                        if (count($belowCost) < self::LIST_CAP) {
-                            $belowCost[] = $row;
-                        }
+                        $belowCost[] = $row;
                     } elseif ($marginBps < $floorBps) {
-                        $atFloorCount++;
-                        if (count($atFloor) < self::LIST_CAP) {
-                            $atFloor[] = $row;
-                        }
+                        $atFloor[] = $row;
                     } else {
-                        $winnable++;
+                        $winnable[] = $row;
                     }
                 }
             });
 
         // Worst (lowest margin) first — the most urgent rows surface at the top.
-        usort($belowCost, static fn (array $a, array $b): int => $a['margin_bps'] <=> $b['margin_bps']);
-        usort($atFloor, static fn (array $a, array $b): int => $a['margin_bps'] <=> $b['margin_bps']);
+        $byMargin = static fn (array $a, array $b): int => $a['margin_bps'] <=> $b['margin_bps'];
+        usort($belowCost, $byMargin);
+        usort($atFloor, $byMargin);
+        usort($winnable, $byMargin);
 
         return [
             'below_cost' => $belowCost,
             'at_floor' => $atFloor,
-            'below_cost_count' => $belowCostCount,
-            'at_floor_count' => $atFloorCount,
-            'winnable_count' => $winnable,
-            'matched_count' => $matched,
+            'winnable' => $winnable,
+            'below_cost_count' => count($belowCost),
+            'at_floor_count' => count($atFloor),
+            'winnable_count' => count($winnable),
+            'matched_count' => count($belowCost) + count($atFloor) + count($winnable),
             'floor_bps' => $floorBps,
             'max_age_days' => $maxAgeDays,
             'computed_at' => now()->toIso8601String(),

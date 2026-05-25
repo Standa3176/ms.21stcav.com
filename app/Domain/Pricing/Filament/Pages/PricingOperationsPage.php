@@ -91,6 +91,35 @@ class PricingOperationsPage extends Page
         return $this->bucketModal('matched', 'matched', 'All matched products (cost + current competitor)', 'heroicon-o-table-cells');
     }
 
+    /** Catalogue-expansion: parts on ≥N suppliers we don't sell yet (cached scan). */
+    public function addCandidatesAction(): Action
+    {
+        return Action::make('addCandidates')
+            ->modalHeading('Products to add — suppliers carry, we don\'t sell')
+            ->modalIcon('heroicon-o-plus-circle')
+            ->modalWidth(MaxWidth::SevenExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->modalContent(function (): View {
+                $data = $this->report()->addCandidates();
+
+                return view('filament.pages.pricing-ops-add-candidates', [
+                    'rows' => array_slice($data['candidates'], 0, self::MODAL_ROW_CAP),
+                    'total' => $data['count'],
+                    'minSuppliers' => $data['min_suppliers'],
+                    'computedAt' => $data['computed_at'],
+                ]);
+            })
+            ->extraModalFooterActions([
+                Action::make('addCandidatesExportCsv')
+                    ->label('Export CSV')->icon('heroicon-o-arrow-down-tray')->color('gray')
+                    ->url(route('pricing-ops.export', ['bucket' => 'add_candidates']))->openUrlInNewTab(),
+                Action::make('addCandidatesExportXls')
+                    ->label('Export XLS')->icon('heroicon-o-table-cells')->color('gray')
+                    ->url(route('pricing-ops.export', ['bucket' => 'add_candidates', 'format' => 'xlsx']))->openUrlInNewTab(),
+            ]);
+    }
+
     private function bucketModal(string $name, string $bucket, string $heading, string $icon): Action
     {
         return Action::make($name)
@@ -135,6 +164,7 @@ class PricingOperationsPage extends Page
             'scan' => $report->positions(),
             'recentChanges' => array_slice($report->recentChanges(), 0, 50),
             'newSkus' => $report->newSkus(50),
+            'addCandidates' => $report->addCandidates(),
         ];
     }
 }

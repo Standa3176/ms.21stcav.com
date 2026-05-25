@@ -31,8 +31,11 @@ final class PricingOpsReport
 
     public const CACHE_TTL = 900; // 15 min
 
+    /** Supplier add-candidates cache (written by supplier:scan-add-candidates). */
+    public const ADD_CANDIDATES_CACHE_KEY = 'pricing_ops:add_candidates';
+
     /** Buckets the dashboard tiles + export route understand. */
-    public const BUCKETS = ['below_cost', 'at_floor', 'winnable', 'matched', 'recent_changes', 'new_skus'];
+    public const BUCKETS = ['below_cost', 'at_floor', 'winnable', 'matched', 'recent_changes', 'new_skus', 'add_candidates'];
 
     public function __construct(private readonly CompetitorPositionScanner $scanner) {}
 
@@ -108,6 +111,27 @@ final class PricingOpsReport
     }
 
     /**
+     * Supplier add-candidates from the cached scan (supplier:scan-add-candidates):
+     * parts on ≥N suppliers we don't sell yet. Empty if never scanned.
+     *
+     * @return array{candidates:array<int,array<string,mixed>>, count:int, min_suppliers:int, computed_at:?string}
+     */
+    public function addCandidates(): array
+    {
+        $cached = Cache::get(self::ADD_CANDIDATES_CACHE_KEY);
+        if (! is_array($cached)) {
+            return ['candidates' => [], 'count' => 0, 'min_suppliers' => 2, 'computed_at' => null];
+        }
+
+        return [
+            'candidates' => is_array($cached['candidates'] ?? null) ? $cached['candidates'] : [],
+            'count' => (int) ($cached['count'] ?? 0),
+            'min_suppliers' => (int) ($cached['min_suppliers'] ?? 2),
+            'computed_at' => $cached['computed_at'] ?? null,
+        ];
+    }
+
+    /**
      * CSV payload for the export route.
      *
      * @return array{filename:string, header:array<int,string>, rows:array<int,array<int,string>>}
@@ -116,6 +140,18 @@ final class PricingOpsReport
     {
         $stamp = now()->format('Y-m-d');
         $money = static fn (int $pennies): string => number_format($pennies / 100, 2, '.', '');
+
+        if ($bucket === 'add_candidates') {
+            $header = ['Brand', 'Part (MPN)', 'Description', 'Suppliers'];
+            $rows = array_map(static fn (array $r): array => [
+                (string) ($r['brand'] ?? ''),
+                (string) ($r['part'] ?? ''),
+                (string) ($r['title'] ?? ''),
+                (string) ($r['suppliers'] ?? ''),
+            ], $this->addCandidates()['candidates']);
+
+            return ['filename' => "products-to-add-{$stamp}.csv", 'header' => $header, 'rows' => $rows];
+        }
 
         if ($bucket === 'recent_changes') {
             $header = ['SKU', 'Old (£)', 'New (£)', 'Change (£)', 'Date'];

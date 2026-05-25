@@ -6,6 +6,7 @@ use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Services\PricingOpsReport;
 use App\Domain\Products\Models\Product;
 use App\Models\User;
+use Illuminate\Support\Facades\Cache;
 use Spatie\Permission\Models\Role;
 
 /*
@@ -71,4 +72,22 @@ it('404s an unknown export bucket', function (): void {
     $this->actingAs(pricingExportUser('admin'))
         ->get(route('pricing-ops.export', ['bucket' => 'nope']))
         ->assertNotFound();
+});
+
+it('exports add_candidates from the cached supplier scan', function (): void {
+    Cache::put(PricingOpsReport::ADD_CANDIDATES_CACHE_KEY, [
+        'candidates' => [['brand' => 'Acme', 'part' => 'ACME-1', 'title' => 'Acme Thing', 'suppliers' => 3]],
+        'count' => 1,
+        'min_suppliers' => 2,
+        'computed_at' => now()->toIso8601String(),
+    ]);
+
+    $res = $this->actingAs(pricingExportUser('admin'))
+        ->get(route('pricing-ops.export', ['bucket' => 'add_candidates']));
+
+    $res->assertOk();
+    expect($res->streamedContent())
+        ->toContain('Part (MPN)')
+        ->toContain('ACME-1')
+        ->toContain('Acme');
 });

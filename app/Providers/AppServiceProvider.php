@@ -117,6 +117,7 @@ use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
+use App\Domain\Sync\Commands\ScanSupplierAddCandidatesCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
 use App\Domain\Sync\Commands\WooImportProductsCommand;
@@ -592,6 +593,9 @@ class AppServiceProvider extends ServiceProvider
                 // 2026-05-25 — cost-traceability diagnostic: show every supplier
                 // offer for a SKU + which one sets buy_price (cheapest in-stock).
                 ExplainSupplierCostCommand::class,
+                // 2026-05-25 — catalogue-expansion scan: parts on ≥2 suppliers
+                // not on MS, cached for the dashboard "Products to add" tile.
+                ScanSupplierAddCandidatesCommand::class,
                 // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
                 // recompute. Default dry-run, --live opt-in (D-12). Lives
                 // under app/Domain/Pricing/Console/Commands/ so explicit

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -245,6 +247,17 @@ Schedule::command('reports:weekly-digest')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Weekly ops digest — Monday 07:00 Europe/London (DASH-05 / Phase 7 Plan 04)');
+
+// 2026-05-25 — supplier:scan-add-candidates weekly (Sunday 05:00 London).
+// Heavy remote GROUP BY over the supplier feed; caches "products to add" (parts
+// stocked by ≥2 suppliers but not on meetingstore) for the Pricing Operations
+// dashboard "Products to add" tile. Read-only; never writes Woo.
+Schedule::command('supplier:scan-add-candidates')
+    ->weeklyOn(0, '05:00')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Cache supplier add-candidates for the dashboard (weekly, Sun 05:00)');
 
 // Phase 12 Plan 05 SEOAGT-05 — nightly SEO agent batch at 04:30 Europe/London.
 // Slots between competitor:ftp-pull (Sun+Wed 02:00) and supplier:db-sync

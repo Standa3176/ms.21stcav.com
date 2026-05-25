@@ -19,8 +19,9 @@ php artisan cutover:checklist --update-status=<gate-id>:pass   # mark a manual g
 ## What actually goes live on the flip
 1. **Price pushes** — `PushPriceChangeToWoo` starts PUTting `regular_price` to Woo on every `ProductPriceChanged` (from `pricing:undercut-competitors --live` and supplier-driven recompute).
 2. **Supplier sync writes** — Phase 2 `SyncChunkJob` price/stock updates.
-3. **Draft publishes** — `PublishProductJob` (review-inbox "Approve") for products **that already have a `woo_product_id`**.
-4. ⚠️ **NOT** the auto-drafted products from `generate-drafts` / `draft-competitor-skus` — they have no `woo_product_id` yet. See **Known Gap** below.
+3. **Draft publishes** — `PublishProductJob` (review-inbox "Approve"):
+   - products that already have a `woo_product_id` → PUT `status=publish`;
+   - auto-drafted products with **no** `woo_product_id` (`generate-drafts` / `draft-competitor-skus`) → **POST `/products` to create them on Woo** (name/slug/sku/price/descriptions/categories/images), back-fill `woo_product_id`, publish. (Core-loop #3b — closes the former gap.)
 
 ---
 
@@ -66,12 +67,20 @@ Getting this wrong is a 20% price error on every push. (Competitor feeds are ex-
 
 ---
 
-## ⚠️ Known Gap — publishing auto-drafted products to Woo
-`products:generate-drafts` and `products:draft-competitor-skus` create **local** draft Products with **no `woo_product_id`**. The review-inbox "Approve" action (`PublishProductJob`) only flips `status=publish` on a product that **already exists on Woo** — it does not CREATE the product on Woo. So "manual movement to live" for an auto-drafted product currently has no path to actually create it on the store.
+## ✅ Auto-drafted products now publish to Woo (core-loop #3b — was a gap, now closed)
+`products:generate-drafts` and `products:draft-competitor-skus` create **local** draft Products with **no `woo_product_id`**. As of #3b, the review-inbox "Approve" action (`PublishProductJob`) handles both cases:
+- **Has `woo_product_id`** (a `CreateWooProductJob` draft already on Woo) → PUT `status=publish`.
+- **No `woo_product_id`** (auto-drafted) → **POST `/products`** with name, slug, sku, `regular_price` (from `sell_price`), short/long descriptions, meta description, categories (`category_ids`) and images (`image_url` + gallery), status=`publish`; then back-fill `woo_product_id` + the Woo-reconciled slug.
 
-**To close the loop**, a small build is needed (call it #3b): a "create on Woo" step that POSTs the reviewed draft to `/products` (status=draft or publish), back-fills `woo_product_id` + `slug` + the images/categories, and is wired into the review Approve action — OR route reviewed drafts through the existing `CreateWooProductJob` (note: it currently requires `supplier_api` data and a different trigger). Build this before relying on the Sunday auto-draft → publish flow end-to-end.
+So "manual movement to live" now works end-to-end: Sunday draft → review inbox → Approve → live on Woo.
 
-The **pricing** half of the loop (#1 undercut + #2 push) is unaffected by this gap — it operates on existing Woo products that already have a `woo_product_id`.
+**Behaviour notes / caveats:**
+- **Shadow-safe.** All writes route through `WooClient` → `writeOrShadow`. Pre-cutover (`WOO_WRITE_ENABLED=false`) Approve records a `SyncDiff` and the row **stays in the review inbox** (it is NOT falsely marked published, since nothing was created on Woo). After the flip, re-running Approve performs the real create + publish. So Approve is safe to exercise during the parity window — it just stages the diff.
+- **One image is enough; none → Woo placeholder** (operator rule). Images are sideloaded by Woo from the public `image_url` — those URLs must be publicly reachable from the WP host.
+- **Brand is not pushed** (matches the existing `CreateWooProductJob` payload, which also omits it). `brand_id` stays a local ref; if the storefront must show brand on auto-published products, add the Woo brand-taxonomy key to `buildCreatePayload()` once the taxonomy slug is confirmed.
+- **SKU uniqueness** is enforced by Woo — a duplicate SKU returns 400 and the job retries then DLQs (visible in Horizon). The local draft pipeline already excludes SKUs that exist in `products`, so this is an edge case.
+
+The **pricing** half of the loop (#1 undercut + #2 push) operates on existing Woo products that already have a `woo_product_id` and is independent of this path.
 
 ---
 

@@ -8,6 +8,7 @@ use App\Domain\Competitor\Filament\Resources\CompetitorFtpFeedResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorFtpFeed;
 use App\Filament\Concerns\HasExportableTable;
+use Carbon\CarbonInterface;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -25,6 +26,7 @@ use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 
@@ -54,7 +56,7 @@ class CompetitorFtpFeedResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-cloud-arrow-down';
 
-    protected static ?string $navigationGroup = 'Competitors';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?string $navigationLabel = 'FTP Feeds';
 
@@ -289,7 +291,7 @@ class CompetitorFtpFeedResource extends Resource
      */
     protected static function staleColor(mixed $state): ?string
     {
-        if (! $state instanceof \Illuminate\Support\Carbon && ! $state instanceof \Carbon\CarbonInterface) {
+        if (! $state instanceof Carbon && ! $state instanceof CarbonInterface) {
             return null;
         }
         $threshold = (int) config('competitor.ftp.stale_days', 30);

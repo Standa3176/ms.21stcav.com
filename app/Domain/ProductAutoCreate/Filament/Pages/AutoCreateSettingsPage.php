@@ -44,7 +44,7 @@ class AutoCreateSettingsPage extends Page implements HasForms
     // Quick task 260504-ev5 — 8-group nav restructure. Auto-Create config
     // belongs with the WooCommerce group (alongside SyncRuns + ImportIssues +
     // Skip Rules) for the auto-create-product workflow surface.
-    protected static ?string $navigationGroup = 'WooCommerce';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 30;
 

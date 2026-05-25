@@ -8,6 +8,7 @@ use App\Domain\Sync\Filament\Resources\SyncRunResource\Pages;
 use App\Domain\Sync\Filament\Resources\SyncRunResource\RelationManagers\SyncErrorsRelationManager;
 use App\Domain\Sync\Filament\Resources\SyncRunResource\RelationManagers\SyncRunItemsRelationManager;
 use App\Domain\Sync\Models\SyncRun;
+use Carbon\CarbonInterface;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\IconColumn;
@@ -35,7 +36,7 @@ class SyncRunResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. SyncRuns are Woo
     // bulk-sync forensics — moved to dedicated 'WooCommerce' group at sort 10.
-    protected static ?string $navigationGroup = 'WooCommerce';
+    protected static ?string $navigationGroup = 'Sync & CRM';
 
     protected static ?int $navigationSort = 10;
 
@@ -88,7 +89,7 @@ class SyncRunResource extends Resource
                 TextColumn::make('duration')
                     ->label('Duration')
                     ->state(fn (SyncRun $r) => $r->completed_at && $r->started_at
-                        ? $r->started_at->diffForHumans($r->completed_at, ['syntax' => \Carbon\CarbonInterface::DIFF_ABSOLUTE])
+                        ? $r->started_at->diffForHumans($r->completed_at, ['syntax' => CarbonInterface::DIFF_ABSOLUTE])
                         : '—'
                     ),
                 TextColumn::make('status')

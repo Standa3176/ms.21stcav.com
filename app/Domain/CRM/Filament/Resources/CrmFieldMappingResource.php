@@ -47,7 +47,7 @@ class CrmFieldMappingResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. CRM field mapping
     // moved to dedicated 'CRM & Bitrix' group at sort 10.
-    protected static ?string $navigationGroup = 'CRM & Bitrix';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 10;
 

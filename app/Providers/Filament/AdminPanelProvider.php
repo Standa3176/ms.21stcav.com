@@ -1,7 +1,28 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Providers\Filament;
 
+use App\Filament\Pages\HomeDashboardPage;
+use App\Filament\Pages\Horizon\HorizonBatchesPage;
+use App\Filament\Pages\Horizon\HorizonCompletedJobsPage;
+use App\Filament\Pages\Horizon\HorizonDashboardPage;
+use App\Filament\Pages\Horizon\HorizonFailedJobsPage;
+use App\Filament\Pages\Horizon\HorizonMetricsPage;
+use App\Filament\Pages\Horizon\HorizonMonitoringPage;
+use App\Filament\Pages\Horizon\HorizonPendingJobsPage;
+use App\Filament\Pages\Horizon\HorizonSilencedJobsPage;
+use App\Filament\Pages\NotificationCentrePage;
+use App\Filament\Widgets\CompetitorFreshnessWidget;
+use App\Filament\Widgets\CrmPushSuccessRateWidget;
+use App\Filament\Widgets\HorizonFailedJobsWidget;
+use App\Filament\Widgets\ImportIssuesWidget;
+use App\Filament\Widgets\LastSyncRunWidget;
+use App\Filament\Widgets\PendingReviewsWidget;
+use App\Filament\Widgets\ProductCatalogueHealthWidget;
+use App\Filament\Widgets\SyncDiffsParityWidget;
+use App\Filament\Widgets\WeeklyReportStatusWidget;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -32,22 +53,27 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex('#5B21B6'),
             ])
-            // Explicit nav order — domain-aligned sequence matching ops mental model:
-            //   Operations  — daily ambient (Home, Horizon, Notifications)
-            //   Catalogue   — product/pricing master data + quotes
-            //   Review      — human-in-the-loop triage (Suggestions, Auto-Create, Agents)
-            //   Competitors — competitor intelligence + FTP feed plumbing
-            //   WooCommerce — Woo-bound jobs + import triage
-            //   CRM & Bitrix — CRM push log + mapping/pipeline config
-            //   Admin       — credentials + alert recipients + customer groups (rare-touch)
+            // Explicit nav order — daily-use groups first, set-once config last.
+            // 2026-05-25 simplification (was 8 groups): the daily surface is
+            // small (Home → Review → Competitor Prices → Pricing → Products), so
+            // all rarely-touched plumbing (credentials, feeds, mappings, rules,
+            // skip rules, settings, customer groups, roles) is quarantined into a
+            // single collapsible "Configuration" group. Operational logs (sync,
+            // import, CRM push) share one "Sync & CRM" group. The former
+            // WooCommerce / CRM & Bitrix / Admin / "FTP & CSV" groups are gone.
+            //   Operations  — daily ambient (Home, Notifications, Horizon)
+            //   Catalogue   — Products, Quotes, Price History
+            //   Review      — human triage (Auto-Create, Suggestions, Agents)
+            //   Competitors — Competitor Prices + Analysis (daily intel only)
+            //   Sync & CRM  — operational logs (Sync Runs, Import Issues, CRM Push Log)
+            //   Configuration — everything set-once (rare-touch, collapsed)
             ->navigationGroups([
                 'Operations',
                 'Catalogue',
                 'Review',
                 'Competitors',
-                'WooCommerce',
-                'CRM & Bitrix',
-                'Admin',
+                'Sync & CRM',
+                'Configuration',
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')
@@ -74,23 +100,23 @@ class AdminPanelProvider extends PanelProvider
                 // dashboard at /admin (D-01, 9-widget grid). Registered first so it
                 // wins the root slug; Pages\Dashboard retained as a safety fallback
                 // but Filament 3 honours the first Dashboard-subclass registration.
-                \App\Filament\Pages\HomeDashboardPage::class,
+                HomeDashboardPage::class,
                 // Phase 7 Plan 04 — unified notification centre at /admin/notifications.
                 // 4 tabs (failed-jobs / stale-feeds / pending-suggestions / webhook-dlq)
                 // aggregated by NotificationCentreAggregator; Livewire wire:poll refreshes.
-                \App\Filament\Pages\NotificationCentrePage::class,
+                NotificationCentrePage::class,
                 // Phase 7 Plan 02 — D-03 native Horizon Pages (8) — explicit registration
                 // belt-and-braces alongside ->discoverPages(...) above. Discovery would
                 // pick them up anyway; explicit list gives static analysers + grep an
                 // anchor + makes the parent-child nav order legible at a glance.
-                \App\Filament\Pages\Horizon\HorizonDashboardPage::class,
-                \App\Filament\Pages\Horizon\HorizonMonitoringPage::class,
-                \App\Filament\Pages\Horizon\HorizonMetricsPage::class,
-                \App\Filament\Pages\Horizon\HorizonBatchesPage::class,
-                \App\Filament\Pages\Horizon\HorizonPendingJobsPage::class,
-                \App\Filament\Pages\Horizon\HorizonCompletedJobsPage::class,
-                \App\Filament\Pages\Horizon\HorizonSilencedJobsPage::class,
-                \App\Filament\Pages\Horizon\HorizonFailedJobsPage::class,
+                HorizonDashboardPage::class,
+                HorizonMonitoringPage::class,
+                HorizonMetricsPage::class,
+                HorizonBatchesPage::class,
+                HorizonPendingJobsPage::class,
+                HorizonCompletedJobsPage::class,
+                HorizonSilencedJobsPage::class,
+                HorizonFailedJobsPage::class,
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\\Filament\\Widgets')
             ->widgets([
@@ -98,15 +124,15 @@ class AdminPanelProvider extends PanelProvider
                 // Order here doesn't drive render; HomeDashboardPage::getWidgets()
                 // is authoritative for layout. Listing here ensures Filament
                 // resolves classes + applies policy gates (canView) correctly.
-                \App\Filament\Widgets\LastSyncRunWidget::class,
-                \App\Filament\Widgets\CrmPushSuccessRateWidget::class,
-                \App\Filament\Widgets\CompetitorFreshnessWidget::class,
-                \App\Filament\Widgets\PendingReviewsWidget::class,
-                \App\Filament\Widgets\ImportIssuesWidget::class,
-                \App\Filament\Widgets\HorizonFailedJobsWidget::class,
-                \App\Filament\Widgets\SyncDiffsParityWidget::class,
-                \App\Filament\Widgets\ProductCatalogueHealthWidget::class,
-                \App\Filament\Widgets\WeeklyReportStatusWidget::class,
+                LastSyncRunWidget::class,
+                CrmPushSuccessRateWidget::class,
+                CompetitorFreshnessWidget::class,
+                PendingReviewsWidget::class,
+                ImportIssuesWidget::class,
+                HorizonFailedJobsWidget::class,
+                SyncDiffsParityWidget::class,
+                ProductCatalogueHealthWidget::class,
+                WeeklyReportStatusWidget::class,
             ])
             // Phase 7 Plan 02 — D-03 Horizon link was previously registered here
             // via HorizonLinkNavigationItem::build() (opens /horizon in new tab).

@@ -24,7 +24,7 @@ final class StockUpdaterAdminPage extends Page
 {
     protected static ?string $navigationIcon = 'heroicon-o-wrench';
 
-    protected static ?string $navigationGroup = 'Admin';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?string $navigationLabel = 'Stock Updater Actions';
 

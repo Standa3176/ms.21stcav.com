@@ -45,7 +45,7 @@ class CustomerGroupResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-user-group';
 
-    protected static ?string $navigationGroup = 'Admin';
+    protected static ?string $navigationGroup = 'Configuration';
 
     // I-01 — distinct from PricingRuleResource::$navigationSort (now 30).
     // Reflection-based test in CustomerGroupResourceNavigationSortTest fails CI on collision.

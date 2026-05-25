@@ -38,7 +38,7 @@ class ImportIssueResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Import issues come
     // from Woo↔supplier sync — moved into 'WooCommerce' group at sort 20.
-    protected static ?string $navigationGroup = 'WooCommerce';
+    protected static ?string $navigationGroup = 'Sync & CRM';
 
     protected static ?int $navigationSort = 20;
 

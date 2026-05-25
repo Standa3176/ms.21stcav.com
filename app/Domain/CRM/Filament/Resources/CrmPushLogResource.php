@@ -10,6 +10,7 @@ use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Integration\Models\IntegrationEvent;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
@@ -46,7 +47,7 @@ class CrmPushLogResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'CRM & Bitrix';
+    protected static ?string $navigationGroup = 'Sync & CRM';
 
     protected static ?int $navigationSort = 5;
 
@@ -170,7 +171,7 @@ class CrmPushLogResource extends Resource
 
                 Filter::make('correlation_id')
                     ->form([
-                        \Filament\Forms\Components\TextInput::make('correlation_id')
+                        TextInput::make('correlation_id')
                             ->label('Correlation ID')
                             ->placeholder('Exact UUID match')
                             ->maxLength(36),

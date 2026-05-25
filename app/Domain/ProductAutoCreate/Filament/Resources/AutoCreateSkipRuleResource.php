@@ -53,7 +53,7 @@ class AutoCreateSkipRuleResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Skip rules are part
     // of the auto-create flow — moved to 'WooCommerce' group at sort 40.
-    protected static ?string $navigationGroup = 'WooCommerce';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 40;
 

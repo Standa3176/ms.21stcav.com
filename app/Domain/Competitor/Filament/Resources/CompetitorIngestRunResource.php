@@ -33,7 +33,7 @@ class CompetitorIngestRunResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-clipboard-document-list';
 
-    protected static ?string $navigationGroup = 'Competitors';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 70;
 

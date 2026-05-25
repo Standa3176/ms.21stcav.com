@@ -39,7 +39,7 @@ class CrmStatusMappingResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. CRM status mapping
     // moved to dedicated 'CRM & Bitrix' group at sort 20.
-    protected static ?string $navigationGroup = 'CRM & Bitrix';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 20;
 
@@ -138,8 +138,8 @@ class CrmStatusMappingResource extends Resource
     }
 
     /**
-     * @return array<string, string>  STAGE_ID => Label options for the Bitrix deal
-     *                                stage picker, filtered to the configured pipeline.
+     * @return array<string, string> STAGE_ID => Label options for the Bitrix deal
+     *                               stage picker, filtered to the configured pipeline.
      */
     private static function pipelineStageOptions(): array
     {

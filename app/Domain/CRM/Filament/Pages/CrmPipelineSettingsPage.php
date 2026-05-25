@@ -12,6 +12,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Concerns\InteractsWithForms;
 use Filament\Forms\Contracts\HasForms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Throwable;
@@ -38,7 +39,7 @@ class CrmPipelineSettingsPage extends Page implements HasForms
 
     // Quick task 260504-ev5 — 8-group nav restructure. CRM pipeline settings
     // moved to dedicated 'CRM & Bitrix' group at sort 40.
-    protected static ?string $navigationGroup = 'CRM & Bitrix';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 40;
 
@@ -77,7 +78,7 @@ class CrmPipelineSettingsPage extends Page implements HasForms
                     Select::make('landing_stage_id')
                         ->label('Landing STAGE_ID')
                         ->required()
-                        ->options(function (\Filament\Forms\Get $get): array {
+                        ->options(function (Get $get): array {
                             $pipeline = (string) ($get('bitrix_pipeline_id') ?? '');
 
                             return self::stageOptionsForPipeline($pipeline);
@@ -137,7 +138,7 @@ class CrmPipelineSettingsPage extends Page implements HasForms
     }
 
     /**
-     * @return array<string, string>  pipeline_id => label
+     * @return array<string, string> pipeline_id => label
      */
     private static function pipelineOptions(): array
     {
@@ -168,7 +169,7 @@ class CrmPipelineSettingsPage extends Page implements HasForms
     }
 
     /**
-     * @return array<string, string>  STAGE_ID => label options filtered to the given pipeline.
+     * @return array<string, string> STAGE_ID => label options filtered to the given pipeline.
      */
     private static function stageOptionsForPipeline(string $pipelineId): array
     {

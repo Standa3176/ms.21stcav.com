@@ -50,7 +50,7 @@ class IntegrationCredentialResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Integration creds
     // (Anthropic/OpenAI/Woo/Bitrix/Langfuse) stay in Admin group at sort 10.
-    protected static ?string $navigationGroup = 'Admin';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?string $navigationLabel = 'Integration Credentials';
 
@@ -116,7 +116,7 @@ class IntegrationCredentialResource extends Resource
             // fire on hydration — so $get('kind') returns null on the first
             // schema-build pass. Fall back to $record->kind when present so the
             // form renders the correct fields immediately on edit.
-            Group::make()->schema(function (callable $get, ?\App\Domain\Integrations\Models\IntegrationCredential $record): array {
+            Group::make()->schema(function (callable $get, ?IntegrationCredential $record): array {
                 $kindValue = $get('kind') ?? $record?->kind?->value;
                 if (! $kindValue) {
                     return [];

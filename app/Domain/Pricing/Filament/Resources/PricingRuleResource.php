@@ -14,6 +14,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
+use Filament\Tables\Actions\Action;
 use Filament\Tables\Actions\DeleteAction;
 use Filament\Tables\Actions\DeleteBulkAction;
 use Filament\Tables\Actions\EditAction;
@@ -49,7 +50,7 @@ class PricingRuleResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Pricing rules sit
     // in Catalogue at sort 30 (after Products@10 + Customer Groups@20).
-    protected static ?string $navigationGroup = 'Catalogue';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 30;
 
@@ -220,7 +221,7 @@ class PricingRuleResource extends Resource
                     ->authorize(fn (PricingRule $record): bool => auth()->user()?->can('delete', $record) ?? false),
 
                 // Drill-down to Simulated Impact for this rule.
-                \Filament\Tables\Actions\Action::make('simulated_impact')
+                Action::make('simulated_impact')
                     ->label('Simulated Impact')
                     ->icon('heroicon-o-chart-bar')
                     ->authorize(fn (PricingRule $record): bool => auth()->user()?->can('update', $record) ?? false)

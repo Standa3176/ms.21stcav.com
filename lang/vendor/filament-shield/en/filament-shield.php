@@ -21,6 +21,6 @@ declare(strict_types=1);
 | resources/lang/en/filament-shield.php`.
 */
 return [
-    'nav.group' => 'Admin',
+    'nav.group' => 'Configuration',
     'nav.role.label' => 'Roles & Permissions',
 ];

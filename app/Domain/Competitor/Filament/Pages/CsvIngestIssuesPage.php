@@ -59,7 +59,7 @@ class CsvIngestIssuesPage extends Page implements HasTable
 
     // Quick task 260504-ev5 — 8-group nav restructure. Sits next to
     // CsvParseErrorResource in 'FTP & CSV' at sort 50 (last in group).
-    protected static ?string $navigationGroup = 'FTP & CSV';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?int $navigationSort = 50;
 
@@ -127,7 +127,7 @@ class CsvIngestIssuesPage extends Page implements HasTable
     }
 
     /**
-     * @return array<int, \Filament\Tables\Actions\Action>
+     * @return array<int, Action>
      */
     protected function tableActionsForActiveTab(): array
     {
@@ -150,7 +150,7 @@ class CsvIngestIssuesPage extends Page implements HasTable
             // whose second argument requires a model instance — so we pass a fresh
             // (unpersisted) instance purely as a role-gate carrier.
             ->authorize(
-                fn (): bool => auth()->user()?->can('update', new CompetitorCsvMapping()) ?? false
+                fn (): bool => auth()->user()?->can('update', new CompetitorCsvMapping) ?? false
             )
             ->form(function (CsvParseError $record): array {
                 $src = self::locateQuarantinedFile($record->filename);

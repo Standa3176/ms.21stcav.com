@@ -41,7 +41,7 @@ class CompetitorResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Competitors moves to
     // its own dedicated 'Competitors' group (was lumped under Catalogue).
-    protected static ?string $navigationGroup = 'Competitors';
+    protected static ?string $navigationGroup = 'Configuration';
 
     protected static ?string $navigationLabel = 'Competitors';
 
@@ -179,8 +179,8 @@ class CompetitorResource extends Resource
                                 ."  • %d competitor price rows\n"
                                 ."  • %d FTP feed config%s\n"
                                 ."  • %d column mapping%s\n\n"
-                                ."Run history and parse errors are kept (with competitor_id=null) for forensics. "
-                                ."To pause ingestion without losing data, toggle is_active off instead.",
+                                .'Run history and parse errors are kept (with competitor_id=null) for forensics. '
+                                .'To pause ingestion without losing data, toggle is_active off instead.',
                             $record->name,
                             $prices,
                             $feeds,

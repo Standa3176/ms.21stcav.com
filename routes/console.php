@@ -320,3 +320,20 @@ Schedule::command('products:draft-competitor-skus --limit=25')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Core loop #3 — weekly competitor-only SKU auto-draft (Sunday 14:00 Europe/London)');
+
+// Core-loop step #1 — daily competitor-undercut repricing at 08:00 Europe/London
+// (after the 03:00 Woo import + Mon-Fri 07:00 supplier:db-sync, so cost +
+// competitor data are fresh). --live writes products.sell_price + dispatches
+// ProductPriceChanged → PushPriceChangeToWoo (gated by WOO_WRITE_ENABLED).
+// OPT-IN via PRICING_UNDERCUT_SCHEDULE_ENABLED (default false): a full-catalogue
+// --live run churns sell_price + thousands of shadow SyncDiffs daily, pointless
+// before cutover — flip it on AT cutover (or now if you want daily local
+// staging). Floor + undercut amount read from config/competitor.php.
+if ((bool) env('PRICING_UNDERCUT_SCHEDULE_ENABLED', false)) {
+    Schedule::command('pricing:undercut-competitors --live')
+        ->dailyAt('08:00')
+        ->withoutOverlapping(120)
+        ->onOneServer()
+        ->timezone('Europe/London')
+        ->description('Core loop #1 — daily competitor-undercut repricing (08:00 Europe/London; opt-in via PRICING_UNDERCUT_SCHEDULE_ENABLED)');
+}

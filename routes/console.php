@@ -305,3 +305,18 @@ Schedule::command('quotes:expire --live')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('QUOT-08 — flip status=sent → expired for quotes past expires_at (Phase 11 Plan 05)');
+
+// Core-loop step #3 — weekly auto-draft of competitor-only SKUs, Sunday 14:00
+// Europe/London (operator spec). Finds SKUs on competitors but NOT on
+// meetingstore (supplier-carried only — generate-drafts skips the rest),
+// prioritised by competitor count, and runs the review-first pipeline
+// (content → taxonomy → images). Drafts land in the Auto-Create Review inbox
+// for manual publish; NOTHING posts to Woo (review-first + WOO_WRITE_ENABLED
+// gate). --limit=25 bounds weekly Claude spend (raise for a manual backfill).
+// withoutOverlapping(120) guards the slow (Claude-bound) run.
+Schedule::command('products:draft-competitor-skus --limit=25')
+    ->weeklyOn(0, '14:00')
+    ->withoutOverlapping(120)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Core loop #3 — weekly competitor-only SKU auto-draft (Sunday 14:00 Europe/London)');

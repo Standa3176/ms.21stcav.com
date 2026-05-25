@@ -4,30 +4,140 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\Cutover\CutoverChecklistCommand;
+use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
+use App\Console\Commands\Cutover\DivergenceScanCommand;
+use App\Console\Commands\Cutover\DrillRollbackCommand;
+use App\Console\Commands\Cutover\PopulateOverridesCommand;
+use App\Console\Commands\Cutover\SnapshotWooDbCommand;
+use App\Console\Commands\Dashboard\DashboardRefreshCommand;
+use App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand;
+use App\Console\Commands\Reports\SupplierSyncDigestCommand;
+use App\Console\Commands\Reports\WeeklyDigestCommand;
+use App\Console\Commands\SupplierProbeSingleSkuCommand;
+use App\Domain\Agents\Agents\PricingAgent;
+use App\Domain\Agents\Agents\SeoAgent;
+use App\Domain\Agents\Appliers\SeoContentPatchApplier;
+use App\Domain\Agents\Console\Commands\AgentRunCommand;
+use App\Domain\Agents\Console\Commands\AgentsGdprPurgeLangfuseCommand;
+use App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand;
+use App\Domain\Agents\Console\Commands\RunSeoAgentBatchCommand;
+use App\Domain\Agents\Console\Commands\ShieldSafeRegenerateCommand;
 use App\Domain\Agents\Models\AgentRun;
 use App\Domain\Agents\Policies\AgentRunPolicy;
+use App\Domain\Agents\Services\AgentRegistry;
+use App\Domain\Agents\Services\BudgetGuard;
+use App\Domain\Agents\Services\GuardrailEngine;
+use App\Domain\Agents\Services\ToolBus;
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Alerting\Policies\AlertRecipientPolicy;
+use App\Domain\Competitor\Appliers\MarginChangeApplier;
+use App\Domain\Competitor\Console\Commands\CompetitorCheckStaleCommand;
+use App\Domain\Competitor\Console\Commands\CompetitorCsvPruneCommand;
+use App\Domain\Competitor\Console\Commands\CompetitorRetryQuarantineCommand;
+use App\Domain\Competitor\Console\Commands\CompetitorSalesRecacheCommand;
+use App\Domain\Competitor\Console\Commands\CompetitorWatchCommand;
+use App\Domain\Competitor\Ftp\Console\Commands\CompetitorFtpPullCommand;
+use App\Domain\Competitor\Models\Competitor;
+use App\Domain\Competitor\Models\CompetitorCsvMapping;
+use App\Domain\Competitor\Models\CompetitorFtpCredential;
+use App\Domain\Competitor\Models\CompetitorFtpFeed;
+use App\Domain\Competitor\Models\CompetitorIngestRun;
+use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Competitor\Models\CsvParseError;
+use App\Domain\Competitor\Policies\CompetitorCsvMappingPolicy;
+use App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy;
+use App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy;
+use App\Domain\Competitor\Policies\CompetitorIngestRunPolicy;
+use App\Domain\Competitor\Policies\CompetitorPolicy;
+use App\Domain\Competitor\Policies\CompetitorPricePolicy;
+use App\Domain\Competitor\Policies\CsvParseErrorPolicy;
+use App\Domain\CRM\Appliers\CrmPushRetryApplier;
+use App\Domain\CRM\Appliers\QuotePushRetryApplier;
+use App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand;
+use App\Domain\CRM\Console\Commands\BitrixBootstrapCommand;
+use App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand;
+use App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand;
+use App\Domain\CRM\Console\Commands\BitrixSmokeTestCommand;
+use App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand;
+use App\Domain\CRM\Models\BitrixBackfillRun;
+use App\Domain\CRM\Models\BitrixEntityMap;
+use App\Domain\CRM\Models\CrmFieldMapping;
+use App\Domain\CRM\Models\CrmPipelineSetting;
+use App\Domain\CRM\Models\CrmStatusMapping;
+use App\Domain\CRM\Models\GdprErasureLogEntry;
+use App\Domain\CRM\Policies\BitrixBackfillRunPolicy;
+use App\Domain\CRM\Policies\BitrixEntityMapPolicy;
+use App\Domain\CRM\Policies\CrmFieldMappingPolicy;
+use App\Domain\CRM\Policies\CrmPipelineSettingPolicy;
+use App\Domain\CRM\Policies\CrmPushLogPolicy;
+use App\Domain\CRM\Policies\CrmStatusMappingPolicy;
+use App\Domain\CRM\Policies\GdprErasureLogEntryPolicy;
+use App\Domain\CRM\Services\BitrixClient;
+use App\Domain\CRM\Services\BitrixSchemaCache;
+use App\Domain\Dashboard\Models\DashboardSnapshot;
+use App\Domain\Dashboard\Models\UserSavedFilter;
+use App\Domain\Dashboard\Policies\DashboardSnapshotPolicy;
+use App\Domain\Dashboard\Policies\UserSavedFilterPolicy;
+use App\Domain\Integrations\Models\IntegrationCredential;
+use App\Domain\Integrations\Observers\IntegrationCredentialObserver;
+use App\Domain\Integrations\Policies\IntegrationCredentialPolicy;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Pricing\Console\Commands\PricingRecomputeCommand;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Policies\PricingRulePolicy;
 use App\Domain\Pricing\Policies\ProductOverridePolicy;
+use App\Domain\Pricing\Services\PriceRecomputer;
+use App\Domain\Pricing\Services\RuleResolver;
+use App\Domain\ProductAutoCreate\Appliers\AutoCreateRetryApplier;
+use App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier;
+use App\Domain\ProductAutoCreate\Models\AutoCreateRejection;
+use App\Domain\ProductAutoCreate\Models\AutoCreateSetting;
+use App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule;
+use App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy;
+use App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy;
+use App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy;
+use App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand;
+use App\Domain\Products\Console\Commands\SnapshotsPruneCommand;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductVariant;
 use App\Domain\Products\Policies\ProductPolicy;
 use App\Domain\Products\Policies\ProductVariantPolicy;
+use App\Domain\Quotes\Console\Commands\QuotesExpireCommand;
+use App\Domain\Quotes\Models\Quote;
+use App\Domain\Quotes\Models\QuoteLine;
+use App\Domain\Quotes\Observers\QuoteLineImmutabilityObserver;
+use App\Domain\Quotes\Observers\QuoteTotalRecomputeObserver;
+use App\Domain\Quotes\Policies\QuoteLinePolicy;
+use App\Domain\Quotes\Policies\QuotePolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
+use App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
+use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
+use App\Domain\Sync\Commands\SupplierDbSyncCommand;
+use App\Domain\Sync\Commands\SyncSupplierCommand;
+use App\Domain\Sync\Commands\WooImportProductsCommand;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Models\SyncRun;
 use App\Domain\Sync\Policies\ImportIssuePolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
+use App\Domain\Sync\Services\SupplierClient;
+use App\Domain\Sync\Services\WooClient;
+use App\Domain\TradePricing\Models\CustomerGroup;
+use App\Domain\TradePricing\Policies\CustomerGroupPolicy;
+use App\Domain\TradePricing\Services\RoleToGroupMapper;
+use App\Domain\TradePricing\Services\TradeRuleResolver;
+use App\Foundation\Integration\Models\IntegrationEvent;
+use App\Foundation\Integration\Services\IntegrationLogger;
+use Automattic\WooCommerce\Client;
 use Illuminate\Log\Context\Repository;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Intervention\Image\ImageManager;
 use Spatie\Activitylog\Facades\LogBatch;
 
 class AppServiceProvider extends ServiceProvider
@@ -45,7 +155,7 @@ class AppServiceProvider extends ServiceProvider
         // SKU's price" core used by BOTH the event-driven RecomputePriceListener
         // AND the bulk RecomputePriceJob. Stateless but singleton-bound to avoid
         // repeat DI resolution cost during a 15k-SKU bulk batch.
-        $this->app->singleton(\App\Domain\Pricing\Services\PriceRecomputer::class);
+        $this->app->singleton(PriceRecomputer::class);
 
         // ── Phase 9 Plan 02: TradeRuleResolver decorator (TRDE-02) ───────
         // Decorator wraps v1's RuleResolver via constructor injection.
@@ -57,9 +167,9 @@ class AppServiceProvider extends ServiceProvider
         // RuleResolver directly — they don't know customer groups exist.
         // Singleton so $app->make(TradeRuleResolver::class) returns the same
         // instance per request (matches v1 PriceRecomputer pattern).
-        $this->app->singleton(\App\Domain\TradePricing\Services\TradeRuleResolver::class, function ($app) {
-            return new \App\Domain\TradePricing\Services\TradeRuleResolver(
-                $app->make(\App\Domain\Pricing\Services\RuleResolver::class),
+        $this->app->singleton(TradeRuleResolver::class, function ($app) {
+            return new TradeRuleResolver(
+                $app->make(RuleResolver::class),
             );
         });
 
@@ -69,13 +179,13 @@ class AppServiceProvider extends ServiceProvider
         // workers. Singleton because the service is stateless and the
         // listener (UpdateCustomerGroupOnUserRoleChange) + future backfill
         // command (Plan 09-06) both consume the same instance per request.
-        $this->app->singleton(\App\Domain\TradePricing\Services\RoleToGroupMapper::class);
+        $this->app->singleton(RoleToGroupMapper::class);
 
         // ── Phase 2 Plan 02: Woo REST + Supplier API clients ─────────────
         // Automattic's WooCommerce SDK binding — single shared instance per request
         // (cURL handle + consumer key/secret are stable across calls).
-        $this->app->singleton(\Automattic\WooCommerce\Client::class, function ($app) {
-            return new \Automattic\WooCommerce\Client(
+        $this->app->singleton(Client::class, function ($app) {
+            return new Client(
                 (string) config('services.woo.url', 'https://meetingstore.co.uk'),
                 (string) config('services.woo.consumer_key', ''),
                 (string) config('services.woo.consumer_secret', ''),
@@ -95,10 +205,10 @@ class AppServiceProvider extends ServiceProvider
         // (D-07). The standalone Automattic\WooCommerce\Client binding above is
         // retained for tests that pre-stage a stubbed SDK via Mockery; production
         // code-paths build the SDK inside WooClient::sdk() from resolver creds.
-        $this->app->singleton(\App\Domain\Sync\Services\WooClient::class, function ($app) {
-            return new \App\Domain\Sync\Services\WooClient(
-                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
-                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
+        $this->app->singleton(WooClient::class, function ($app) {
+            return new WooClient(
+                $app->make(IntegrationLogger::class),
+                $app->make(IntegrationCredentialResolver::class),
             );
         });
 
@@ -108,11 +218,11 @@ class AppServiceProvider extends ServiceProvider
         //
         // Phase 09.1 Plan 01 — credentials sourced via IntegrationCredentialResolver
         // (D-07). Replaces direct config('services.supplier.*') reads.
-        $this->app->bind(\App\Domain\Sync\Services\SupplierClient::class, function ($app) {
-            return new \App\Domain\Sync\Services\SupplierClient(
-                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
+        $this->app->bind(SupplierClient::class, function ($app) {
+            return new SupplierClient(
+                $app->make(IntegrationLogger::class),
                 $app->make(\Illuminate\Contracts\Cache\Repository::class),
-                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
+                $app->make(IntegrationCredentialResolver::class),
             );
         });
 
@@ -121,19 +231,19 @@ class AppServiceProvider extends ServiceProvider
         // 2 req/sec throttle, and D-11 exception classification. Singleton so
         // per-request correlation_id flows naturally through one logger instance
         // and the per-instance throttle timestamp enforces the rate limit.
-        $this->app->singleton(\App\Domain\CRM\Services\BitrixClient::class, function ($app) {
+        $this->app->singleton(BitrixClient::class, function ($app) {
             // Phase 09.1 Plan 01 — webhook URL sourced via IntegrationCredentialResolver
             // (D-07). Replaces direct config('services.bitrix.webhook_url') reads.
-            return new \App\Domain\CRM\Services\BitrixClient(
-                $app->make(\App\Foundation\Integration\Services\IntegrationLogger::class),
-                $app->make(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class),
+            return new BitrixClient(
+                $app->make(IntegrationLogger::class),
+                $app->make(IntegrationCredentialResolver::class),
             );
         });
 
         // BitrixSchemaCache — singleton so the Laravel cache is consulted through
         // one resolver per request and warm-up results short-circuit after the
         // first fieldsFor() call in a chain.
-        $this->app->singleton(\App\Domain\CRM\Services\BitrixSchemaCache::class);
+        $this->app->singleton(BitrixSchemaCache::class);
 
         // ── Phase 6 Plan 02: Intervention ImageManager DI binding ────────
         // intervention/image-laravel's ServiceProvider binds the manager to the
@@ -141,7 +251,7 @@ class AppServiceProvider extends ServiceProvider
         // Our ProductImageProcessor takes ImageManager via constructor typehint,
         // so the container can't auto-resolve the required $driver primitive.
         // Alias ImageManager::class to the pre-built facade binding so DI works.
-        $this->app->bind(\Intervention\Image\ImageManager::class, fn ($app) => $app->make('image'));
+        $this->app->bind(ImageManager::class, fn ($app) => $app->make('image'));
 
         // ── Phase 8 Plan 03: C4 Agent Framework runtime services ────────
         // All four are singletons — the registry is in-memory state and the
@@ -149,10 +259,10 @@ class AppServiceProvider extends ServiceProvider
         // benefits from a single shared instance (matches v1
         // SuggestionApplierResolver pattern). Plan 04 RunAgentJob resolves
         // them via constructor injection.
-        $this->app->singleton(\App\Domain\Agents\Services\AgentRegistry::class);
-        $this->app->singleton(\App\Domain\Agents\Services\BudgetGuard::class);
-        $this->app->singleton(\App\Domain\Agents\Services\ToolBus::class);
-        $this->app->singleton(\App\Domain\Agents\Services\GuardrailEngine::class);
+        $this->app->singleton(AgentRegistry::class);
+        $this->app->singleton(BudgetGuard::class);
+        $this->app->singleton(ToolBus::class);
+        $this->app->singleton(GuardrailEngine::class);
     }
 
     /**
@@ -188,14 +298,14 @@ class AppServiceProvider extends ServiceProvider
             SuggestionApplierResolver::class,
             function (SuggestionApplierResolver $resolver): void {
                 $resolver->register('test', StubApplier::class);
-                $resolver->register('crm_push_failed', \App\Domain\CRM\Appliers\CrmPushRetryApplier::class);
+                $resolver->register('crm_push_failed', CrmPushRetryApplier::class);
                 // Phase 6 Plan 03 — REAL applier (RESEARCH Q4 resolution): file
                 // moved from app/Domain/Competitor/Appliers/ into
                 // app/Domain/ProductAutoCreate/Appliers/. Body replaced with
                 // CreateWooProductJob::dispatch(). Old FQCN deleted.
                 $resolver->register(
                     'new_product_opportunity',
-                    \App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier::class,
+                    NewProductOpportunityApplier::class,
                 );
                 // Phase 6 Plan 03 — DLQ replay applier for kind='auto_create_failed'.
                 // CreateWooProductJob::failed() writes the Suggestion row; the
@@ -204,14 +314,14 @@ class AppServiceProvider extends ServiceProvider
                 // CrmPushRetryApplier precedent).
                 $resolver->register(
                     'auto_create_failed',
-                    \App\Domain\ProductAutoCreate\Appliers\AutoCreateRetryApplier::class,
+                    AutoCreateRetryApplier::class,
                 );
                 // Phase 5 Plan 03 Task 3 — THIRD real producer (and the first
                 // PRODUCTIVE one beyond the CRM retry seam). Approving a
                 // margin_change Suggestion updates PricingRule via Eloquent →
                 // PricingRuleObserver fires PricingRuleChanged → Phase 3's
                 // recompute chain picks up the new margin.
-                $resolver->register('margin_change', \App\Domain\Competitor\Appliers\MarginChangeApplier::class);
+                $resolver->register('margin_change', MarginChangeApplier::class);
 
                 // Phase 11 Plan 05 Task 1 — DLQ recovery applier for kind='quote_push_failed'.
                 // PushQuoteToBitrixDealJob (Plan 11-04) writes the failed Suggestion in
@@ -222,7 +332,7 @@ class AppServiceProvider extends ServiceProvider
                 // Operator-driven recovery loop per RESEARCH OQ-5 (no auto-retry).
                 $resolver->register(
                     'quote_push_failed',
-                    \App\Domain\CRM\Appliers\QuotePushRetryApplier::class,
+                    QuotePushRetryApplier::class,
                 );
 
                 // Phase 12 Plan 04 — SeoContentPatchApplier writes through to
@@ -237,7 +347,7 @@ class AppServiceProvider extends ServiceProvider
                 // default Suggestion list).
                 $resolver->register(
                     'seo_content_patch',
-                    \App\Domain\Agents\Appliers\SeoContentPatchApplier::class,
+                    SeoContentPatchApplier::class,
                 );
 
                 // ── Phase 10 Plan 01: EchoApplier deleted (P10-H sweep) ──────
@@ -267,16 +377,16 @@ class AppServiceProvider extends ServiceProvider
         // via an inline fixture stub agent class (no production registration
         // needed for the smoke test).
         $this->app->afterResolving(
-            \App\Domain\Agents\Services\AgentRegistry::class,
-            function (\App\Domain\Agents\Services\AgentRegistry $registry): void {
-                $registry->register('pricing', \App\Domain\Agents\Agents\PricingAgent::class);
+            AgentRegistry::class,
+            function (AgentRegistry $registry): void {
+                $registry->register('pricing', PricingAgent::class);
                 // ── Phase 12 Plan 01: AgentRegistry — register SeoAgent ──
                 // Second REAL RunsAsAgent consumer of the Phase 8 framework.
                 // Plan 12-05 ships RunSeoAgentBatchCommand (nightly 04:30 London).
                 // Plan 12-04 ships RunSeoAgentJob + Filament sidebar.
                 // Plan 12-01 — this line — is the AgentRegistry binding so
                 // downstream plans wire against a stable interface.
-                $registry->register('seo', \App\Domain\Agents\Agents\SeoAgent::class);
+                $registry->register('seo', SeoAgent::class);
             }
         );
 
@@ -310,15 +420,15 @@ class AppServiceProvider extends ServiceProvider
         // per Pitfall K + P2-H — do NOT regenerate via shield:generate.
         // PolicyTemplateIntegrityTest (tests/Architecture) catches Shield
         // {{ Placeholder }} leaks on every CI run.
-        Gate::policy(\App\Domain\CRM\Models\BitrixEntityMap::class,    \App\Domain\CRM\Policies\BitrixEntityMapPolicy::class);
-        Gate::policy(\App\Domain\CRM\Models\CrmFieldMapping::class,    \App\Domain\CRM\Policies\CrmFieldMappingPolicy::class);
-        Gate::policy(\App\Domain\CRM\Models\CrmStatusMapping::class,   \App\Domain\CRM\Policies\CrmStatusMappingPolicy::class);
-        Gate::policy(\App\Domain\CRM\Models\CrmPipelineSetting::class, \App\Domain\CRM\Policies\CrmPipelineSettingPolicy::class);
-        Gate::policy(\App\Domain\CRM\Models\BitrixBackfillRun::class,  \App\Domain\CRM\Policies\BitrixBackfillRunPolicy::class);
+        Gate::policy(BitrixEntityMap::class, BitrixEntityMapPolicy::class);
+        Gate::policy(CrmFieldMapping::class, CrmFieldMappingPolicy::class);
+        Gate::policy(CrmStatusMapping::class, CrmStatusMappingPolicy::class);
+        Gate::policy(CrmPipelineSetting::class, CrmPipelineSettingPolicy::class);
+        Gate::policy(BitrixBackfillRun::class, BitrixBackfillRunPolicy::class);
 
         // Phase 4 Plan 05 — GDPR erasure audit (CRM-13). Admin read-only;
         // create/update/delete denied (append-only from GdprEraser service).
-        Gate::policy(\App\Domain\CRM\Models\GdprErasureLogEntry::class, \App\Domain\CRM\Policies\GdprErasureLogEntryPolicy::class);
+        Gate::policy(GdprErasureLogEntry::class, GdprErasureLogEntryPolicy::class);
 
         // ── Phase 5 Plan 01: Competitor domain policies ─────────────────
         // D-02 + D-04 role split: admin has full CRUD on competitors;
@@ -327,11 +437,11 @@ class AppServiceProvider extends ServiceProvider
         // Hand-written hasRole() checks per Pitfall K + P2-H + P5-F — do NOT
         // regenerate via shield:generate. PolicyTemplateIntegrityTest
         // (tests/Architecture) catches any Shield `{{ Placeholder }}` leaks.
-        Gate::policy(\App\Domain\Competitor\Models\Competitor::class,           \App\Domain\Competitor\Policies\CompetitorPolicy::class);
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorPrice::class,      \App\Domain\Competitor\Policies\CompetitorPricePolicy::class);
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorCsvMapping::class, \App\Domain\Competitor\Policies\CompetitorCsvMappingPolicy::class);
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorIngestRun::class,  \App\Domain\Competitor\Policies\CompetitorIngestRunPolicy::class);
-        Gate::policy(\App\Domain\Competitor\Models\CsvParseError::class,        \App\Domain\Competitor\Policies\CsvParseErrorPolicy::class);
+        Gate::policy(Competitor::class, CompetitorPolicy::class);
+        Gate::policy(CompetitorPrice::class, CompetitorPricePolicy::class);
+        Gate::policy(CompetitorCsvMapping::class, CompetitorCsvMappingPolicy::class);
+        Gate::policy(CompetitorIngestRun::class, CompetitorIngestRunPolicy::class);
+        Gate::policy(CsvParseError::class, CsvParseErrorPolicy::class);
 
         // Phase 11.2 Plan 01 — multi-feed FTP refactor (D-09 + D-11).
         // Replaces Phase 11.1's per-source CompetitorFtpSourcePolicy (deleted).
@@ -345,8 +455,8 @@ class AppServiceProvider extends ServiceProvider
         //
         // Pitfall P5-F — hand-written hasRole / hasAnyRole checks; DO NOT
         // regenerate via shield:generate. Use shield:safe-regenerate instead.
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpCredential::class, \App\Domain\Competitor\Policies\CompetitorFtpCredentialPolicy::class);
-        Gate::policy(\App\Domain\Competitor\Models\CompetitorFtpFeed::class,       \App\Domain\Competitor\Policies\CompetitorFtpFeedPolicy::class);
+        Gate::policy(CompetitorFtpCredential::class, CompetitorFtpCredentialPolicy::class);
+        Gate::policy(CompetitorFtpFeed::class, CompetitorFtpFeedPolicy::class);
 
         // ── Phase 09.1 Plan 01 — Integration Connections Admin (D-01 + D-12 + D-14) ──
         // IntegrationCredentialPolicy — admin-only on every method (D-12).
@@ -362,11 +472,11 @@ class AppServiceProvider extends ServiceProvider
         // 60s per-kind cache key on every save/delete/forceDelete so operator
         // credential rotation takes effect within ≤60s (D-06).
         Gate::policy(
-            \App\Domain\Integrations\Models\IntegrationCredential::class,
-            \App\Domain\Integrations\Policies\IntegrationCredentialPolicy::class,
+            IntegrationCredential::class,
+            IntegrationCredentialPolicy::class,
         );
-        \App\Domain\Integrations\Models\IntegrationCredential::observe(
-            \App\Domain\Integrations\Observers\IntegrationCredentialObserver::class,
+        IntegrationCredential::observe(
+            IntegrationCredentialObserver::class,
         );
 
         // ── Phase 6 Plan 01: ProductAutoCreate domain policies ──────────
@@ -375,14 +485,14 @@ class AppServiceProvider extends ServiceProvider
         // create/view on rejections (review-inbox triage). sales + read_only
         // denied entirely.
         // Pitfall P5-F — hand-written hasRole checks; do NOT shield:generate.
-        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule::class,  \App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy::class);
-        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateRejection::class, \App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy::class);
+        Gate::policy(AutoCreateSkipRule::class, AutoCreateSkipRulePolicy::class);
+        Gate::policy(AutoCreateRejection::class, AutoCreateRejectionPolicy::class);
 
         // ── Phase 6 Plan 04: AutoCreateSetting policy ──────────────────
         // Admin-only gate on the singleton settings model (governs draft-vs-
         // immediate-publish — load-bearing AUTO-07 decision). Both the Page
         // canAccess() gate + the save() abort_unless consult this binding.
-        Gate::policy(\App\Domain\ProductAutoCreate\Models\AutoCreateSetting::class,   \App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy::class);
+        Gate::policy(AutoCreateSetting::class, AutoCreateSettingsPolicy::class);
 
         // ── Phase 7 Plan 01: Dashboard domain policies ─────────────────
         // D-02 + D-07: dashboard snapshots are admin/pricing/sales/read_only
@@ -390,15 +500,15 @@ class AppServiceProvider extends ServiceProvider
         // scheduled dashboard:refresh command is the only writer). User
         // saved filters are owner-scoped with an admin override on delete.
         // Pitfall P5-F — hand-written hasRole checks; DO NOT shield:generate.
-        Gate::policy(\App\Domain\Dashboard\Models\DashboardSnapshot::class, \App\Domain\Dashboard\Policies\DashboardSnapshotPolicy::class);
-        Gate::policy(\App\Domain\Dashboard\Models\UserSavedFilter::class,   \App\Domain\Dashboard\Policies\UserSavedFilterPolicy::class);
+        Gate::policy(DashboardSnapshot::class, DashboardSnapshotPolicy::class);
+        Gate::policy(UserSavedFilter::class, UserSavedFilterPolicy::class);
 
         // ── Phase 4 Plan 04: CRM Push Log (read-only view over integration_events) ──
         // CrmPushLogResource binds to IntegrationEvent but scopes the query to
         // channel='bitrix'. Policy grants viewAny/view to admin + sales (D-02);
         // all mutations denied. This registration only affects CRM — the Resource
         // is the only Filament surface that renders IntegrationEvent rows.
-        Gate::policy(\App\Foundation\Integration\Models\IntegrationEvent::class, \App\Domain\CRM\Policies\CrmPushLogPolicy::class);
+        Gate::policy(IntegrationEvent::class, CrmPushLogPolicy::class);
 
         // ── Phase 9 Plan 05: TradePricing — CustomerGroup policy ─────────
         // CRUD gates for the new CustomerGroupResource (TRDE-04 D-10).
@@ -409,8 +519,8 @@ class AppServiceProvider extends ServiceProvider
         // (use shield:safe-regenerate --allow-new=CustomerGroupPolicy on
         // first scaffold; subsequent runs drop the --allow-new flag).
         Gate::policy(
-            \App\Domain\TradePricing\Models\CustomerGroup::class,
-            \App\Domain\TradePricing\Policies\CustomerGroupPolicy::class,
+            CustomerGroup::class,
+            CustomerGroupPolicy::class,
         );
 
         // ── Phase 8 Plan 01: C4 Agent Framework — AgentRun policy ────────
@@ -437,8 +547,8 @@ class AppServiceProvider extends ServiceProvider
         // new policies (caught by the architecture suite on every CI run).
         // Filament QuoteResource arrives in Plan 11-03; these policies ship
         // in Plan 11-01 so the gate is in place before the UI lands.
-        Gate::policy(\App\Domain\Quotes\Models\Quote::class,     \App\Domain\Quotes\Policies\QuotePolicy::class);
-        Gate::policy(\App\Domain\Quotes\Models\QuoteLine::class, \App\Domain\Quotes\Policies\QuoteLinePolicy::class);
+        Gate::policy(Quote::class, QuotePolicy::class);
+        Gate::policy(QuoteLine::class, QuoteLinePolicy::class);
 
         // ── Phase 11 Plan 02: QuoteLine observer chain (D-13 + OQ-1) ─────
         // ORDER MATTERS — the array-form ::observe() preserves registration
@@ -454,9 +564,9 @@ class AppServiceProvider extends ServiceProvider
         // PriceSnapshotter + QuoteLineWriter (Plan 11-02 Task 1) are the
         // sole legitimate creation path; the immutability observer no-ops
         // on creation (! $line->exists) so initial snapshot writes succeed.
-        \App\Domain\Quotes\Models\QuoteLine::observe([
-            \App\Domain\Quotes\Observers\QuoteLineImmutabilityObserver::class,
-            \App\Domain\Quotes\Observers\QuoteTotalRecomputeObserver::class,
+        QuoteLine::observe([
+            QuoteLineImmutabilityObserver::class,
+            QuoteTotalRecomputeObserver::class,
         ]);
 
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
@@ -468,107 +578,110 @@ class AppServiceProvider extends ServiceProvider
         // (runningInConsole guard).
         if ($this->app->runningInConsole()) {
             $this->commands([
-                \App\Domain\Sync\Commands\SyncSupplierCommand::class,
+                SyncSupplierCommand::class,
                 // Quick task 260504-d7v — bulk Woo→products import.
                 // Closes the bootstrap gap where products table couldn't be
                 // populated from an existing Woo catalogue (sync:supplier
                 // updates existing rows but never creates).
-                \App\Domain\Sync\Commands\WooImportProductsCommand::class,
+                WooImportProductsCommand::class,
                 // Quick task 260504-m5w — daily supplier MySQL VPS sync.
                 // Pulls price + stock from supplier_products on stcav_dash and
                 // updates local products.buy_price + stock_quantity. Match key:
                 // LOWER(TRIM(mpn)) preferred, LOWER(TRIM(suppliersku)) fallback.
-                \App\Domain\Sync\Commands\SupplierDbSyncCommand::class,
+                SupplierDbSyncCommand::class,
+                // 2026-05-25 — cost-traceability diagnostic: show every supplier
+                // offer for a SKU + which one sets buy_price (cheapest in-stock).
+                ExplainSupplierCostCommand::class,
                 // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
                 // recompute. Default dry-run, --live opt-in (D-12). Lives
                 // under app/Domain/Pricing/Console/Commands/ so explicit
                 // registration is required (same pattern as Phase 2).
-                \App\Domain\Pricing\Console\Commands\PricingRecomputeCommand::class,
+                PricingRecomputeCommand::class,
                 // Phase 4 Plan 01 — Bitrix CRM Sync commands.
                 // bitrix:bootstrap creates UF_CRM_WOO_ORDER_ID + 13 UTM/customer
                 // custom fields in Bitrix (idempotent, safe on every deploy).
                 // bitrix:smoke-test probes the SDK's API surface before Plan 04-02
                 // locks the BitrixClient wrapper interface (two-layer gate —
                 // BITRIX_SMOKE_TEST_ALLOWED + BITRIX_WEBHOOK_URL).
-                \App\Domain\CRM\Console\Commands\BitrixBootstrapCommand::class,
-                \App\Domain\CRM\Console\Commands\BitrixSmokeTestCommand::class,
+                BitrixBootstrapCommand::class,
+                BitrixSmokeTestCommand::class,
                 // Phase 4 Plan 02 — CRM-02 field-schema cache refresh.
                 // Invalidates the 24h cache + refetches deal/contact/company
                 // schemas. Admin-triggered after Bitrix UF_CRM_* edits.
-                \App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand::class,
+                BitrixSchemaRefreshCommand::class,
                 // Phase 4 Plan 05 — CRM-10 backfill + CRM-13 GDPR erasure.
                 // Backfill has 3 modes (dry-run / live / adopt-legacy-deal-ids)
                 // and --since is REQUIRED (no default). GDPR erasure requires
                 // typed ERASE confirmation + dispatches EraseBitrixContactJob.
-                \App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand::class,
-                \App\Domain\CRM\Console\Commands\GdprEraseBitrixCustomerCommand::class,
+                BitrixBackfillOrdersCommand::class,
+                GdprEraseBitrixCustomerCommand::class,
                 // Phase 11 Plan 04 — pre-flight check for Phase 11 quote-flow:
                 // verify TYPE_ID=QUOTE deal category exists + idempotently create
                 // UF_CRM_WOO_QUOTE_ID. Operator runs this BEFORE flipping
                 // QUOTE_BITRIX_PUSH_ENABLED=true. Standalone command (NOT an
                 // extension of BitrixBootstrapCommand per B-03 byte-identity).
-                \App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand::class,
+                BitrixQuotesBootstrapCommand::class,
                 // Phase 11 Plan 05 (QUOT-08) — quotes:expire scheduled command.
                 // Dry-run-default per cross-cutting invariant 3; --live opt-in.
                 // Scheduled at 00:30 daily Europe/London via routes/console.php;
                 // ad-hoc operator runs default to dry-run for safety. Lives
                 // under app/Domain/Quotes/Console/Commands/ so explicit
                 // registration is required.
-                \App\Domain\Quotes\Console\Commands\QuotesExpireCommand::class,
+                QuotesExpireCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
-                \App\Domain\Competitor\Console\Commands\CompetitorWatchCommand::class,
+                CompetitorWatchCommand::class,
                 // Quick task 260504-e0q — operator command to replay quarantined CSVs.
-                \App\Domain\Competitor\Console\Commands\CompetitorRetryQuarantineCommand::class,
+                CompetitorRetryQuarantineCommand::class,
                 // Phase 11.1 Plan 01 — every-15-min FTP/SFTP/FTPS pull (COMP-FTP-01).
                 // Lives outside app/Console/Commands/ so explicit registration
                 // mirrors the watcher pattern above. Dry-run by default per D-06;
                 // schedule entry in routes/console.php passes --live opt-in flag.
-                \App\Domain\Competitor\Ftp\Console\Commands\CompetitorFtpPullCommand::class,
+                CompetitorFtpPullCommand::class,
                 // Phase 5 Plan 03 Task 3 — nightly 02:00 sales-counter recache.
                 // A3 fallback: dispatched job is currently a stub (WooClient lacks
                 // /orders); command + schedule ship so future WooClient extension
                 // activates real recache with zero plumbing changes.
-                \App\Domain\Competitor\Console\Commands\CompetitorSalesRecacheCommand::class,
+                CompetitorSalesRecacheCommand::class,
                 // Phase 5 Plan 04b Task 2 — hourly stale-feed detector (COMP-11).
                 // 48h threshold + 24h per-competitor dedup; routes via
                 // AlertRecipient.receives_competitor_alerts (Plan 05-01/05-04a).
-                \App\Domain\Competitor\Console\Commands\CompetitorCheckStaleCommand::class,
+                CompetitorCheckStaleCommand::class,
                 // Phase 5 Plan 05 Task 1 — daily 03:40 CSV archive prune (COMP-12).
                 // --days=0 is a no-op safety guard (explicit 0); otherwise falls back
                 // to config('competitor.csv_retention_days', 90). NEVER touches
                 // competitor_prices rows (COMP-07 mandate, permanent regression test).
-                \App\Domain\Competitor\Console\Commands\CompetitorCsvPruneCommand::class,
+                CompetitorCsvPruneCommand::class,
                 // Phase 6 Plan 01 Task 1 — Q1 supplier-API probe (RESEARCH.md Open Question Q1).
                 // Dumps full supplier row for a single SKU to storage/app/research/supplier-probe.json
                 // so Plan 06-02 ProductImageFetcher / ProductContentBuilder can see the real
                 // image_url / brand / category / description field shape. Manual-run only.
-                \App\Console\Commands\SupplierProbeSingleSkuCommand::class,
+                SupplierProbeSingleSkuCommand::class,
                 // Phase 7 Plan 02 — dashboard:refresh + snapshots:prune.
                 // dashboard:refresh (D-02) every 5 min via routes/console.php aggregates
                 // the 9 home-dashboard metrics into dashboard_snapshots so every widget
                 // read is a single indexed lookup. snapshots:prune (daily 03:50) keeps
                 // the snapshot table small + forward-compatible with the deferred
                 // sparkline history split.
-                \App\Console\Commands\Dashboard\DashboardRefreshCommand::class,
-                \App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand::class,
+                DashboardRefreshCommand::class,
+                PruneDashboardSnapshotsCommand::class,
                 // Phase 7 Plan 04 — reports:weekly-digest (DASH-05 / D-08).
                 // Scheduled Monday 07:00 Europe/London (routes/console.php). Composes
                 // the 5-section digest and sends to AlertRecipient where
                 // receives_weekly_digest=true. Writes dashboard_snapshots.weekly_report_status
                 // so the Plan 07-02 WeeklyReportStatusWidget picks up last_sent_at +
                 // recipient_count (Plan 07-02 computeWeeklyReportStatus preserves these).
-                \App\Console\Commands\Reports\WeeklyDigestCommand::class,
+                WeeklyDigestCommand::class,
                 // Stock-updater parity glue — daily post-supplier-sync digest
                 // (replaces the legacy plugin's send_results_and_cleanup() email).
-                \App\Console\Commands\Reports\SupplierSyncDigestCommand::class,
+                SupplierSyncDigestCommand::class,
                 // Stock-updater parity glue — auto-apply margin_change Suggestions
                 // whose delta crosses pricing.auto_apply_threshold_bps (legacy
                 // plugin's setPer() ≥ 8% rule).
-                \App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand::class,
+                AutoApplyMarginSuggestionsCommand::class,
                 // Stock-updater parity glue — flip published Products with
                 // NULL/zero buy_price to status=pending (legacy plugin's
                 // logProductChanges() / handle_pending_product() behaviour).
-                \App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand::class,
+                FlagProductsMissingBuyPriceCommand::class,
                 // ── Phase 7 Plan 05 — Cutover commands (CUT-01..07, D-12..D-21) ────
                 // Six artisan commands orchestrating the legacy-plugin → Laravel
                 // cutover. All extend BaseCommand (correlation_id threading) and
@@ -585,32 +698,32 @@ class AppServiceProvider extends ServiceProvider
                 //
                 // --live gates on CUTOVER_DRILL_ALLOWED / CUTOVER_DISABLE_LIVE_ALLOWED
                 // env vars (config keys store NAMES, not values — two-step safety).
-                \App\Console\Commands\Cutover\DivergenceScanCommand::class,
-                \App\Console\Commands\Cutover\PopulateOverridesCommand::class,
-                \App\Console\Commands\Cutover\SnapshotWooDbCommand::class,
-                \App\Console\Commands\Cutover\DrillRollbackCommand::class,
-                \App\Console\Commands\Cutover\DisableLegacyPluginsCommand::class,
-                \App\Console\Commands\Cutover\CutoverChecklistCommand::class,
+                DivergenceScanCommand::class,
+                PopulateOverridesCommand::class,
+                SnapshotWooDbCommand::class,
+                DrillRollbackCommand::class,
+                DisableLegacyPluginsCommand::class,
+                CutoverChecklistCommand::class,
                 // Phase 8 Plan 04 — agent:run {kind} [--dry-run] CLI entry
                 // point for the C4 framework. Extends BaseCommand so the
                 // correlation_id threads through the entire CLI → Job →
                 // AgentRun → Suggestion pipeline (AGNT-12 acceptance).
-                \App\Domain\Agents\Console\Commands\AgentRunCommand::class,
+                AgentRunCommand::class,
                 // ── Phase 8 Plan 05 — operational hygiene commands ────────
                 // shield:safe-regenerate (AGNT-11) wraps shield:generate with
                 // automatic P5-F restoration. Phase 10/11/13/14/15 will use
                 // it on every new Resource. Documented in
                 // docs/ops/shield-regeneration.md.
-                \App\Domain\Agents\Console\Commands\ShieldSafeRegenerateCommand::class,
+                ShieldSafeRegenerateCommand::class,
                 // agents:gdpr-purge-langfuse (D-09 sibling) — STUB per Open
                 // Question Q1 RESOLVED (RESEARCH §Open Questions). v2.1 swaps
                 // to live API once Langfuse retention API stabilises.
-                \App\Domain\Agents\Console\Commands\AgentsGdprPurgeLangfuseCommand::class,
+                AgentsGdprPurgeLangfuseCommand::class,
                 // agents:prune-archive (D-07) — annual 5-year retention prune.
                 // Schedule registered in routes/console.php (1 Jan 02:00
                 // Europe/London). Default --days=1825 covers the full D-07
                 // horizon; --dry-run for safe ops verification.
-                \App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand::class,
+                AgentsPruneArchiveCommand::class,
                 // Phase 12 Plan 05 (SEOAGT-05) — agents:run-seo-batch.
                 // Nightly batch dispatches up to 20 RunSeoAgentJob instances
                 // over Phase 6 AutoCreate drafts. Between-dispatch monthly
@@ -618,14 +731,14 @@ class AppServiceProvider extends ServiceProvider
                 // the £200 ceiling is already near. Schedule in
                 // routes/console.php at 04:30 Europe/London, env-flag gated
                 // (AGENT_SEO_BATCH_SCHEDULE_ENABLED, default true).
-                \App\Domain\Agents\Console\Commands\RunSeoAgentBatchCommand::class,
+                RunSeoAgentBatchCommand::class,
                 // Quick task 260504-muq — history:prune (90-day price + stock
                 // history retention). Deletes product_price_snapshots +
                 // supplier_offer_snapshots older than
                 // config('history.retention_days', 90). Scheduled at 04:00
                 // Europe/London via routes/console.php (continues the
                 // 03:00..03:50 retention cascade).
-                \App\Domain\Products\Console\Commands\SnapshotsPruneCommand::class,
+                SnapshotsPruneCommand::class,
             ]);
         }
     }

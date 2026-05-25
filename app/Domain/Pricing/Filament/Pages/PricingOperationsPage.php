@@ -31,7 +31,7 @@ class PricingOperationsPage extends Page
 
     protected static ?string $navigationGroup = 'Operations';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 12; // after Home (10) in the Operations group
 
     protected static ?string $navigationLabel = 'Pricing Operations';
 
@@ -109,11 +109,17 @@ class PricingOperationsPage extends Page
                 ]);
             })
             ->extraModalFooterActions([
-                Action::make($name.'Export')
+                Action::make($name.'ExportCsv')
                     ->label('Export CSV')
                     ->icon('heroicon-o-arrow-down-tray')
                     ->color('gray')
                     ->url(route('pricing-ops.export', ['bucket' => $bucket]))
+                    ->openUrlInNewTab(),
+                Action::make($name.'ExportXls')
+                    ->label('Export XLS')
+                    ->icon('heroicon-o-table-cells')
+                    ->color('gray')
+                    ->url(route('pricing-ops.export', ['bucket' => $bucket, 'format' => 'xlsx']))
                     ->openUrlInNewTab(),
             ]);
     }

@@ -7,6 +7,7 @@
         $gbp = fn ($decimal) => '£' . number_format((float) $decimal, 2);
         $floorPct = number_format(($scan['floor_bps'] ?? 600) / 100, 1);
         $exportUrl = fn (string $bucket) => route('pricing-ops.export', ['bucket' => $bucket]);
+        $exportXls = fn (string $bucket) => route('pricing-ops.export', ['bucket' => $bucket, 'format' => 'xlsx']);
     @endphp
 
     {{-- ── Clickable summary tiles ───────────────────────────────────── --}}
@@ -67,8 +68,9 @@
                     </tbody>
                 </table>
             </div>
-            <div class="mt-3">
+            <div class="mt-3 flex gap-4">
                 <a href="{{ $exportUrl('recent_changes') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+                <a href="{{ $exportXls('recent_changes') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export XLS →</a>
             </div>
         @endif
     </x-filament::section>
@@ -102,6 +104,7 @@
             <div class="mt-3 flex gap-4">
                 <a href="/admin/auto-create-reviews" class="text-sm text-primary-600 hover:underline">Open the review inbox →</a>
                 <a href="{{ $exportUrl('new_skus') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+                <a href="{{ $exportXls('new_skus') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export XLS →</a>
             </div>
         @endif
     </x-filament::section>
@@ -136,6 +139,7 @@
             <div class="mt-3 flex gap-4">
                 <button type="button" wire:click="mountAction('atFloor')" class="text-sm text-primary-600 hover:underline">View all {{ number_format($scan['at_floor_count'] ?? 0) }} →</button>
                 <a href="{{ $exportUrl('at_floor') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+                <a href="{{ $exportXls('at_floor') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export XLS →</a>
             </div>
         @endif
     </x-filament::section>
@@ -170,6 +174,7 @@
             <div class="mt-3 flex gap-4">
                 <button type="button" wire:click="mountAction('belowCost')" class="text-sm text-primary-600 hover:underline">View all {{ number_format($scan['below_cost_count'] ?? 0) }} →</button>
                 <a href="{{ $exportUrl('below_cost') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export CSV →</a>
+                <a href="{{ $exportXls('below_cost') }}" target="_blank" class="text-sm text-primary-600 hover:underline">Export XLS →</a>
             </div>
         @endif
     </x-filament::section>

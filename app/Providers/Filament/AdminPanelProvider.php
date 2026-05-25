@@ -53,6 +53,22 @@ class AdminPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::hex('#5B21B6'),
             ])
+            // 2026-05-25 — stronger "you are here" highlight on the active sidebar
+            // item (operator feedback: the default active state was too subtle to
+            // tell which page you're on). Injected via render hook so no asset
+            // build step is needed. Left accent bar + tinted bg + bold label,
+            // light + dark variants.
+            ->renderHook(
+                'panels::head.end',
+                fn (): string => <<<'HTML'
+                    <style>
+                    .fi-sidebar-item-active > .fi-sidebar-item-button{background-color:rgb(91 33 182 / 0.10);border-inline-start:3px solid #5B21B6;}
+                    .fi-sidebar-item-active .fi-sidebar-item-label{font-weight:700;color:#5B21B6;}
+                    .dark .fi-sidebar-item-active > .fi-sidebar-item-button{background-color:rgb(167 139 250 / 0.15);border-inline-start-color:#a78bfa;}
+                    .dark .fi-sidebar-item-active .fi-sidebar-item-label{color:#c4b5fd;}
+                    </style>
+                    HTML
+            )
             // Explicit nav order — daily-use groups first, set-once config last.
             // 2026-05-25 simplification (was 8 groups): the daily surface is
             // small (Home → Review → Competitor Prices → Pricing → Products), so

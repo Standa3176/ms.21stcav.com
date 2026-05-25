@@ -49,6 +49,18 @@ it('exports a bucket as CSV for an authorised user', function (): void {
         ->and($res->streamedContent())->toContain('EXP-1')->toContain('Margin (%)');
 });
 
+it('exports a bucket as XLSX when format=xlsx', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'XLS-1', 'name' => 'Xls One', 'buy_price' => 100.00]);
+    CompetitorPrice::factory()->forSku('XLS-1')->create(['price_pennies_ex_vat' => 9000]);
+
+    $res = $this->actingAs(pricingExportUser('admin'))
+        ->get(route('pricing-ops.export', ['bucket' => 'below_cost', 'format' => 'xlsx']));
+
+    $res->assertOk();
+    expect($res->headers->get('content-type'))->toContain('spreadsheetml')
+        ->and($res->headers->get('content-disposition'))->toContain('.xlsx');
+});
+
 it('denies export to a read_only user', function (): void {
     $this->actingAs(pricingExportUser('read_only'))
         ->get(route('pricing-ops.export', ['bucket' => 'below_cost']))

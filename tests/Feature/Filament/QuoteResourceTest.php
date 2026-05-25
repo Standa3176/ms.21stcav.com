@@ -33,8 +33,8 @@ use Spatie\Permission\PermissionRegistrar;
 function skipIfMySqlOfflineQR(): void
 {
     try {
-        \DB::connection()->getPdo();
-    } catch (\Throwable $e) {
+        DB::connection()->getPdo();
+    } catch (Throwable $e) {
         test()->markTestSkipped('MySQL offline: '.$e->getMessage());
     }
 }
@@ -194,14 +194,15 @@ it('QuoteLinesRelationManager Add action delegates to QuoteLineWriter (D-13 sing
 })->uses(RefreshDatabase::class);
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 4. Resource scaffolding sanity — Sales nav group + 4 pages registered
+// 4. Resource scaffolding sanity — Catalogue nav group + 4 pages registered
 // ══════════════════════════════════════════════════════════════════════════════
 
-it('QuoteResource navigation group is "Sales" + 4 pages registered', function (): void {
+it('QuoteResource navigation group is "Catalogue" + 4 pages registered', function (): void {
     $navGroup = (new ReflectionClass(QuoteResource::class))
         ->getStaticPropertyValue('navigationGroup');
 
-    expect($navGroup)->toBe('Sales');
+    // Quotes live under Catalogue (Products / Quotes / Price History).
+    expect($navGroup)->toBe('Catalogue');
 
     $pages = QuoteResource::getPages();
     expect($pages)->toHaveKey('index')

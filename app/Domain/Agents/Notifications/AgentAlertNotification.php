@@ -28,15 +28,18 @@ final class AgentAlertNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public string $queue = 'default';
-
     /**
      * @param  array<string, mixed>  $context
      */
     public function __construct(
         public readonly string $kind,
         public readonly array $context,
-    ) {}
+    ) {
+        // PHP 8.4 trait-collision guard — set the queue via onQueue() in the
+        // constructor; NEVER `public string $queue` (it collides with the
+        // Queueable trait's untyped $queue property and fatals on PHP 8.4).
+        $this->onQueue('default');
+    }
 
     /** @return array<int, string> */
     public function via(object $notifiable): array
@@ -68,7 +71,7 @@ final class AgentAlertNotification extends Notification implements ShouldQueue
             default => 'See ops dashboard for details.',
         };
 
-        return (new MailMessage())
+        return (new MailMessage)
             ->subject($subject)
             ->line($line)
             ->action('View agent runs', url('/admin/agent-runs'));

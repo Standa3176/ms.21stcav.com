@@ -65,10 +65,7 @@ use Prism\Prism\ValueObjects\Messages\UserMessage;
  */
 final class RunAgentJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
-
-    /** Horizon agents-supervisor (Plan 01 config/horizon.php). */
-    public string $queue = 'agents';
+    use InteractsWithQueue, Queueable, SerializesModels;
 
     /** No retries — agent failures are terminal per CONTEXT D-02. */
     public int $tries = 1;
@@ -84,7 +81,11 @@ final class RunAgentJob implements ShouldQueue
         public readonly array $input = [],
         public readonly ?string $triggeringSuggestionId = null,
         public readonly ?string $triggeringCorrelationId = null,
-    ) {}
+    ) {
+        // Horizon agents-supervisor (Plan 01 config/horizon.php). Set via
+        // onQueue() — PHP 8.4 trait-collision guard (NEVER public string $queue).
+        $this->onQueue('agents');
+    }
 
     public function handle(
         AgentRegistry $registry,

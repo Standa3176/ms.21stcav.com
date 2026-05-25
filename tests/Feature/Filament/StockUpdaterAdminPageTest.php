@@ -81,7 +81,9 @@ it('publish pending action flips pending products with positive buy_price', func
     expect($stillPending->fresh()->status)->toBe('pending');
 });
 
-it('is registered with navigationGroup=Admin', function (): void {
+it('is registered with navigationGroup=Settings', function (): void {
+    // Nav simplification 2026-05-25 (quick task 260525-gtv): the set-once "Admin"
+    // group was folded into a single collapsible "Settings" group.
     $reflection = new ReflectionClass(StockUpdaterAdminPage::class);
-    expect($reflection->getStaticPropertyValue('navigationGroup'))->toBe('Admin');
+    expect($reflection->getStaticPropertyValue('navigationGroup'))->toBe('Settings');
 });

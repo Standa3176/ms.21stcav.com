@@ -29,7 +29,7 @@ Milestone: v2.0 Intelligence + B2B
 Phase: 13
 Plan: Not started
 Status: Phase ready for `gsd-tools phase complete 12`; Phase 13 ready for planning (run `/gsd-research-phase 13` first — research flag YES)
-Last activity: 2026-05-24 - Completed quick task 260524-qqn: AI product-page creation (extends Phase 6 auto-create)
+Last activity: 2026-05-25 - Completed quick task 260525-gtv: Simplify admin nav (8 groups → 6, rename Configuration → Settings, nest competitor feeds)
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
 
@@ -135,6 +135,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-04 | 90-day price + stock history snapshots (5,632 product + 8,017 supplier-offer rows; per-supplier breakdown + Filament UI + history:prune) | feat(products) | 864a14e |
 | 2026-05-04 | Price History searchable picker (sku/name/desc) + reschedule supplier Mon-Fri 07:00 + competitor Sun+Wed 02:00 | feat(price-history) | 4afd884 |
 | 2026-05-24 | AI product-page creation (extends Phase 6): products:generate-drafts (Claude content, meetingstore 6-section structure) + products:source-images (Icecat+Serper web search+Claude-vision validation, woo_product_id nullable, gallery_image_urls) + products:assign-taxonomy (fuzzy brand+Claude category) + /preview/product/{id} page + Icecat/ImageSearch credential kinds + Langfuse OTel silenced | feat(autocreate) | 9b7f094 |
+| 2026-05-25 | Simplify admin nav 8 groups → 6: quarantine ~18 set-once screens into one collapsible "Settings" group, merge operational logs into "Sync & CRM", remove WooCommerce/CRM&Bitrix/Admin/orphan FTP&CSV groups, nest 5 competitor-feed screens under a "Competitor Feeds" parent (Horizon-style navigationParentItem). Pure nav metadata, ~22 files; 81 admin routes verified. Quick task [260525-gtv](./quick/260525-gtv-simplify-admin-nav-8-groups-to-6-rename-/) | refactor(admin) | 46086a4 |
 
 ## Accumulated Context
 

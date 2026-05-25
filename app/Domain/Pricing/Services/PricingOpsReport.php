@@ -120,13 +120,13 @@ final class PricingOpsReport
     {
         $cached = Cache::get(self::ADD_CANDIDATES_CACHE_KEY);
         if (! is_array($cached)) {
-            return ['candidates' => [], 'count' => 0, 'min_suppliers' => 2, 'computed_at' => null];
+            return ['candidates' => [], 'count' => 0, 'min_suppliers' => 3, 'computed_at' => null];
         }
 
         return [
             'candidates' => is_array($cached['candidates'] ?? null) ? $cached['candidates'] : [],
             'count' => (int) ($cached['count'] ?? 0),
-            'min_suppliers' => (int) ($cached['min_suppliers'] ?? 2),
+            'min_suppliers' => (int) ($cached['min_suppliers'] ?? 3),
             'computed_at' => $cached['computed_at'] ?? null,
         ];
     }

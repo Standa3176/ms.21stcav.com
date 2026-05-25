@@ -25,7 +25,7 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 final class ScanSupplierAddCandidatesCommand extends BaseCommand
 {
     protected $signature = 'supplier:scan-add-candidates
-        {--min=2 : Minimum distinct suppliers a part must have to qualify}';
+        {--min=3 : Minimum distinct suppliers a part must have to qualify}';
 
     protected $description = 'Cache supplier-carried parts not on meetingstore (≥N suppliers) for the dashboard.';
 

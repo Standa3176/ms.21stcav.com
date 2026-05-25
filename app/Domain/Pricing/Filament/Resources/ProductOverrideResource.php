@@ -35,7 +35,7 @@ class ProductOverrideResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Per-product overrides
     // slot under Catalogue at sort 40 (after Pricing Rules@30).
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
     protected static ?int $navigationSort = 40;
 

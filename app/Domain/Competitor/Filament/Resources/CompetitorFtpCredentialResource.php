@@ -51,7 +51,9 @@ class CompetitorFtpCredentialResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-key';
 
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
+
+    protected static ?string $navigationParentItem = 'Competitor Feeds';
 
     protected static ?string $navigationLabel = 'FTP Credentials';
 

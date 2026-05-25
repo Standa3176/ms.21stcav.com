@@ -39,7 +39,7 @@ class CrmPipelineSettingsPage extends Page implements HasForms
 
     // Quick task 260504-ev5 — 8-group nav restructure. CRM pipeline settings
     // moved to dedicated 'CRM & Bitrix' group at sort 40.
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
     protected static ?int $navigationSort = 40;
 

@@ -30,7 +30,7 @@ class AlertRecipientResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Alert recipients sit
     // in Admin group at sort 20 (after Integration Credentials@10).
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
     protected static ?int $navigationSort = 20;
 

@@ -41,9 +41,9 @@ class CompetitorResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Competitors moves to
     // its own dedicated 'Competitors' group (was lumped under Catalogue).
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?string $navigationLabel = 'Competitors';
+    protected static ?string $navigationLabel = 'Competitor Feeds';
 
     protected static ?string $modelLabel = 'Competitor';
 

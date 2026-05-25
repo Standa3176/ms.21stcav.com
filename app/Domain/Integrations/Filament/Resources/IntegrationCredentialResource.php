@@ -50,7 +50,7 @@ class IntegrationCredentialResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. Integration creds
     // (Anthropic/OpenAI/Woo/Bitrix/Langfuse) stay in Admin group at sort 10.
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
     protected static ?string $navigationLabel = 'Integration Credentials';
 

@@ -58,7 +58,7 @@ class AdminPanelProvider extends PanelProvider
             // small (Home → Review → Competitor Prices → Pricing → Products), so
             // all rarely-touched plumbing (credentials, feeds, mappings, rules,
             // skip rules, settings, customer groups, roles) is quarantined into a
-            // single collapsible "Configuration" group. Operational logs (sync,
+            // single collapsible "Settings" group. Operational logs (sync,
             // import, CRM push) share one "Sync & CRM" group. The former
             // WooCommerce / CRM & Bitrix / Admin / "FTP & CSV" groups are gone.
             //   Operations  — daily ambient (Home, Notifications, Horizon)
@@ -66,14 +66,14 @@ class AdminPanelProvider extends PanelProvider
             //   Review      — human triage (Auto-Create, Suggestions, Agents)
             //   Competitors — Competitor Prices + Analysis (daily intel only)
             //   Sync & CRM  — operational logs (Sync Runs, Import Issues, CRM Push Log)
-            //   Configuration — everything set-once (rare-touch, collapsed)
+            //   Settings — everything set-once (rare-touch, collapsed)
             ->navigationGroups([
                 'Operations',
                 'Catalogue',
                 'Review',
                 'Competitors',
                 'Sync & CRM',
-                'Configuration',
+                'Settings',
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\\Filament\\Pages')

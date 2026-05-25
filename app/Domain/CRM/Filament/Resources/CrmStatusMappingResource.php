@@ -39,7 +39,7 @@ class CrmStatusMappingResource extends Resource
 
     // Quick task 260504-ev5 — 8-group nav restructure. CRM status mapping
     // moved to dedicated 'CRM & Bitrix' group at sort 20.
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
 
     protected static ?int $navigationSort = 20;
 

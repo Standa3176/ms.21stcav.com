@@ -59,7 +59,9 @@ class CsvIngestIssuesPage extends Page implements HasTable
 
     // Quick task 260504-ev5 — 8-group nav restructure. Sits next to
     // CsvParseErrorResource in 'FTP & CSV' at sort 50 (last in group).
-    protected static ?string $navigationGroup = 'Configuration';
+    protected static ?string $navigationGroup = 'Settings';
+
+    protected static ?string $navigationParentItem = 'Competitor Feeds';
 
     protected static ?int $navigationSort = 50;
 

@@ -15,6 +15,8 @@ use App\Domain\Competitor\Listeners\IncrementSkuSalesCount;
 use App\Domain\CRM\Listeners\HandleCustomerRegistered;
 use App\Domain\CRM\Listeners\HandleOrderReceived;
 use App\Domain\CRM\Listeners\PushQuoteToBitrix;
+use App\Domain\Pricing\Events\ProductPriceChanged;
+use App\Domain\Pricing\Listeners\PushPriceChangeToWoo;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
 use App\Domain\Quotes\Events\QuoteApproved;
 use App\Domain\ProductAutoCreate\Listeners\ApplyPinsDuringSync;
@@ -76,6 +78,15 @@ class EventServiceProvider extends ServiceProvider
             RecomputePriceListener::class,
             RecomputeCompletenessOnSupplierChange::class.'@handlePriceChanged',
             ApplyPinsDuringSync::class.'@handlePriceChanged',
+        ],
+
+        // Core-loop step #2 — the downstream Woo PUT on a recomputed sell price
+        // (long referenced in the comment above; now implemented). Gated by
+        // WooClient (WOO_WRITE_ENABLED=false → records a SyncDiff instead of
+        // calling Woo). Runs on the rate-limited sync-woo-push queue. Emitted by
+        // PriceRecomputer AND pricing:undercut-competitors.
+        ProductPriceChanged::class => [
+            PushPriceChangeToWoo::class,
         ],
         SupplierStockChanged::class => [
             RecomputeCompletenessOnSupplierChange::class.'@handleStockChanged',

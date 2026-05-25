@@ -46,6 +46,14 @@ return [
 
         // Phase 1 — shadow-mode flag (D-08; MUST default to false)
         'write_enabled' => env('WOO_WRITE_ENABLED', false),
+
+        // VAT basis for prices PUSHED to Woo's regular_price (PushPriceChangeToWoo).
+        // sell_price is stored VAT-INCLUSIVE; default false = push inc-VAT (matches
+        // the existing auto-create convention). Set WOO_PUSH_PRICES_EX_VAT=true if
+        // the Woo store enters prices EX-VAT (confirm against the storefront before
+        // cutover — getting this wrong is a 20% price error). Competitor feeds are
+        // ex-VAT, so trade stores often display ex-VAT.
+        'push_prices_ex_vat' => env('WOO_PUSH_PRICES_EX_VAT', false),
     ],
 
     'woocommerce' => [

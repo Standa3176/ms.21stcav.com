@@ -9,6 +9,10 @@
 - `1da47cd` — feat(sync): `supplier:db-sync --flag-obsolete` demotes no-supplier products to pending
 - `645030d` — feat(pricing): clickable Pricing Ops tiles → modal + CSV export
 - `d028ad4` — feat(admin): active-nav highlight + filterable dashboard modals + XLS export
+- `058fd96` — feat(pricing): "Products to add" tile (supplier-carried parts not on MS)
+
+## Products to add (058fd96)
+New catalogue-expansion tile: parts stocked by ≥2 distinct suppliers in the remote `feeds_products` feed that we don't sell yet. `SupplierAddCandidateScanner` groups by mpn, counts distinct suppliers, excludes parts whose mpn/suppliersku matches a local `products.sku`; returns brand (manufacturer) / part (mpn) / description (title) / supplier count. `supplier:scan-add-candidates` caches it (heavy remote GROUP BY — weekly Sun 05:00 London + manual); the dashboard tile reads the cache → filterable modal + CSV/XLS export (bucket `add_candidates`). **Categories aren't in the supplier feed** (assigned via AI at draft time) — noted in the modal; offered AI-categorisation as a future enrichment. Run `supplier:scan-add-candidates` once to populate (tile shows "not scanned yet" until then).
 
 ## What shipped
 - **🔴 Cost bug fixed (operator-found):** `supplier:db-sync` was costing each SKU at the latest-*updated* supplier row (ignoring price + stock). Now pulls every supplier from `feeds_products` and `buildBestOfferMap` picks **cheapest in-stock** (fallback cheapest); stock = sum across in-stock suppliers. Ran live: **1,772 of 3,863 matched SKUs re-costed** (~46% were wrong). floor-report after: below-cost 517→415, winnable 90.5%, median achievable margin 15.59%.

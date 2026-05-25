@@ -23,6 +23,8 @@ php artisan cutover:checklist --update-status=<gate-id>:pass   # mark a manual g
    - products that already have a `woo_product_id` → PUT `status=publish`;
    - auto-drafted products with **no** `woo_product_id` (`generate-drafts` / `draft-competitor-skus`) → **POST `/products` to create them on Woo** (name/slug/sku/price/descriptions/categories/images), back-fill `woo_product_id`, publish. (Core-loop #3b — closes the former gap.)
 
+> ⚠️ **NOT automatic on the flip: local `pending` statuses.** `supplier:db-sync --flag-obsolete` set ~160 obsolete products (no supplier offer) to `status=pending` in the **local DB only** — it queues no Woo write, and the flip only affects *future* writes. To actually pull these from the live storefront, the flip must include an explicit **status-reconciliation push** (see Phase C step C-NEW). The `supplier_api` path auto-pushes status via `MarkMissingSkusJob`; the `supplier_db` path in use does not.
+
 ---
 
 ## Phase A — Pre-flight (do anytime; parallel-safe, no live writes)
@@ -59,6 +61,7 @@ Getting this wrong is a 20% price error on every push. (Competitor feeds are ex-
    ```
    Verify those 2-3 prices on the live storefront. Only then enable the daily schedule: `PRICING_UNDERCUT_SCHEDULE_ENABLED=true`.
 4. *(If using Bitrix quote push)* `php artisan bitrix:quotes-bootstrap` then `--update-status=bitrix_quote_type_id_verified:pass`, and flip `QUOTE_BITRIX_PUSH_ENABLED=true`.
+5. **C-NEW — push obsolete `pending` statuses to the store.** ~160 products were flagged `status=pending` locally by `supplier:db-sync --flag-obsolete` (no supplier offer) but never written to Woo. After the gate is open, reconcile local→Woo status so they leave the live storefront. **Needs a small build** (not yet implemented): a `products:push-status-to-woo` reconciliation that PUTs `status` to Woo for products whose local status ≠ Woo status (via `WooClient`, so it's gated/auditable), OR re-run obsolescence with a Woo-write path. Until built, do it manually in WooCommerce (bulk-edit the local-`pending` set to pending/draft). Verify a couple on the storefront afterwards.
 
 ## Phase D — Post-flip monitoring
 1. `monitoring-7-days`: watch the Home Dashboard + AbortGuard daily for 7 clean days; then `--update-status=monitoring-7-days:pass`.

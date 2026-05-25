@@ -33,7 +33,7 @@ final class SupplierAddCandidateScanner
      *   count:int, min_suppliers:int, computed_at:string
      * }
      */
-    public function scan(int $minSuppliers = 3, int $listCap = 2000): array
+    public function scan(int $minSuppliers = 4, int $listCap = 5000): array
     {
         $minSuppliers = max(2, $minSuppliers);
         $creds = $this->resolver->for(IntegrationCredentialKind::SupplierDb);

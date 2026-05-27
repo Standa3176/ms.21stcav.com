@@ -37,8 +37,18 @@
                             x-show="q === '' || $el.dataset.search.includes(q.toLowerCase())">
                             <td class="px-3 py-1.5 font-mono">{{ $r['sku'] }}</td>
                             <td class="px-3 py-1.5">{{ \Illuminate\Support\Str::limit($r['name'], 60) }}</td>
-                            <td class="px-3 py-1.5 text-right text-gray-500">{{ $money((int) $r['cost_ex']) }}</td>
-                            <td class="px-3 py-1.5 text-right {{ $m <= 0 ? 'text-danger-600 font-medium' : '' }}">{{ $money((int) $r['comp_ex']) }}</td>
+                            <td class="px-3 py-1.5 text-right text-gray-500">
+                                <span class="block">{{ $money((int) $r['cost_ex']) }}</span>
+                                @if (! empty($r['supplier_name']))
+                                    <span class="block text-xs text-gray-500 dark:text-gray-400">{{ \Illuminate\Support\Str::limit($r['supplier_name'], 28) }}</span>
+                                @endif
+                            </td>
+                            <td class="px-3 py-1.5 text-right {{ $m <= 0 ? 'text-danger-600 font-medium' : '' }}">
+                                <span class="block">{{ $money((int) $r['comp_ex']) }}</span>
+                                @if (! empty($r['competitor_name']))
+                                    <span class="block text-xs font-normal text-gray-500 dark:text-gray-400">{{ \Illuminate\Support\Str::limit($r['competitor_name'], 28) }}</span>
+                                @endif
+                            </td>
                             <td class="px-3 py-1.5 text-right {{ $m <= 0 ? 'text-danger-600' : ($m < 600 ? 'text-warning-600' : 'text-success-600') }}">
                                 {{ number_format($m / 100, 1) }}%
                             </td>

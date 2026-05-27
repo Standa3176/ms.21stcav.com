@@ -6,6 +6,7 @@ use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Services\CompetitorPositionScanner;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\SupplierOfferSnapshot;
 
 /*
 |--------------------------------------------------------------------------
@@ -85,4 +86,76 @@ it('ignores stale competitor prices outside the window', function (): void {
 
     expect($scan['matched_count'])->toBe(0)
         ->and($scan['below_cost_count'])->toBe(0);
+});
+
+it('resolves the supplier name behind our cost and the winning competitor name', function (): void {
+    $product = Product::factory()->create(['type' => 'simple', 'sku' => 'NAM-1', 'buy_price' => 100.00]);
+
+    // Cheapest current supplier offer = Ingram at £80 in stock today → the cost source.
+    SupplierOfferSnapshot::create([
+        'sku' => 'nam-1',
+        'product_id' => $product->id,
+        'supplier_id' => 'SUP-INGRAM',
+        'supplier_name' => 'Ingram',
+        'price' => 80.00,
+        'stock' => 5,
+        'rrp' => 150.00,
+        'recorded_at' => today(),
+    ]);
+    // A pricier offer for the same product should NOT win the name.
+    SupplierOfferSnapshot::create([
+        'sku' => 'nam-1',
+        'product_id' => $product->id,
+        'supplier_id' => 'SUP-OTHER',
+        'supplier_name' => 'Westcoast',
+        'price' => 95.00,
+        'stock' => 3,
+        'rrp' => 150.00,
+        'recorded_at' => today(),
+    ]);
+
+    // Lowest current competitor belongs to RivalCo at £90 ex → below cost.
+    $rival = Competitor::factory()->create(['name' => 'RivalCo']);
+    CompetitorPrice::factory()->forSku('NAM-1')
+        ->create(['competitor_id' => $rival->id, 'price_pennies_ex_vat' => 9000]);
+
+    $scan = app(CompetitorPositionScanner::class)->compute();
+
+    expect($scan['below_cost_count'])->toBe(1)
+        ->and($scan['below_cost'][0]['sku'])->toBe('NAM-1')
+        ->and($scan['below_cost'][0]['supplier_name'])->toBe('Ingram')
+        ->and($scan['below_cost'][0]['competitor_name'])->toBe('RivalCo');
+});
+
+it('yields a null supplier_name when no supplier offer snapshot exists', function (): void {
+    $product = Product::factory()->create(['type' => 'simple', 'sku' => 'NAM-2', 'buy_price' => 100.00]);
+
+    $rival = Competitor::factory()->create(['name' => 'SoloRival']);
+    CompetitorPrice::factory()->forSku('NAM-2')
+        ->create(['competitor_id' => $rival->id, 'price_pennies_ex_vat' => 9000]);
+
+    $scan = app(CompetitorPositionScanner::class)->compute();
+
+    expect($scan['below_cost_count'])->toBe(1)
+        ->and($scan['below_cost'][0]['supplier_name'])->toBeNull()
+        ->and($scan['below_cost'][0]['competitor_name'])->toBe('SoloRival');
+});
+
+it('breaks competitor ties deterministically on the lowest competitor id', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'TIE-1', 'buy_price' => 100.00]);
+
+    // Two competitors tie at the lowest ex-VAT price; the lower id must win.
+    $first = Competitor::factory()->create(['name' => 'LowerIdCo']);
+    $second = Competitor::factory()->create(['name' => 'HigherIdCo']);
+    expect($first->id)->toBeLessThan($second->id);
+
+    CompetitorPrice::factory()->forSku('TIE-1')
+        ->create(['competitor_id' => $second->id, 'price_pennies_ex_vat' => 9000]);
+    CompetitorPrice::factory()->forSku('TIE-1')
+        ->create(['competitor_id' => $first->id, 'price_pennies_ex_vat' => 9000]);
+
+    $scan = app(CompetitorPositionScanner::class)->compute();
+
+    expect($scan['below_cost_count'])->toBe(1)
+        ->and($scan['below_cost'][0]['competitor_name'])->toBe('LowerIdCo');
 });

@@ -4,7 +4,7 @@ milestone: v2.0
 milestone_name: Intelligence + B2B
 status: planning
 stopped_at: Completed 12-05-PLAN.md — Phase 12 fully shipped (5/5 plans complete; UAT deferred to production deploy per 12-UAT-DISPOSITION.md; 120 Pest cases / 287 assertions; ship verdict PASS_WITH_DEFERRED_UAT in 12-VERIFICATION.md)
-last_updated: "2026-05-24T18:15:10.257Z"
+last_updated: "2026-05-27T07:45:00.000Z"
 last_activity: 2026-05-24
 progress:
   total_phases: 11
@@ -29,7 +29,7 @@ Milestone: v2.0 Intelligence + B2B
 Phase: 13
 Plan: Not started
 Status: Phase ready for `gsd-tools phase complete 12`; Phase 13 ready for planning (run `/gsd-research-phase 13` first — research flag YES)
-Last activity: 2026-05-25 - Completed quick tasks 260525-szn (#3b + pricing schedule + cutover runbook) and 260525-szo (supplier cost accuracy + obsolescence + dashboard UX)
+Last activity: 2026-05-27 - Completed quick task 260527-c0m: supplier + competitor names in the Pricing Ops bucket popup (pending visual check; not yet deployed)
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
 
@@ -139,6 +139,7 @@ Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases ship
 | 2026-05-25 | Pricing Operations dashboard `/admin/pricing-operations` (4 panels: recent price changes, new SKUs, competitor at/below 6% floor, competitor below cost) via CompetitorPositionScanner reusing floor-report ex-VAT margin math. + PHP 8.4 fix: removed `public string $queue` trait collision in AgentAlertNotification/RunAgentJob (dormant on prod 8.3) + added pest-plugin-livewire dev dep. 7 new tests green. Quick task [260525-pnk](./quick/260525-pnk-pricing-operations-dashboard-php-8-4-tes/) | feat(pricing) | 24f03aa |
 | 2026-05-25 | Core-loop #3b publish-on-Woo (PublishProductJob creates auto-drafts on Woo, shadow-safe; fixes rest_no_route slash bug) + daily 08:00 undercut pricing schedule (opt-in) + cutover runbook (`docs/ops/cutover-runbook.md`, phases A–D). All gated. Quick task [260525-szn](./quick/260525-szn-core-loop-3b-publish-on-woo-pricing-sche/) | feat(autocreate) | 6ce34f6 |
 | 2026-05-25 | Supplier cost accuracy: buy_price = cheapest IN-STOCK supplier (was latest-updated; 1,772 SKUs re-costed live) + `supplier:explain-cost {sku}` diagnostic + `--flag-obsolete` (no-supplier products → pending; 160 demoted live). Pricing Ops dashboard UX: clickable tiles → filterable modal + CSV/XLS export, active-nav "you are here" highlight, + "Products to add" tile (parts on ≥4 suppliers not on MS — default tuned from data: ≥2=68k, ≥3=20k, ≥4=2,135; via `supplier:scan-add-candidates`, weekly Sun 05:00). 10 tests green. Quick task [260525-szo](./quick/260525-szo-supplier-cost-accuracy-cheapest-in-stock/) | fix(sync)+feat(pricing) | 1d95f73 |
+| 2026-05-27 | Pricing Ops **bucket popup** now shows the supplier name under "Our cost (ex)" and the competitor name under "Lowest comp (ex)" (muted sub-lines, null-safe). Extended `CompetitorPositionScanner` to resolve both, batched: competitor via argmin `competitor_id` → raw `DB::select` on `competitors` (deptrac: Pricing↛Competitor, so NO model import); supplier via cheapest-current `SupplierOfferSnapshot` (matches how `buy_price` is chosen). Popup blade ONLY — inline panels + CSV untouched (scoped out by user). PHPStan L6 + deptrac (touched file) + Pint clean; scanner Pest 7 green. Pending visual human-check. Quick task [260527-c0m](./quick/260527-c0m-show-supplier-name-under-our-cost-and-co/) | feat(pricing) | d74a604 |
 
 ### Known debt / separate milestones
 - **Test-suite remediation (full green on PHP 8.3/CI)** — surfaced 2026-05-25: the Pest suite has ~165 pre-existing failures + 1 hanging (networked) test, spanning many domains. Root causes are **test-infra rot, not prod bugs**: fixtures not seeding FK deps (e.g. customer_groups), Filament action-visibility drift (`callTableAction` on a hidden action now throws), MySQL-vs-SQLite skip-guards — compounded by local PHP 8.4 vs prod PHP 8.3. The suite hadn't been runnable for a long time (the missing pest-plugin-livewire, now added, proves it). **Not a cutover blocker.** Cutover **Gate 3 (feature-suite)** is satisfied on critical-path evidence instead (app boots, 81 routes resolve, prod is 8.3, and the changed/critical suites pass: Pricing 107, Sync 23, Products 20, Suggestions 16, PublishProductJob 5, + 7 new dashboard tests). Greening the rest = its own milestone, domain-by-domain, ideally on PHP 8.3 in CI.

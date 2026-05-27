@@ -161,8 +161,18 @@
                             <tr>
                                 <td class="py-1 pr-4 font-mono">{{ $r['sku'] }}</td>
                                 <td class="py-1 pr-4">{{ \Illuminate\Support\Str::limit($r['name'], 45) }}</td>
-                                <td class="py-1 pr-4 text-gray-500">{{ $money($r['cost_ex']) }}</td>
-                                <td class="py-1 pr-4">{{ $money($r['comp_ex']) }}</td>
+                                <td class="py-1 pr-4 text-gray-500">
+                                    <span class="block">{{ $money($r['cost_ex']) }}</span>
+                                    @if (! empty($r['supplier_name']))
+                                        <span class="block text-xs text-gray-400">{{ \Illuminate\Support\Str::limit($r['supplier_name'], 24) }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1 pr-4">
+                                    <span class="block">{{ $money($r['comp_ex']) }}</span>
+                                    @if (! empty($r['competitor_name']))
+                                        <span class="block text-xs text-gray-400">{{ \Illuminate\Support\Str::limit($r['competitor_name'], 24) }}</span>
+                                    @endif
+                                </td>
                                 <td class="py-1 text-warning-600">{{ number_format($r['margin_bps'] / 100, 1) }}%</td>
                             </tr>
                         @endforeach
@@ -196,8 +206,18 @@
                             <tr>
                                 <td class="py-1 pr-4 font-mono">{{ $r['sku'] }}</td>
                                 <td class="py-1 pr-4">{{ \Illuminate\Support\Str::limit($r['name'], 45) }}</td>
-                                <td class="py-1 pr-4 text-gray-500">{{ $money($r['cost_ex']) }}</td>
-                                <td class="py-1 pr-4 text-danger-600 font-medium">{{ $money($r['comp_ex']) }}</td>
+                                <td class="py-1 pr-4 text-gray-500">
+                                    <span class="block">{{ $money($r['cost_ex']) }}</span>
+                                    @if (! empty($r['supplier_name']))
+                                        <span class="block text-xs text-gray-400">{{ \Illuminate\Support\Str::limit($r['supplier_name'], 24) }}</span>
+                                    @endif
+                                </td>
+                                <td class="py-1 pr-4 text-danger-600 font-medium">
+                                    <span class="block">{{ $money($r['comp_ex']) }}</span>
+                                    @if (! empty($r['competitor_name']))
+                                        <span class="block text-xs font-normal text-gray-400">{{ \Illuminate\Support\Str::limit($r['competitor_name'], 24) }}</span>
+                                    @endif
+                                </td>
                                 <td class="py-1 text-danger-600">{{ number_format($r['margin_bps'] / 100, 1) }}%</td>
                             </tr>
                         @endforeach

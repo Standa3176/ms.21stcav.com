@@ -91,3 +91,21 @@ it('exports add_candidates from the cached supplier scan', function (): void {
         ->toContain('ACME-1')
         ->toContain('Acme');
 });
+
+it('exports sourcing_gaps from the cached scan', function (): void {
+    Cache::put(PricingOpsReport::SOURCING_GAPS_CACHE_KEY, [
+        'gaps' => [['part' => 'GAP-1', 'mpn' => 'MPN-1', 'competitors' => 2, 'comp_ex' => 7000, 'competitor_name' => 'RivalCo']],
+        'count' => 1,
+        'max_age_days' => 30,
+        'computed_at' => now()->toIso8601String(),
+    ]);
+
+    $res = $this->actingAs(pricingExportUser('admin'))
+        ->get(route('pricing-ops.export', ['bucket' => 'sourcing_gaps']));
+
+    $res->assertOk();
+    expect($res->streamedContent())
+        ->toContain('Lowest competitor ex-VAT')
+        ->toContain('GAP-1')
+        ->toContain('RivalCo');
+});

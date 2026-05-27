@@ -34,8 +34,11 @@ final class PricingOpsReport
     /** Supplier add-candidates cache (written by supplier:scan-add-candidates). */
     public const ADD_CANDIDATES_CACHE_KEY = 'pricing_ops:add_candidates';
 
+    /** Sourcing-gaps cache (written by pricing:scan-sourcing-gaps). */
+    public const SOURCING_GAPS_CACHE_KEY = 'pricing_ops:sourcing_gaps';
+
     /** Buckets the dashboard tiles + export route understand. */
-    public const BUCKETS = ['below_cost', 'at_floor', 'winnable', 'matched', 'recent_changes', 'new_skus', 'add_candidates'];
+    public const BUCKETS = ['below_cost', 'at_floor', 'winnable', 'matched', 'recent_changes', 'new_skus', 'add_candidates', 'sourcing_gaps'];
 
     public function __construct(private readonly CompetitorPositionScanner $scanner) {}
 
@@ -132,6 +135,28 @@ final class PricingOpsReport
     }
 
     /**
+     * Sourcing gaps from the cached scan (pricing:scan-sourcing-gaps): parts a
+     * competitor lists that NO supplier carries and we don't sell. Empty if never
+     * scanned.
+     *
+     * @return array{gaps:array<int,array<string,mixed>>, count:int, max_age_days:int, computed_at:?string}
+     */
+    public function sourcingGaps(): array
+    {
+        $cached = Cache::get(self::SOURCING_GAPS_CACHE_KEY);
+        if (! is_array($cached)) {
+            return ['gaps' => [], 'count' => 0, 'max_age_days' => 30, 'computed_at' => null];
+        }
+
+        return [
+            'gaps' => is_array($cached['gaps'] ?? null) ? $cached['gaps'] : [],
+            'count' => (int) ($cached['count'] ?? 0),
+            'max_age_days' => (int) ($cached['max_age_days'] ?? 30),
+            'computed_at' => $cached['computed_at'] ?? null,
+        ];
+    }
+
+    /**
      * CSV payload for the export route.
      *
      * @return array{filename:string, header:array<int,string>, rows:array<int,array<int,string>>}
@@ -151,6 +176,19 @@ final class PricingOpsReport
             ], $this->addCandidates()['candidates']);
 
             return ['filename' => "products-to-add-{$stamp}.csv", 'header' => $header, 'rows' => $rows];
+        }
+
+        if ($bucket === 'sourcing_gaps') {
+            $header = ['Part', 'MPN', 'Competitors', 'Lowest competitor ex-VAT (£)', 'Competitor'];
+            $rows = array_map(static fn (array $r): array => [
+                (string) ($r['part'] ?? ''),
+                (string) ($r['mpn'] ?? ''),
+                (string) ($r['competitors'] ?? ''),
+                $money((int) ($r['comp_ex'] ?? 0)),
+                (string) ($r['competitor_name'] ?? ''),
+            ], $this->sourcingGaps()['gaps']);
+
+            return ['filename' => "sourcing-gaps-{$stamp}.csv", 'header' => $header, 'rows' => $rows];
         }
 
         if ($bucket === 'recent_changes') {

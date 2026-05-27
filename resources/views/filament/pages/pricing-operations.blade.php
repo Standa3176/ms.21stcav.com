@@ -39,21 +39,38 @@
         (competitor prices ≤ {{ $scan['max_age_days'] ?? 30 }} days old, ex-VAT). “Recompute positions” refreshes.
     </p>
 
-    {{-- ── Catalogue-expansion tile (supplier-sourced; separate from the cost tiles) ── --}}
-    <button type="button" wire:click="mountAction('addCandidates')"
-        class="mt-3 flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
-        <div>
-            <div class="text-xs text-gray-500 dark:text-gray-400">Products to add — suppliers carry, we don’t sell (≥{{ $addCandidates['min_suppliers'] ?? 2 }} suppliers) ↗</div>
-            <div class="text-2xl font-semibold text-primary-600">{{ number_format($addCandidates['count'] ?? 0) }}</div>
-        </div>
-        <div class="text-xs text-gray-400">
-            @if (($addCandidates['computed_at'] ?? null))
-                scanned {{ \Illuminate\Support\Carbon::parse($addCandidates['computed_at'])->diffForHumans() }}
-            @else
-                not scanned yet
-            @endif
-        </div>
-    </button>
+    {{-- ── Catalogue-expansion tiles (sourced separately from the cost tiles) ── --}}
+    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+        <button type="button" wire:click="mountAction('addCandidates')"
+            class="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Products to add — suppliers carry, we don’t sell (≥{{ $addCandidates['min_suppliers'] ?? 2 }} suppliers) ↗</div>
+                <div class="text-2xl font-semibold text-primary-600">{{ number_format($addCandidates['count'] ?? 0) }}</div>
+            </div>
+            <div class="text-xs text-gray-400">
+                @if (($addCandidates['computed_at'] ?? null))
+                    scanned {{ \Illuminate\Support\Carbon::parse($addCandidates['computed_at'])->diffForHumans() }}
+                @else
+                    not scanned yet
+                @endif
+            </div>
+        </button>
+
+        <button type="button" wire:click="mountAction('sourcingGaps')"
+            class="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white p-3 text-left transition hover:border-primary-400 hover:shadow dark:border-gray-700 dark:bg-gray-900">
+            <div>
+                <div class="text-xs text-gray-500 dark:text-gray-400">Sourcing gaps — competitor sells, no supplier carries it ↗</div>
+                <div class="text-2xl font-semibold text-gray-600 dark:text-gray-300">{{ number_format($sourcingGaps['count'] ?? 0) }}</div>
+            </div>
+            <div class="text-xs text-gray-400">
+                @if (($sourcingGaps['computed_at'] ?? null))
+                    scanned {{ \Illuminate\Support\Carbon::parse($sourcingGaps['computed_at'])->diffForHumans() }}
+                @else
+                    not scanned yet
+                @endif
+            </div>
+        </button>
+    </div>
 
     {{-- ── Panel 1 — Recent price changes ────────────────────────────── --}}
     <x-filament::section icon="heroicon-o-arrows-up-down" class="mt-6">

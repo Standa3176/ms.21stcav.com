@@ -84,6 +84,7 @@ use App\Domain\Integrations\Observers\IntegrationCredentialObserver;
 use App\Domain\Integrations\Policies\IntegrationCredentialPolicy;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Pricing\Console\Commands\PricingRecomputeCommand;
+use App\Domain\Pricing\Console\Commands\ScanSourcingGapsCommand;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Policies\PricingRulePolicy;
@@ -596,6 +597,10 @@ class AppServiceProvider extends ServiceProvider
                 // 2026-05-25 — catalogue-expansion scan: parts on ≥2 suppliers
                 // not on MS, cached for the dashboard "Products to add" tile.
                 ScanSupplierAddCandidatesCommand::class,
+                // 2026-05-27 — sourcing-gap scan: parts a competitor lists that
+                // NO supplier carries + we don't sell (likely obsolete), cached
+                // for the dashboard "Sourcing gaps" tile.
+                ScanSourcingGapsCommand::class,
                 // Phase 3 Plan 04 Task 2 — operator CLI for catalogue-wide
                 // recompute. Default dry-run, --live opt-in (D-12). Lives
                 // under app/Domain/Pricing/Console/Commands/ so explicit

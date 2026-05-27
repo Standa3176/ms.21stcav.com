@@ -120,6 +120,35 @@ class PricingOperationsPage extends Page
             ]);
     }
 
+    /** Sourcing gaps: competitor lists it, no supplier carries it, we don't sell it (cached scan). */
+    public function sourcingGapsAction(): Action
+    {
+        return Action::make('sourcingGaps')
+            ->modalHeading('Sourcing gaps — competitor sells, no supplier carries it')
+            ->modalIcon('heroicon-o-magnifying-glass-circle')
+            ->modalWidth(MaxWidth::SevenExtraLarge)
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Close')
+            ->modalContent(function (): View {
+                $data = $this->report()->sourcingGaps();
+
+                return view('filament.pages.pricing-ops-sourcing-gaps', [
+                    'rows' => array_slice($data['gaps'], 0, self::MODAL_ROW_CAP),
+                    'total' => $data['count'],
+                    'maxAgeDays' => $data['max_age_days'],
+                    'computedAt' => $data['computed_at'],
+                ]);
+            })
+            ->extraModalFooterActions([
+                Action::make('sourcingGapsExportCsv')
+                    ->label('Export CSV')->icon('heroicon-o-arrow-down-tray')->color('gray')
+                    ->url(route('pricing-ops.export', ['bucket' => 'sourcing_gaps']))->openUrlInNewTab(),
+                Action::make('sourcingGapsExportXls')
+                    ->label('Export XLS')->icon('heroicon-o-table-cells')->color('gray')
+                    ->url(route('pricing-ops.export', ['bucket' => 'sourcing_gaps', 'format' => 'xlsx']))->openUrlInNewTab(),
+            ]);
+    }
+
     private function bucketModal(string $name, string $bucket, string $heading, string $icon): Action
     {
         return Action::make($name)
@@ -165,6 +194,7 @@ class PricingOperationsPage extends Page
             'recentChanges' => array_slice($report->recentChanges(), 0, 50),
             'newSkus' => $report->newSkus(50),
             'addCandidates' => $report->addCandidates(),
+            'sourcingGaps' => $report->sourcingGaps(),
         ];
     }
 }

@@ -259,6 +259,17 @@ Schedule::command('supplier:scan-add-candidates')
     ->timezone('Europe/London')
     ->description('Cache supplier add-candidates for the dashboard (weekly, Sun 05:00)');
 
+// 2026-05-27 — pricing:scan-sourcing-gaps weekly (Sunday 05:30 London, 30 min
+// after add-candidates so the two heavy feed scans don't overlap). Caches
+// "sourcing gaps" (parts a competitor lists that NO supplier carries + we don't
+// sell — likely obsolete) for the Pricing Operations dashboard. Read-only.
+Schedule::command('pricing:scan-sourcing-gaps')
+    ->weeklyOn(0, '05:30')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Cache competitor-only no-supplier sourcing gaps for the dashboard (weekly, Sun 05:30)');
+
 // Phase 12 Plan 05 SEOAGT-05 — nightly SEO agent batch at 04:30 Europe/London.
 // Slots between competitor:ftp-pull (Sun+Wed 02:00) and supplier:db-sync
 // (Mon-Fri 07:00). Single nightly cadence per SEOAGT-05 success criterion 1.

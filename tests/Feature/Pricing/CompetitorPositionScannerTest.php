@@ -45,6 +45,24 @@ it('buckets products by ex-VAT margin vs the lowest current competitor', functio
         ->and($scan['at_floor'][0]['sku'])->toBe('BBB');
 });
 
+it('excludes non-publish (pending/obsolete, no-supplier) products from the cost buckets', function (): void {
+    // A published product below cost — counts.
+    Product::factory()->create(['type' => 'simple', 'status' => 'publish', 'sku' => 'LIVE-1', 'buy_price' => 100.00]);
+    CompetitorPrice::factory()->forSku('LIVE-1')->create(['price_pennies_ex_vat' => 9000]);
+
+    // A pending product (demoted because no supplier carries it) with the same
+    // below-cost shape — must NOT count: we can't be "below cost" on something
+    // we can't buy. Surfaced by the Sourcing-gaps view instead.
+    Product::factory()->create(['type' => 'simple', 'status' => 'pending', 'sku' => 'PEND-1', 'buy_price' => 100.00]);
+    CompetitorPrice::factory()->forSku('PEND-1')->create(['price_pennies_ex_vat' => 9000]);
+
+    $scan = app(CompetitorPositionScanner::class)->compute();
+
+    expect($scan['matched_count'])->toBe(1)
+        ->and($scan['below_cost_count'])->toBe(1)
+        ->and($scan['below_cost'][0]['sku'])->toBe('LIVE-1');
+});
+
 it('takes the latest row per competitor then the lowest across competitors', function (): void {
     Product::factory()->create(['type' => 'simple', 'sku' => 'DDD', 'buy_price' => 100.00]);
 

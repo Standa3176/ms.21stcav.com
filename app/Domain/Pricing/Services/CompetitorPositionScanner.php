@@ -78,6 +78,7 @@ final class CompetitorPositionScanner
 
         Product::query()
             ->where('type', 'simple')
+            ->where('status', 'publish') // pending/obsolete (no-supplier) products don't count — see SourcingGapScanner
             ->whereNotNull('buy_price')
             ->where('buy_price', '>', 0)
             ->orderBy('id')

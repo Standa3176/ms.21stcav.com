@@ -9,6 +9,7 @@ use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
 use App\Console\Commands\Cutover\DivergenceScanCommand;
 use App\Console\Commands\Cutover\DrillRollbackCommand;
 use App\Console\Commands\Cutover\PopulateOverridesCommand;
+use App\Console\Commands\Cutover\PushProductStatusToWooCommand;
 use App\Console\Commands\Cutover\SnapshotWooDbCommand;
 use App\Console\Commands\Dashboard\DashboardRefreshCommand;
 use App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand;
@@ -713,6 +714,10 @@ class AppServiceProvider extends ServiceProvider
                 DrillRollbackCommand::class,
                 DisableLegacyPluginsCommand::class,
                 CutoverChecklistCommand::class,
+                // Cutover step C-NEW (2026-05-27) — reconcile non-publish LOCAL
+                // status onto Woo so --flag-obsolete demotions actually leave
+                // the storefront on flip day. Shadow-safe; defaults dry-run.
+                PushProductStatusToWooCommand::class,
                 // Phase 8 Plan 04 — agent:run {kind} [--dry-run] CLI entry
                 // point for the C4 framework. Extends BaseCommand so the
                 // correlation_id threads through the entire CLI → Job →

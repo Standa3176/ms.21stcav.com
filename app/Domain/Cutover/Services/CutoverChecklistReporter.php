@@ -40,8 +40,11 @@ use Illuminate\Support\Facades\Cache;
 class CutoverChecklistReporter
 {
     public const STATUS_PASS = 'PASS';
+
     public const STATUS_PENDING = 'PENDING';
+
     public const STATUS_FAIL = 'FAIL';
+
     public const STATUS_MANUAL = 'MANUAL';
 
     protected string $stateFile;
@@ -131,6 +134,19 @@ class CutoverChecklistReporter
                 'action' => 'Ops changes production .env: WOO_WRITE_ENABLED=true; '
                     .'then php artisan config:clear; '
                     .'then cutover:checklist --update-status=flag-flip:pass',
+            ],
+            // ── C-NEW (2026-05-27) ─ reconcile non-publish LOCAL status onto
+            // Woo so --flag-obsolete demotions actually leave the storefront on
+            // flip. The supplier_api MarkMissingSkusJob path auto-pushes status;
+            // the supplier_db path in use does not. Shadow-safe — running it
+            // pre-flip stages reviewable SyncDiffs; running it post-flip does
+            // the real PUTs.
+            [
+                'id' => 'obsolete-statuses-pushed',
+                'title' => 'C-NEW: Local non-publish status reconciled onto Woo (--flag-obsolete demotions left the storefront)',
+                'status' => $state['obsolete-statuses-pushed'] ?? self::STATUS_PENDING,
+                'action' => 'Run: php artisan products:push-status-to-woo --live; '
+                    .'then cutover:checklist --update-status=obsolete-statuses-pushed:pass',
             ],
             [
                 'id' => 'monitoring-7-days',

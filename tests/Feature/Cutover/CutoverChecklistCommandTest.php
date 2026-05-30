@@ -74,9 +74,9 @@ beforeEach(function (): void {
 afterEach(function (): void {
     if (isset($this->tmp) && is_dir($this->tmp)) {
         // Recursive cleanup.
-        $it = new \RecursiveIteratorIterator(
-            new \RecursiveDirectoryIterator($this->tmp, \FilesystemIterator::SKIP_DOTS),
-            \RecursiveIteratorIterator::CHILD_FIRST,
+        $it = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($this->tmp, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST,
         );
         foreach ($it as $file) {
             if ($file->isDir()) {
@@ -116,7 +116,9 @@ it('exits 0 when all items PASS via --update-status (CL3)', function (): void {
         'supplier-probe', 'woo-sandbox', 'feature-suite',
         'woo-db-snapshot', 'divergence-scan', 'parity-threshold',
         'populate-overrides', 'drill-rollback-staging', 'legacy-plugins-disabled',
-        'flag-flip', 'monitoring-7-days', 'weekly-digest-landed', 'handover-docs',
+        'flag-flip', 'obsolete-statuses-pushed',
+        'monitoring-7-days', 'weekly-digest-landed', 'handover-docs',
+        'bitrix_quote_type_id_verified',
     ];
     foreach ($ids as $id) {
         Artisan::call('cutover:checklist', ['--update-status' => $id.':pass']);

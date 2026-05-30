@@ -61,7 +61,13 @@ Getting this wrong is a 20% price error on every push. (Competitor feeds are ex-
    ```
    Verify those 2-3 prices on the live storefront. Only then enable the daily schedule: `PRICING_UNDERCUT_SCHEDULE_ENABLED=true`.
 4. *(If using Bitrix quote push)* `php artisan bitrix:quotes-bootstrap` then `--update-status=bitrix_quote_type_id_verified:pass`, and flip `QUOTE_BITRIX_PUSH_ENABLED=true`.
-5. **C-NEW — push obsolete `pending` statuses to the store.** ~160 products were flagged `status=pending` locally by `supplier:db-sync --flag-obsolete` (no supplier offer) but never written to Woo. After the gate is open, reconcile local→Woo status so they leave the live storefront. **Needs a small build** (not yet implemented): a `products:push-status-to-woo` reconciliation that PUTs `status` to Woo for products whose local status ≠ Woo status (via `WooClient`, so it's gated/auditable), OR re-run obsolescence with a Woo-write path. Until built, do it manually in WooCommerce (bulk-edit the local-`pending` set to pending/draft). Verify a couple on the storefront afterwards.
+5. **C-NEW — push obsolete `pending` statuses to the store** (built 2026-05-27). ~160 products were flagged `status=pending` locally by `supplier:db-sync --flag-obsolete` (no supplier offer) but never written to Woo. After the flip, reconcile local→Woo status so they leave the live storefront:
+   ```bash
+   sudo -u stcav php artisan products:push-status-to-woo                # dry-run summary
+   sudo -u stcav php artisan products:push-status-to-woo --live         # PUT one row per non-publish local status (shadowed pre-flip, real post-flip)
+   sudo -u stcav php artisan cutover:checklist --update-status=obsolete-statuses-pushed:pass
+   ```
+   Scope = `whereNotNull('woo_product_id')` + `status != 'publish'` + the same `is_custom_ms` / `exclude_from_auto_update` carve-outs `--flag-obsolete` honours. Shadow-safe: pre-flip `--live` produces reviewable SyncDiff rows; the same command post-flip does the real PUTs. Tracked as the `obsolete-statuses-pushed` checklist gate.
 
 ## Phase D — Post-flip monitoring
 1. `monitoring-7-days`: watch the Home Dashboard + AbortGuard daily for 7 clean days; then `--update-status=monitoring-7-days:pass`.

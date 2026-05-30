@@ -1,6 +1,6 @@
 # MeetingStore Ops — Woo Write Cutover Runbook
 
-**Purpose:** the ordered, copy-pasteable sequence to safely flip `WOO_WRITE_ENABLED=false → true` so the app starts writing to the live WooCommerce store (prices, products, sync). Pairs with `docs/ops/cutover-handover.md` (ops handover) and the live gate tracker:
+**Purpose:** the ordered, copy-pasteable sequence to safely flip `WOO_WRITE_ENABLED=false → true` so the app starts writing to the live WooCommerce store (prices, products, sync). Pairs with [`cutover-handover.md`](./cutover-handover.md) (ops handover), [`cutover-flip-day-script.md`](./cutover-flip-day-script.md) (the morning-of, copy-paste sequence), and the live gate tracker:
 
 ```bash
 php artisan cutover:checklist          # exit 0 = every gate PASS = GO

@@ -16,10 +16,16 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * MarkMissingSkusJob auto-pushes status; the supplier_db path in use does not,
  * so without this command the local status flip stays local-only.
  *
- * Scope: products with a Woo id whose local status is NOT `publish`. The
- * carve-outs (is_custom_ms, exclude_from_auto_update) mirror what
- * `supplier:db-sync --flag-obsolete` already respects, so a product never
- * touched by the obsolescence flow won't be touched here either.
+ * Scope: products with a Woo id whose local status matches `--statuses`
+ * (default `pending` — the cohort `supplier:db-sync --flag-obsolete` and
+ * `products:flag-missing-buy-price` produce; the cohort that's still publish
+ * on Woo because no one has pushed status yet). The carve-outs (is_custom_ms,
+ * exclude_from_auto_update) mirror what those producers already respect.
+ *
+ * `--statuses=pending,draft,private` widens the scope if you ever need it.
+ * Drafts in particular are usually already drafts on Woo (they were imported
+ * that way by woo:import-products) so re-pushing them is a no-op — left out
+ * of the default to keep the SyncDiff stream signal-rich.
  *
  * Shadow-safe by design: every write goes through WooClient::put() →
  * writeOrShadow(). Pre-cutover (WOO_WRITE_ENABLED=false) each PUT records a
@@ -39,10 +45,11 @@ class PushProductStatusToWooCommand extends BaseCommand
 {
     protected $signature = 'products:push-status-to-woo
         {--live : Call WooClient::put() (still gated by WOO_WRITE_ENABLED → shadow SyncDiff when false)}
+        {--statuses=pending : CSV of local statuses to push (default: pending — the --flag-obsolete + flag-missing-buy-price cohort)}
         {--skus= : CSV scope filter (LOWER(TRIM) match against products.sku)}
         {--limit= : Cap the number of products processed (smoke-test friendly)}';
 
-    protected $description = 'Reconcile local non-publish product status onto Woo (cutover step C-NEW).';
+    protected $description = 'Reconcile local product status onto Woo (cutover step C-NEW; defaults to pending).';
 
     public function __construct(private readonly WooClient $woo)
     {
@@ -54,10 +61,23 @@ class PushProductStatusToWooCommand extends BaseCommand
         $live = (bool) $this->option('live');
         $limit = $this->option('limit') !== null ? max(1, (int) $this->option('limit')) : null;
         $skuFilter = $this->parseSkus((string) ($this->option('skus') ?? ''));
+        $statuses = $this->parseSkus((string) ($this->option('statuses') ?? 'pending'));
+        if ($statuses === []) {
+            $statuses = ['pending'];
+        }
+        // Never let an operator accidentally push publish via --statuses=publish
+        // (would no-op on already-published products + risk un-suppressing pending
+        // ones that ARE on Woo as publish — defeats the whole purpose).
+        $statuses = array_values(array_filter($statuses, static fn (string $s): bool => $s !== 'publish'));
+        if ($statuses === []) {
+            $this->error('--statuses cannot be empty (or only "publish", which is rejected).');
+
+            return SymfonyCommand::FAILURE;
+        }
 
         $query = Product::query()
             ->whereNotNull('woo_product_id')
-            ->where('status', '!=', 'publish')
+            ->whereIn('status', $statuses)
             ->where(function ($q): void {
                 // Mirror supplier:db-sync --flag-obsolete carve-outs — never push
                 // status for products the obsolescence flow itself skips.
@@ -80,7 +100,8 @@ class PushProductStatusToWooCommand extends BaseCommand
         $count = $products->count();
         $mode = $live ? 'LIVE' : 'DRY-RUN';
 
-        $this->info("[{$mode}] {$count} product(s) with woo_product_id + non-publish local status, targeted for reconciliation.");
+        $statusList = implode(',', $statuses);
+        $this->info("[{$mode}] {$count} product(s) with woo_product_id + local status in [{$statusList}], targeted for reconciliation.");
         if ($count === 0) {
             $this->info('Nothing to push. Done.');
 

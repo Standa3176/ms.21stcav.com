@@ -48,7 +48,7 @@ it('dry-run never calls WooClient::put', function (): void {
 
 it('--live PUTs the local status to products/{wooId} for each targeted row', function (): void {
     Product::factory()->create(['type' => 'simple', 'sku' => 'OBS-1', 'status' => 'pending', 'woo_product_id' => 111]);
-    Product::factory()->create(['type' => 'simple', 'sku' => 'OBS-2', 'status' => 'draft', 'woo_product_id' => 222]);
+    Product::factory()->create(['type' => 'simple', 'sku' => 'OBS-2', 'status' => 'pending', 'woo_product_id' => 222]);
 
     $spy = bindWooSpy();
 
@@ -58,12 +58,48 @@ it('--live PUTs the local status to products/{wooId} for each targeted row', fun
         ->and($spy->calls[0]['endpoint'])->toBe('products/111')
         ->and($spy->calls[0]['payload'])->toBe(['status' => 'pending'])
         ->and($spy->calls[1]['endpoint'])->toBe('products/222')
-        ->and($spy->calls[1]['payload'])->toBe(['status' => 'draft']);
+        ->and($spy->calls[1]['payload'])->toBe(['status' => 'pending']);
 });
 
-it('skips products that have no woo_product_id (local-only drafts)', function (): void {
-    // Local draft from generate-drafts — never been to Woo, no id to PUT against.
-    Product::factory()->create(['type' => 'simple', 'sku' => 'LOC-1', 'status' => 'draft', 'woo_product_id' => null]);
+it('defaults --statuses to pending only (drafts are NOT touched without opt-in)', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'P-1', 'status' => 'pending', 'woo_product_id' => 111]);
+    // A draft locally — almost certainly already a draft on Woo (woo:import-products
+    // pulls publish+draft+private). Default scope MUST skip it.
+    Product::factory()->create(['type' => 'simple', 'sku' => 'D-1', 'status' => 'draft', 'woo_product_id' => 222]);
+
+    $spy = bindWooSpy();
+
+    Artisan::call('products:push-status-to-woo', ['--live' => true]);
+
+    expect($spy->calls)->toHaveCount(1)
+        ->and($spy->calls[0]['endpoint'])->toBe('products/111');
+});
+
+it('--statuses=pending,draft widens the scope (opt-in)', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'P-1', 'status' => 'pending', 'woo_product_id' => 111]);
+    Product::factory()->create(['type' => 'simple', 'sku' => 'D-1', 'status' => 'draft', 'woo_product_id' => 222]);
+
+    $spy = bindWooSpy();
+
+    Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'pending,draft']);
+
+    expect($spy->calls)->toHaveCount(2);
+});
+
+it('rejects --statuses=publish (would no-op or un-suppress)', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'X', 'status' => 'publish', 'woo_product_id' => 1]);
+
+    $spy = bindWooSpy();
+
+    $exit = Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'publish']);
+
+    expect($spy->calls)->toBe([])
+        ->and($exit)->toBe(1);
+});
+
+it('skips products that have no woo_product_id (local-only auto-create drafts)', function (): void {
+    // Local pending product without a Woo id — never been to Woo, no id to PUT against.
+    Product::factory()->create(['type' => 'simple', 'sku' => 'LOC-1', 'status' => 'pending', 'woo_product_id' => null]);
 
     $spy = bindWooSpy();
 

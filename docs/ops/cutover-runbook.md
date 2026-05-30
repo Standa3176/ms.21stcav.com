@@ -61,13 +61,13 @@ Getting this wrong is a 20% price error on every push. (Competitor feeds are ex-
    ```
    Verify those 2-3 prices on the live storefront. Only then enable the daily schedule: `PRICING_UNDERCUT_SCHEDULE_ENABLED=true`.
 4. *(If using Bitrix quote push)* `php artisan bitrix:quotes-bootstrap` then `--update-status=bitrix_quote_type_id_verified:pass`, and flip `QUOTE_BITRIX_PUSH_ENABLED=true`.
-5. **C-NEW — push obsolete `pending` statuses to the store** (built 2026-05-27). ~160 products were flagged `status=pending` locally by `supplier:db-sync --flag-obsolete` (no supplier offer) but never written to Woo. After the flip, reconcile local→Woo status so they leave the live storefront:
+5. **C-NEW — push obsolete `pending` statuses to the store** (built 2026-05-27). Products flagged `status=pending` locally by `supplier:db-sync --flag-obsolete` (no supplier offer) + `products:flag-missing-buy-price` (NULL/zero cost) — these are still `publish` on Woo because no one has pushed status yet. After the flip, reconcile local→Woo so they leave the live storefront:
    ```bash
-   sudo -u stcav php artisan products:push-status-to-woo                # dry-run summary
-   sudo -u stcav php artisan products:push-status-to-woo --live         # PUT one row per non-publish local status (shadowed pre-flip, real post-flip)
+   sudo -u stcav php artisan products:push-status-to-woo                # dry-run summary (status=pending only by default)
+   sudo -u stcav php artisan products:push-status-to-woo --live         # PUT one row per pending product (shadowed pre-flip, real post-flip)
    sudo -u stcav php artisan cutover:checklist --update-status=obsolete-statuses-pushed:pass
    ```
-   Scope = `whereNotNull('woo_product_id')` + `status != 'publish'` + the same `is_custom_ms` / `exclude_from_auto_update` carve-outs `--flag-obsolete` honours. Shadow-safe: pre-flip `--live` produces reviewable SyncDiff rows; the same command post-flip does the real PUTs. Tracked as the `obsolete-statuses-pushed` checklist gate.
+   Default scope = `whereNotNull('woo_product_id')` + `status='pending'` + the `is_custom_ms` / `exclude_from_auto_update` carve-outs the producers honour. Use `--statuses=pending,draft` only if you also want to reassert drafts (usually a no-op — drafts are typically already drafts on Woo via `woo:import-products`). `--statuses=publish` is rejected (no-op + dangerous). **Audit before flip:** the pending cohort can be large (~1,900+ accumulated); spot-check what's in there (`SELECT sku, name, updated_at FROM products WHERE status='pending' AND woo_product_id IS NOT NULL ORDER BY updated_at DESC LIMIT 50;`) so nothing legitimate gets swept off the storefront. Shadow-safe: pre-flip `--live` produces reviewable SyncDiff rows; the same command post-flip does the real PUTs. Tracked as the `obsolete-statuses-pushed` checklist gate.
 
 ## Phase D — Post-flip monitoring
 1. `monitoring-7-days`: watch the Home Dashboard + AbortGuard daily for 7 clean days; then `--update-status=monitoring-7-days:pass`.

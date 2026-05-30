@@ -29,7 +29,7 @@ Milestone: v2.0 Intelligence + B2B
 Phase: 13
 Plan: Not started
 Status: Phase ready for `gsd-tools phase complete 12`; Phase 13 ready for planning (run `/gsd-research-phase 13` first — research flag YES)
-Last activity: 2026-05-27 - Quick task 260527-sgp ("Sourcing gaps" view + cost counters exclude no-supplier products) shipped + pushed + DEPLOYED + operator-verified working in prod. Same deploy carried 260527-c0m (supplier/competitor names in popups) + inline-panel name parity (5ce4df6). All three visually confirmed by operator ("ALL WORKING").
+Last activity: **2026-05-30 — 🎉 v1 CUTOVER LIVE.** WOO_WRITE_ENABLED=true (flipped 19:07 UTC). PRICING_UNDERCUT_SCHEDULE_ENABLED=true (first auto-run Sun 08:00 BST). Stock Updater plugin deactivated in WP. itgalaxy Bitrix plugin intentionally LEFT ACTIVE (CRM half deferred — new app's CRM_WRITE_ENABLED still false + crm_push_logs table not migrated). 3 canary writes verified end-to-end on storefront (£0.75 MUYHSMFFADW, £351.96 952-000038 floored at 6%, £31.45 5G4AB-USB-C-HUB). products:push-status-to-woo pushed 1,939 status reconciliations (live_pushed=1939 shadowed=0 errors=0). Emergency fix shipped mid-cutover: WooClient::put() now routes through POST (services.woo.use_post_for_updates, default true) because the host's Apache/mod_security blocks PUT to /wp-json/* — POST reaches WC fine; WC treats POST and PUT identically for resource updates. Cutover checklist 12 PASS / 3 PENDING (monitoring-7-days, weekly-digest-landed, bitrix_quote_type_id_verified — all post-flip or optional).
 
 Progress: [░░░░░░░░░░] 0% (0/8 v2 phases; 7/7 v1 phases shipped 2026-04-24)
 

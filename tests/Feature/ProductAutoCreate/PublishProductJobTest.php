@@ -200,6 +200,50 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
         ->handle($woo, new PriceCalculator);
 });
 
+it('path B: includes global_unique_id when product has an EAN, omits the key when null', function (): void {
+    Event::fake([ProductPublished::class]);
+
+    // With EAN — should include global_unique_id.
+    $withEan = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'EAN-SKU-1',
+        'name' => 'GTIN Widget',
+        'sell_price' => 25.00,
+        'ean' => '7090043790993',
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo1 = Mockery::mock(WooClient::class);
+    $woo1->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ($p['global_unique_id'] ?? null) === '7090043790993'))
+        ->andReturn(['id' => 1001, 'slug' => 'gtin-widget']);
+
+    (new PublishProductJob(productId: (int) $withEan->id, publishedByUserId: 1))
+        ->handle($woo1, new PriceCalculator);
+
+    // Without EAN — must not include the key (Woo would otherwise store an empty GTIN).
+    $withoutEan = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'NO-EAN-1',
+        'name' => 'No GTIN Widget',
+        'sell_price' => 10.00,
+        'ean' => null,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo2 = Mockery::mock(WooClient::class);
+    $woo2->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('global_unique_id', $p)))
+        ->andReturn(['id' => 1002, 'slug' => 'no-gtin-widget']);
+
+    (new PublishProductJob(productId: (int) $withoutEan->id, publishedByUserId: 1))
+        ->handle($woo2, new PriceCalculator);
+});
+
 it('path B: omits attributes payload key when attributes_json is null or empty (no empty Woo attributes)', function (): void {
     Event::fake([ProductPublished::class]);
 

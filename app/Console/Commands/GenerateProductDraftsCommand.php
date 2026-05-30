@@ -177,6 +177,12 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 // Null when Claude returns no usable rows; PublishProductJob skips the
                 // payload key when null/empty.
                 'attributes_json' => $this->normaliseAttributes($content['attributes'] ?? null),
+                // GTIN/EAN/UPC barcode from supplier_db — persisted so
+                // PublishProductJob can push it onto Woo as `global_unique_id`
+                // (WC 9.x structured slot used by Google Merchant Center /
+                // schema.org product markup). Null when the supplier feed has
+                // no value or it's a placeholder.
+                'ean' => $this->normaliseEan($facts['ean'] ?? null),
             ];
 
             $existing = Product::query()->where('sku', $sku)->first();
@@ -370,6 +376,27 @@ final class GenerateProductDraftsCommand extends BaseCommand
         }
 
         return $byKey === [] ? null : array_values($byKey);
+    }
+
+    /**
+     * Normalise an EAN/GTIN from the supplier feed: trim, strip spaces/hyphens,
+     * keep digits only; require a plausible length (8-14, covering GTIN-8/UPC-12/
+     * EAN-13/GTIN-14). Returns null for blanks, placeholders (all-zero, all-nine),
+     * and anything that doesn't look like a real barcode.
+     */
+    private function normaliseEan(mixed $raw): ?string
+    {
+        $s = preg_replace('/\D+/', '', (string) ($raw ?? '')) ?? '';
+        $len = strlen($s);
+        if ($len < 8 || $len > 14) {
+            return null;
+        }
+        // Reject all-zero / all-nine placeholders (common feed sentinels).
+        if (preg_match('/^(0+|9+)$/', $s) === 1) {
+            return null;
+        }
+
+        return $s;
     }
 
     /**

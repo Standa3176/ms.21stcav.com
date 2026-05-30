@@ -137,6 +137,14 @@ final class PublishProductJob implements ShouldQueue
             $payload['sku'] = (string) $product->sku;
         }
 
+        // WC 9.x structured GTIN slot — used by Google Merchant Center /
+        // schema.org product markup. Existing meetingstore.co.uk products carry
+        // this on wp_postmeta._global_unique_id; auto-created products POSTed
+        // via WC REST didn't carry it until now.
+        if (! empty($product->ean)) {
+            $payload['global_unique_id'] = (string) $product->ean;
+        }
+
         // Send our slug; Woo de-duplicates server-side and returns the final one,
         // which handle() reads back onto the row.
         if (! empty($product->slug)) {

@@ -31,7 +31,7 @@ final class Product extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'woo_product_id', 'sku', 'name', 'type', 'status', 'stock_status', 'stock_quantity',
+        'woo_product_id', 'sku', 'ean', 'name', 'type', 'status', 'stock_status', 'stock_quantity',
         'brand_id', 'category_id', 'category_ids',
         'buy_price', 'sell_price', 'cost_price',
         'is_custom_ms', 'exclude_from_auto_update', 'tags',

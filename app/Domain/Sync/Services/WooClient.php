@@ -145,7 +145,14 @@ class WooClient
 
     public function put(string $endpoint, array $payload): array
     {
-        return $this->writeOrShadow('PUT', $endpoint, $payload);
+        // WAF compatibility: many WP hosts block HTTP PUT to /wp-json/* at the
+        // Apache layer (CWP/Imunify/mod_security defaults) while letting POST
+        // through. WP-REST treats POST and PUT identically for resource-update
+        // endpoints (WP_REST_Server::EDITABLE), so we route PUT through POST
+        // when services.woo.use_post_for_updates is true (default).
+        $method = config('services.woo.use_post_for_updates', true) ? 'POST' : 'PUT';
+
+        return $this->writeOrShadow($method, $endpoint, $payload);
     }
 
     public function post(string $endpoint, array $payload): array

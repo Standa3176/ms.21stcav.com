@@ -54,6 +54,15 @@ return [
         // cutover — getting this wrong is a 20% price error). Competitor feeds are
         // ex-VAT, so trade stores often display ex-VAT.
         'push_prices_ex_vat' => env('WOO_PUSH_PRICES_EX_VAT', false),
+
+        // WAF compatibility — many WP hosts (CWP, Imunify360, generic mod_security
+        // configs) block HTTP PUT to /wp-json/* at the Apache layer while letting
+        // POST through. WP-REST routes `/products/{id}` to the same update handler
+        // for both POST and PUT (WP_REST_Server::EDITABLE), so we can route our
+        // PUT calls through POST without changing semantics. Default true (safer
+        // across hosting environments). Set WOO_USE_POST_FOR_UPDATES=false to
+        // restore strict PUT.
+        'use_post_for_updates' => env('WOO_USE_POST_FOR_UPDATES', true),
     ],
 
     'woocommerce' => [

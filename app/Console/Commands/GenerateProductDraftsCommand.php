@@ -180,12 +180,15 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 // GTIN/EAN/UPC barcode from supplier_db — persisted so
                 // PublishProductJob can push it onto Woo as `global_unique_id`
                 // (WC 9.x structured slot used by Google Merchant Center /
-                // schema.org product markup). Many manufacturers (e.g. Huddly)
-                // leave the dedicated EAN column blank and use the EAN as the
-                // SKU itself, so we fall back to the SKU — normaliseEan() then
-                // validates the 8-14 digit shape and returns null for SKUs
-                // that aren't barcode-shaped (e.g. Sony "FW-50EZ20L").
-                'ean' => $this->normaliseEan(! empty($facts['ean']) ? $facts['ean'] : $sku),
+                // schema.org product markup). Try the supplier's ean column
+                // first; if that normalises to null (blank, placeholder like
+                // 000…0, or not 8-14 digits) fall back to the SKU — many
+                // manufacturers (Huddly etc.) leave the EAN column blank or
+                // placeholder-filled and use the EAN as the SKU itself.
+                // normaliseEan() does the 8-14 digit validation, so SKUs that
+                // aren't barcode-shaped (e.g. Sony "FW-50EZ20L") still return
+                // null cleanly.
+                'ean' => $this->normaliseEan($facts['ean'] ?? null) ?? $this->normaliseEan($sku),
             ];
 
             $existing = Product::query()->where('sku', $sku)->first();

@@ -49,6 +49,9 @@ final class Product extends Model
         'completeness_score',
         'completeness_computed_at',
         'completeness_missing_fields',
+        // 2026-05-30 — curated key/value attributes for WC "Additional Information"
+        // tab + Flatsome theme spec table (drives storefront layout parity).
+        'attributes_json',
     ];
 
     protected $casts = [
@@ -69,6 +72,7 @@ final class Product extends Model
         'completeness_score' => 'int',
         'completeness_computed_at' => 'datetime',
         'completeness_missing_fields' => 'array',
+        'attributes_json' => 'array',
     ];
 
     public function variants(): HasMany

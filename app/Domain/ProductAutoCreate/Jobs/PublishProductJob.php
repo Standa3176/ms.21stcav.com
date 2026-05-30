@@ -180,6 +180,18 @@ final class PublishProductJob implements ShouldQueue
             $payload['images'] = array_map(static fn (string $src): array => ['src' => $src], $images);
         }
 
+        // Curated key/value attributes → WC's "Additional Information" tab +
+        // Flatsome theme spec table. Without these the storefront product page
+        // renders visibly thinner than existing meetingstore.co.uk products,
+        // which all carry _product_attributes meta (Colour, Compatibility,
+        // Material, Connection, etc.). Source: GenerateProductDraftsCommand's
+        // Claude schema (attributes[] of {name, value}). All non-variation,
+        // visible on storefront, position from array order.
+        $attributes = $this->wooAttributes($product);
+        if ($attributes !== []) {
+            $payload['attributes'] = $attributes;
+        }
+
         return $payload;
     }
 
@@ -226,5 +238,47 @@ final class PublishProductJob implements ShouldQueue
         }
 
         return array_values(array_unique($srcs));
+    }
+
+    /**
+     * Map the local attributes_json (array of {name, value}) to the WC REST
+     * `attributes[]` shape — name + options:[value] + visible:true +
+     * variation:false + position (from array order). Skips rows with a blank
+     * name or value, dedupes by lowercased name (last one wins). Returns []
+     * when the column is empty/missing — buildCreatePayload then omits the
+     * key entirely so Woo doesn't create empty global attributes.
+     *
+     * @return array<int, array{name:string, options:array<int,string>, position:int, visible:bool, variation:bool}>
+     */
+    private function wooAttributes(Product $product): array
+    {
+        $raw = is_array($product->attributes_json) ? $product->attributes_json : [];
+
+        $byKey = [];
+        foreach ($raw as $a) {
+            if (! is_array($a)) {
+                continue;
+            }
+            $name = trim((string) ($a['name'] ?? ''));
+            $value = trim((string) ($a['value'] ?? ''));
+            if ($name === '' || $value === '') {
+                continue;
+            }
+            $byKey[strtolower($name)] = ['name' => $name, 'value' => $value];
+        }
+
+        $out = [];
+        $i = 0;
+        foreach ($byKey as $entry) {
+            $out[] = [
+                'name' => $entry['name'],
+                'options' => [$entry['value']],
+                'position' => $i++,
+                'visible' => true,
+                'variation' => false,
+            ];
+        }
+
+        return $out;
     }
 }

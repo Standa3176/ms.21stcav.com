@@ -152,6 +152,81 @@ it('shadow mode: path B does NOT mark published and fires no event (stays in rev
     Event::assertNotDispatched(ProductPublished::class);
 });
 
+it('path B: includes attributes[] in the WC POST when attributes_json is populated (Flatsome layout parity)', function (): void {
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'ATTR-SKU-1',
+        'name' => 'Spec-Rich Widget',
+        'sell_price' => 50.00,
+        'attributes_json' => [
+            ['name' => 'Brand', 'value' => 'Acme'],
+            ['name' => 'Resolution', 'value' => '4K UHD'],
+            ['name' => 'Connection', 'value' => 'USB-C'],
+            ['name' => '   ', 'value' => 'should be dropped'],   // blank name → skipped
+            ['name' => 'Mount', 'value' => '   '],                 // blank value → skipped
+            ['name' => 'brand', 'value' => 'Acme Duplicate'],       // case-dup of "Brand" → last wins
+        ],
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(function (array $payload): bool {
+            if (! isset($payload['attributes']) || ! is_array($payload['attributes'])) {
+                return false;
+            }
+            // 3 rows: Brand (case-dup overwrites first), Resolution, Connection.
+            // Blank-name + blank-value rows dropped.
+            $names = array_column($payload['attributes'], 'name');
+
+            return $payload['attributes'][0] === [
+                'name' => 'brand',
+                'options' => ['Acme Duplicate'],
+                'position' => 0,
+                'visible' => true,
+                'variation' => false,
+            ]
+                && in_array('Resolution', $names, true)
+                && in_array('Connection', $names, true)
+                && count($payload['attributes']) === 3;
+        }))
+        ->andReturn(['id' => 12345, 'slug' => 'spec-rich-widget']);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator);
+});
+
+it('path B: omits attributes payload key when attributes_json is null or empty (no empty Woo attributes)', function (): void {
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'NOATTR-1',
+        'name' => 'Bare Widget',
+        'sell_price' => 10.00,
+        'attributes_json' => null,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(function (array $payload): bool {
+            // attributes key must NOT be present at all — Woo would otherwise
+            // create empty global attribute rows on the store.
+            return ! array_key_exists('attributes', $payload);
+        }))
+        ->andReturn(['id' => 555, 'slug' => 'bare-widget']);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator);
+});
+
 it('shadow mode: path A does NOT mark published either', function (): void {
     Event::fake([ProductPublished::class]);
 

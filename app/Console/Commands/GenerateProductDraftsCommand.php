@@ -104,6 +104,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
             $row = $stmt->get_result()->fetch_assoc();
             if (! $row) {
                 $this->warn("  {$sku}: not found in supplier DB — skipped");
+
                 continue;
             }
 
@@ -140,6 +141,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 );
             } catch (\Throwable $e) {
                 $this->error('  Claude error: '.$e->getMessage());
+
                 continue;
             }
             $totalPence += $resp->costPence;
@@ -148,6 +150,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
             if ($content === null) {
                 $this->error('  Could not parse JSON from model output:');
                 $this->line('  '.Str::limit($resp->text, 240));
+
                 continue;
             }
 
@@ -169,6 +172,11 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 'meta_description' => isset($content['meta_description'])
                     ? Str::limit((string) $content['meta_description'], 255, '')
                     : null,
+                // Curated WC "Additional Information" tab rows (Brand, Resolution, etc.)
+                // — drives Flatsome storefront spec table parity with existing products.
+                // Null when Claude returns no usable rows; PublishProductJob skips the
+                // payload key when null/empty.
+                'attributes_json' => $this->normaliseAttributes($content['attributes'] ?? null),
             ];
 
             $existing = Product::query()->where('sku', $sku)->first();
@@ -267,6 +275,19 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
           "meta_description": a single line, 155 characters or fewer, for SEO — facts only.
 
+          "attributes": an array of 5-8 key/value spec rows for the WooCommerce "Additional
+            Information" tab (the storefront's spec table). Each row is an object
+            {"name": "...", "value": "..."} — name is a short spec label (≤ 22 chars,
+            Title Case, no trailing colon), value is the concrete spec (≤ 60 chars,
+            single line, no HTML). Pick attributes that READ LIKE A SPEC SHEET FOR
+            THIS PRODUCT TYPE — for a camera: Brand, Resolution, Field of View, Frame
+            Rate, Connection, Microphone, Mount, Warranty. For a display: Brand, Screen
+            Size, Resolution, Brightness, Refresh Rate, Inputs, Speakers, Warranty.
+            For a cable/adapter: Brand, Connector A, Connector B, Length, Colour,
+            Material, Compatibility. Use ONLY facts given; if a value isn't supported,
+            OMIT the row (fewer accurate rows beats more guessed ones). Always include
+            Brand as the first row. Do not repeat the title; do not invent spec numbers.
+
         Be accurate and concise. A thinner, fully-accurate description is REQUIRED over a richer one that guesses.
         PROMPT;
     }
@@ -317,6 +338,38 @@ final class GenerateProductDraftsCommand extends BaseCommand
         }
 
         return (string) preg_replace('#</([a-zA-Z][a-zA-Z0-9]*)\s*<#', '</$1><', $html);
+    }
+
+    /**
+     * Clean Claude's attributes[] into the storage shape — array of {name, value}
+     * with trimmed, length-capped, deduped (by lowercased name) entries. Returns
+     * null when no usable rows (cast as JSON null on the model; PublishProductJob
+     * then omits the payload key).
+     *
+     * @return array<int, array{name:string, value:string}>|null
+     */
+    private function normaliseAttributes(mixed $raw): ?array
+    {
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        $byKey = [];
+        foreach ($raw as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            $name = trim((string) ($row['name'] ?? ''));
+            $value = trim((string) ($row['value'] ?? ''));
+            if ($name === '' || $value === '') {
+                continue;
+            }
+            $name = mb_substr($name, 0, 22);
+            $value = mb_substr($value, 0, 60);
+            $byKey[mb_strtolower($name)] = ['name' => $name, 'value' => $value];
+        }
+
+        return $byKey === [] ? null : array_values($byKey);
     }
 
     /**

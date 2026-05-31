@@ -6,7 +6,6 @@ namespace App\Domain\ProductAutoCreate\Jobs;
 
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
-use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -67,7 +66,7 @@ final class PublishProductJob implements ShouldQueue
         $this->onQueue('sync-woo-push');
     }
 
-    public function handle(WooClient $woo, PriceCalculator $calculator, TaxonomyResolver $taxonomy): void
+    public function handle(WooClient $woo, PriceCalculator $calculator): void
     {
         $product = Product::findOrFail($this->productId);
 
@@ -79,7 +78,7 @@ final class PublishProductJob implements ShouldQueue
             $response = $woo->put("products/{$wooId}", ['status' => 'publish']);
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
-            $response = $woo->post('products', $this->buildCreatePayload($product, $calculator, $taxonomy));
+            $response = $woo->post('products', $this->buildCreatePayload($product, $calculator));
 
             $newWooId = (int) ($response['id'] ?? 0);
             if ($newWooId > 0) {
@@ -125,7 +124,7 @@ final class PublishProductJob implements ShouldQueue
      *
      * @return array<string, mixed>
      */
-    private function buildCreatePayload(Product $product, PriceCalculator $calculator, TaxonomyResolver $taxonomy): array
+    private function buildCreatePayload(Product $product, PriceCalculator $calculator): array
     {
         $payload = [
             'name' => (string) $product->name,
@@ -204,16 +203,24 @@ final class PublishProductJob implements ShouldQueue
             $payload['attributes'] = $attributes;
         }
 
-        // Brand → native Woo Brands taxonomy via the top-level `brands[]`
-        // field (not as a pa_brand attribute entry — see TaxonomyResolver
-        // 2026-05-31 comment). One brand per product; payload key omitted
-        // when brand_id is missing or unresolvable.
-        $brandEntry = $product->brand_id !== null
-            ? $taxonomy->wooBrandsFieldEntry((int) $product->brand_id)
-            : null;
-        if ($brandEntry !== null) {
-            $payload['brands'] = [$brandEntry];
-        }
+        // ── Brand linkage intentionally NOT pushed here ──────────────────
+        // 2026-05-31 — investigation revealed the storefront's clickable
+        // "Brand:" link comes from a curated `product_brand` taxonomy (WP
+        // REST `/wp/v2/product_brand`, URL `/brand/<slug>/`), NOT from the
+        // WC native `/products/brands` endpoint we were pushing via
+        // `brands: [{id}]`. The native endpoint accepts the field syntactically
+        // but silently drops the linkage — every prior `brands[]` push was a
+        // no-op, including yesterday's commit 73ac682.
+        // Brand still surfaces in THREE places without this push:
+        //   1. The product TITLE ("Yealink BH71...")
+        //   2. The `tags` field (Claude is instructed to put brand as the
+        //      FIRST tag — see GenerateProductDraftsCommand commit 26e7e01)
+        //   3. The `attributes_json` "Brand" row in the spec table
+        // The fourth display (the clickable Brand: → /brand/<slug>/ link)
+        // requires writing to the `product_brand` taxonomy via WP REST. That
+        // needs a new WpRestClient + a create-if-missing flow + a curator
+        // decision (auto-create brand terms vs. operator-curated whitelist) —
+        // tracked separately, NOT shipping inline with this fix.
 
         // Product tags — WC REST accepts `[{name: "..."}]` and auto-creates
         // missing tags server-side. Local `products.tags` is a JSON array of

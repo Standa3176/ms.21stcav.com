@@ -6,6 +6,7 @@ namespace App\Domain\ProductAutoCreate\Jobs;
 
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
+use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -66,7 +67,7 @@ final class PublishProductJob implements ShouldQueue
         $this->onQueue('sync-woo-push');
     }
 
-    public function handle(WooClient $woo, PriceCalculator $calculator): void
+    public function handle(WooClient $woo, PriceCalculator $calculator, TaxonomyResolver $taxonomy): void
     {
         $product = Product::findOrFail($this->productId);
 
@@ -78,7 +79,7 @@ final class PublishProductJob implements ShouldQueue
             $response = $woo->put("products/{$wooId}", ['status' => 'publish']);
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
-            $response = $woo->post('products', $this->buildCreatePayload($product, $calculator));
+            $response = $woo->post('products', $this->buildCreatePayload($product, $calculator, $taxonomy));
 
             $newWooId = (int) ($response['id'] ?? 0);
             if ($newWooId > 0) {
@@ -124,7 +125,7 @@ final class PublishProductJob implements ShouldQueue
      *
      * @return array<string, mixed>
      */
-    private function buildCreatePayload(Product $product, PriceCalculator $calculator): array
+    private function buildCreatePayload(Product $product, PriceCalculator $calculator, TaxonomyResolver $taxonomy): array
     {
         $payload = [
             'name' => (string) $product->name,
@@ -196,8 +197,43 @@ final class PublishProductJob implements ShouldQueue
         // Claude schema (attributes[] of {name, value}). All non-variation,
         // visible on storefront, position from array order.
         $attributes = $this->wooAttributes($product);
+
+        // Brand attribute — linked to the GLOBAL `pa_brand` Woo taxonomy
+        // (via attribute id, not just name), so Brand filter pages + the
+        // /product-brand/<slug> archive route work for auto-created products
+        // the same way they do for existing ones. Prepended so brand renders
+        // first in the spec table. Returns null when brand_id is missing or
+        // can't be resolved on Woo — payload simply omits it then.
+        $brandAttribute = $product->brand_id !== null
+            ? $taxonomy->wooAttributePayloadForBrand((int) $product->brand_id)
+            : null;
+        if ($brandAttribute !== null) {
+            array_unshift($attributes, $brandAttribute);
+            // Re-number positions after prepending (custom attributes set
+            // their own position from the array order in wooAttributes()).
+            foreach ($attributes as $i => &$attr) {
+                $attr['position'] = $i;
+            }
+            unset($attr);
+        }
+
         if ($attributes !== []) {
             $payload['attributes'] = $attributes;
+        }
+
+        // Product tags — WC REST accepts `[{name: "..."}]` and auto-creates
+        // missing tags server-side. Local `products.tags` is a JSON array of
+        // strings (Phase 2 cast). Trim + drop blanks + dedupe.
+        $tags = is_array($product->tags) ? $product->tags : [];
+        $tags = array_values(array_unique(array_filter(
+            array_map(static fn ($t): string => trim((string) $t), $tags),
+            static fn (string $t): bool => $t !== '',
+        )));
+        if ($tags !== []) {
+            $payload['tags'] = array_map(
+                static fn (string $name): array => ['name' => $name],
+                $tags,
+            );
         }
 
         return $payload;

@@ -27,7 +27,10 @@ use Illuminate\Support\Facades\Cache;
  * failures are swallowed → null/empty (WooClient already logs to
  * integration_events). Term lists cached 1h.
  */
-final class TaxonomyResolver
+// Not `final` so tests can substitute a stub for wooAttributePayloadForBrand()
+// without a live Woo REST connection (matches the same pattern used for
+// SupplierFeedSourceabilityChecker earlier today).
+class TaxonomyResolver
 {
     private const CACHE_TTL_SECONDS = 3600;
 
@@ -113,6 +116,51 @@ final class TaxonomyResolver
 
             return [];
         });
+    }
+
+    /**
+     * Build the WC REST `attributes[]` entry for the brand global attribute
+     * (default slug `pa_brand`), so PublishProductJob can push it as part of
+     * a product create. Returns null when:
+     *   - brand_id is unknown or zero
+     *   - the global brand attribute cannot be resolved on Woo
+     *   - the brand term id doesn't appear in the cached brand-term list
+     *
+     * Shape matches what the WC REST API expects to LINK a product to a global
+     * attribute (id + options + visible + variation), rather than create a
+     * per-product custom attribute (which would be name-only).
+     *
+     * @return array{id:int, options:array<int,string>, visible:bool, variation:bool}|null
+     */
+    public function wooAttributePayloadForBrand(int $brandId): ?array
+    {
+        if ($brandId <= 0) {
+            return null;
+        }
+
+        $taxonomy = (string) config('product_auto_create.brand_taxonomy', 'pa_brand');
+        $attributeId = $this->brandAttributeId($taxonomy);
+        if ($attributeId === null) {
+            return null;
+        }
+
+        foreach ($this->allBrands() as $term) {
+            if ((int) ($term['id'] ?? 0) === $brandId) {
+                $name = trim((string) ($term['name'] ?? ''));
+                if ($name === '') {
+                    return null;
+                }
+
+                return [
+                    'id' => $attributeId,
+                    'options' => [$name],
+                    'visible' => true,
+                    'variation' => false,
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function brandAttributeId(string $slug): ?int

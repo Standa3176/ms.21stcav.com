@@ -212,6 +212,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
             // New product — full first-time setup (primary taxonomy + review flag).
             $brandId = $this->taxonomy->resolveBrand($facts['brand'] !== '' ? $facts['brand'] : null);
             $categoryId = $this->taxonomy->resolveCategory(isset($content['category']) ? (string) $content['category'] : null);
+            $buyPrice = is_numeric($facts['supplier_cost']) ? (float) $facts['supplier_cost'] : null;
             $product = Product::create($contentValues + [
                 'sku' => $sku,
                 'type' => 'simple',
@@ -221,7 +222,19 @@ final class GenerateProductDraftsCommand extends BaseCommand
                     : 'needs_brand_or_category_assignment',
                 'brand_id' => $brandId,
                 'category_id' => $categoryId,
-                'buy_price' => is_numeric($facts['supplier_cost']) ? $facts['supplier_cost'] : null,
+                'buy_price' => $buyPrice,
+                // Default sell_price so the draft has something to PUSH on
+                // publish — without this, PublishProductJob skips regular_price
+                // entirely and the live Woo product shows "POA" / empty price
+                // (verified on tonight's 26-product batch). Operator can edit
+                // per-product in Filament before approval; this is just a
+                // never-NULL starting point. Preference order:
+                //   1. supplier RRP (most accurate retail anchor)
+                //   2. buy_price × 1.4 (40% default margin — conservative
+                //      starting point for AV resellers; PriceCalculator
+                //      tier rules can refine later)
+                //   3. null (operator must set before publish)
+                'sell_price' => $this->defaultSellPrice($facts['rrp'] ?? null, $buyPrice),
                 'requires_manual_image_review' => true,
             ]);
             $made++;
@@ -436,6 +449,25 @@ final class GenerateProductDraftsCommand extends BaseCommand
         }
 
         return $out === [] ? null : $out;
+    }
+
+    /**
+     * Default sell_price for a brand-new auto-created draft. RRP wins if it's
+     * present and numeric; else 40% margin on top of buy_price; else null
+     * (operator must set before publish). Round to 2dp. Returns null also
+     * when the computed value is non-positive (zero or negative).
+     */
+    private function defaultSellPrice(mixed $rrp, ?float $buyPrice): ?float
+    {
+        $rrpNum = is_numeric($rrp) ? (float) $rrp : 0.0;
+        if ($rrpNum > 0) {
+            return round($rrpNum, 2);
+        }
+        if ($buyPrice !== null && $buyPrice > 0) {
+            return round($buyPrice * 1.4, 2);
+        }
+
+        return null;
     }
 
     /**

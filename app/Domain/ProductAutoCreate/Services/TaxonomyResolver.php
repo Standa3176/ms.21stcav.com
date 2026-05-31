@@ -208,8 +208,11 @@ class TaxonomyResolver
             return false;
         }
 
+        // Accept "+" / "-" BEFORE the number ("3000-3999 lumens") AND AFTER
+        // the unit ("76 inch+", "10000 lumens+") — both shapes are common
+        // storefront filter labels.
         return preg_match(
-            '/^\d[\d\+\-\s]*\s*(lumens?|inch(es)?|gb|mb|mp|hz|khz|mhz|ghz|nits?|fps|ppi|kg|cm|mm|hours?|hrs?|years?|yrs?|months?|mo|days?|watts?|w)\s*$/i',
+            '/^\d[\d\+\-\s]*\s*(lumens?|inch(es)?|gb|mb|mp|hz|khz|mhz|ghz|nits?|fps|ppi|kg|cm|mm|hours?|hrs?|years?|yrs?|months?|mo|days?|watts?|w)[\+\-]?\s*$/i',
             $trimmed,
         ) === 1;
     }
@@ -350,9 +353,14 @@ class TaxonomyResolver
                 $id = $term['id'] ?? null;
                 $name = (string) ($term['name'] ?? '');
                 if (is_numeric($id) && $name !== '') {
+                    // Woo returns category names HTML-entity-encoded
+                    // ("Brackets &amp; Mounting Parts"); decode so verbatim
+                    // round-trips through Claude + the normalised lookup
+                    // (otherwise every category with "&" silently fails to
+                    // map back to its id).
                     $out[] = [
                         'id' => (int) $id,
-                        'name' => $name,
+                        'name' => html_entity_decode($name, ENT_QUOTES | ENT_HTML5, 'UTF-8'),
                         'parent' => (int) ($term['parent'] ?? 0),
                         'count' => (int) ($term['count'] ?? 0),
                     ];

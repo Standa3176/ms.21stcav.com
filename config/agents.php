@@ -169,4 +169,9 @@ return [
         'temperature' => (float) env('AGENTS_SEO_TEMPERATURE', 0.4),
     ],
 
+    // Nightly `agents:run-seo-batch` 04:30 schedule toggle. Same
+    // env()-broken-in-cached-config issue as pricing.undercut_schedule_enabled
+    // (see that comment) — read via config() from routes/console.php.
+    'seo_batch_schedule_enabled' => (bool) env('AGENT_SEO_BATCH_SCHEDULE_ENABLED', true),
+
 ];

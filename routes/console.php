@@ -276,7 +276,12 @@ Schedule::command('pricing:scan-sourcing-gaps')
 // Open Question O-2: env flag allows operator emergency disable without code
 // deploy (AGENT_SEO_BATCH_SCHEDULE_ENABLED default true). P12-E (between-
 // dispatch monthly budget recheck) is enforced inside the command itself.
-if ((bool) env('AGENT_SEO_BATCH_SCHEDULE_ENABLED', true)) {
+// Use config() not env() — env() returns the default in cached-config mode
+// (deploy.sh runs config:cache), silently disabling the schedule. See
+// config/agents.php for the env-var binding. (Bug found 2026-05-31 when the
+// first post-cutover 08:00 BST `pricing:undercut-competitors --live` cron
+// silently missed.)
+if ((bool) config('agents.seo_batch_schedule_enabled', true)) {
     Schedule::command('agents:run-seo-batch')
         ->cron('30 4 * * *')
         ->withoutOverlapping(60)
@@ -305,7 +310,7 @@ Schedule::command('agents:prune-archive')
 // passes cleanly. --live persists SyncDiff rows + writes dashboard_snapshots
 // sync_diffs_parity so the /admin widget reflects real-time parity. Routed on
 // sync-bulk queue so the scan doesn't starve default/sync-woo-push.
-if ((bool) env('CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED', false)) {
+if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
     Schedule::command('cutover:divergence-scan --live')
         ->dailyAt('01:00')
         ->withoutOverlapping(120)
@@ -353,7 +358,7 @@ Schedule::command('products:draft-competitor-skus --limit=25')
 // --live run churns sell_price + thousands of shadow SyncDiffs daily, pointless
 // before cutover — flip it on AT cutover (or now if you want daily local
 // staging). Floor + undercut amount read from config/competitor.php.
-if ((bool) env('PRICING_UNDERCUT_SCHEDULE_ENABLED', false)) {
+if ((bool) config('pricing.undercut_schedule_enabled', false)) {
     Schedule::command('pricing:undercut-competitors --live')
         ->dailyAt('08:00')
         ->withoutOverlapping(120)

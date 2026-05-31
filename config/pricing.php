@@ -42,4 +42,12 @@ return [
     // `suggestions:auto-apply` command. Units: basis points (800 = 8.00pp).
     'auto_apply_threshold_bps' => (int) env('PRICING_AUTO_APPLY_THRESHOLD_BPS', 800),
 
+    // Daily `pricing:undercut-competitors --live` schedule toggle. Reading
+    // this via config() (NOT env() directly from routes/console.php) is
+    // critical: env() returns the default in cached-config mode (deploy.sh
+    // runs config:cache), which silently disabled the 08:00 BST cron
+    // post-cutover on 2026-05-30. Default false. Flip via env var
+    // PRICING_UNDERCUT_SCHEDULE_ENABLED then artisan config:clear/redeploy.
+    'undercut_schedule_enabled' => (bool) env('PRICING_UNDERCUT_SCHEDULE_ENABLED', false),
+
 ];

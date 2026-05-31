@@ -73,4 +73,9 @@ return [
         'itgalaxy_bitrix24_status',
     ],
 
+    // Daily `cutover:divergence-scan --live` 01:00 schedule toggle. Same
+    // env()-broken-in-cached-config issue as pricing.undercut_schedule_enabled
+    // (see that comment) — read via config() from routes/console.php.
+    'divergence_scan_schedule_enabled' => (bool) env('CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED', false),
+
 ];

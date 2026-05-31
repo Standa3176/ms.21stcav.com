@@ -61,17 +61,32 @@ final class AssignProductTaxonomyCommand extends BaseCommand
             return SymfonyCommand::FAILURE;
         }
 
-        $categories = $this->taxonomy->allCategories();
+        // Use the CURATED picking list (paths built, attribute-filter facets
+        // stripped, empties dropped) — not the raw flat list. Without this
+        // Claude (correctly) returns [] for niche products because the raw
+        // 447-term list is mostly storefront filter values like "10000+
+        // lumens" / "56-65 inch" that no shopper would browse BY.
+        $categoriesForPicking = $this->taxonomy->allCategoriesForPicking();
         $brands = $this->taxonomy->allBrands();
+        $rawCount = count($this->taxonomy->allCategoriesWithMeta());
+        $pickCount = count($categoriesForPicking);
         $this->info(($dryRun ? 'DRY-RUN — ' : '').'Assigning taxonomy for '.count($skus).' product(s).');
-        $this->line('Live Woo taxonomy: '.count($categories).' categories, '.count($brands).' brand terms.');
+        $this->line(sprintf(
+            'Live Woo taxonomy: %d categories (%d after pruning empty + filter facets), %d brand terms.',
+            $rawCount, $pickCount, count($brands),
+        ));
 
-        if ($categories === []) {
-            $this->warn('No Woo categories returned — check the WooCommerce REST credential. Aborting.');
+        if ($categoriesForPicking === []) {
+            $this->warn('No usable Woo categories after pruning — check the WooCommerce REST credential. Aborting.');
 
             return SymfonyCommand::FAILURE;
         }
-        $categoryNames = array_map(static fn (array $c): string => $c['name'], $categories);
+        // Build the path-labelled list once and pass to Claude (paths
+        // disambiguate name-duplicates like the six "56-65 inch" terms).
+        $categoryLabels = array_map(
+            static fn (array $c): string => $c['path'],
+            $categoriesForPicking,
+        );
 
         $manufacturers = $this->supplierManufacturers($skus);
         $totalPence = 0;
@@ -81,22 +96,38 @@ final class AssignProductTaxonomyCommand extends BaseCommand
             $product = Product::query()->where('sku', $sku)->first();
             if ($product === null) {
                 $this->warn("  {$sku}: no local Product — skipped");
+
                 continue;
             }
 
             $manufacturer = $manufacturers[$sku] ?? $this->brandFromName((string) $product->name);
             $brandId = $this->taxonomy->resolveBrand($manufacturer !== '' ? $manufacturer : null);
 
-            [$categoryNamesChosen, $costPence] = $this->pickCategories($product, $categoryNames);
+            [$categoryLabelsChosen, $costPence] = $this->pickCategories($product, $categoryLabels);
             $totalPence += $costPence;
 
-            // Map each chosen name → Woo term id (dedup, preserve order). The
+            // Fallback pass: if the strict picker returned [], ask Claude to
+            // pick the SINGLE best general category, even if not a perfect
+            // fit, so the product can publish under SOMETHING rather than
+            // stay stuck forever. Most "no match" failures on the live store
+            // are loose-fit retail products (accessories, service plans) that
+            // the strict prompt is correctly conservative about — but in
+            // practice we need a home for them.
+            if ($categoryLabelsChosen === []) {
+                [$fallback, $fallbackCost] = $this->pickFallbackCategory($product, $categoryLabels);
+                $totalPence += $fallbackCost;
+                if ($fallback !== null) {
+                    $categoryLabelsChosen = [$fallback];
+                }
+            }
+
+            // Map each chosen label → Woo term id (dedup, preserve order). The
             // FIRST is the primary (drives single-valued pricing rules); the full
             // set goes to category_ids for the Woo categories[] payload.
             $categoryIds = [];
             $resolvedNames = [];
-            foreach ($categoryNamesChosen as $cn) {
-                $cid = $this->taxonomy->categoryIdByName($cn);
+            foreach ($categoryLabelsChosen as $cn) {
+                $cid = $this->taxonomy->categoryIdByLabel($cn);
                 if ($cid !== null && ! in_array($cid, $categoryIds, true)) {
                     $categoryIds[] = $cid;
                     $resolvedNames[] = $cn;
@@ -125,6 +156,7 @@ final class AssignProductTaxonomyCommand extends BaseCommand
                 if ($bothResolved) {
                     $assigned++;
                 }
+
                 continue;
             }
 
@@ -155,46 +187,54 @@ final class AssignProductTaxonomyCommand extends BaseCommand
     }
 
     /**
-     * Ask Claude for ALL suitable category NAMES (verbatim) from the live Woo
-     * list, most-specific first. Returns [names[], costPence].
+     * Ask Claude for ALL suitable category PATHS (verbatim) from the live Woo
+     * list, most-specific first. Returns [paths[], costPence].
      *
-     * @param  array<int, string>  $categoryNames
+     * Labels are full paths like "Cameras > USB Cameras" — paths
+     * disambiguate the many name-duplicate terms that share a name but
+     * differ by parent (e.g. six different "56-65 inch" categories).
+     *
+     * @param  array<int, string>  $categoryLabels
      * @return array{0: array<int, string>, 1: int}
      */
-    private function pickCategories(Product $product, array $categoryNames): array
+    private function pickCategories(Product $product, array $categoryLabels): array
     {
         $list = '';
-        foreach ($categoryNames as $name) {
-            $list .= "- {$name}\n";
+        foreach ($categoryLabels as $label) {
+            $list .= "- {$label}\n";
         }
 
         $system = <<<'PROMPT'
         You map a product to its categories for a UK audio-visual / video-
         conferencing store. WooCommerce products belong to MULTIPLE categories.
-        You are given the product and a fixed LIST of allowed category names.
+        You are given the product and a fixed LIST of allowed category PATHS
+        (each is "Parent > Child > ..." — the full tree path, so name-duplicates
+        are distinguishable).
 
         Select EVERY category from the list that genuinely fits this product — the
         specific product-type category PLUS any clearly-relevant broader or
-        use-case categories (e.g. a USB conference camera → "USB Cameras",
-        "Conference Cameras", "Video Conferencing"). Typically 1-4. Do NOT force
-        weak matches; only include categories a shopper would expect to find it under.
+        use-case categories (e.g. a USB conference camera → "Cameras > USB Cameras",
+        "Cameras > Conference Cameras", "Video Conferencing"). Typically 1-4. Do NOT
+        force weak matches; only include categories a shopper would expect to find
+        it under.
 
-        Reply with ONLY a JSON array of the chosen category names, copied VERBATIM
-        from the list (exact spelling/punctuation), MOST SPECIFIC FIRST. Example:
-        ["USB Cameras","Conference Cameras","Video Conferencing"]
+        Reply with ONLY a JSON array of the chosen category PATHS, copied VERBATIM
+        from the list (exact spelling/punctuation/spacing/separator), MOST SPECIFIC
+        FIRST. Example:
+        ["Cameras > USB Cameras","Cameras > Conference Cameras","Video Conferencing"]
         If none fit, reply exactly: []
         No other text, no markdown fences.
         PROMPT;
 
         $user = "Product: {$product->name}\n"
             .'Short description: '.strip_tags((string) $product->short_description)."\n\n"
-            ."Allowed categories:\n{$list}";
+            ."Allowed category paths:\n{$list}";
 
         try {
             $resp = $this->claude->generate(
                 systemPrompt: $system,
                 messages: [new UserMessage($user)],
-                maxTokens: 200,
+                maxTokens: 300,
                 temperature: 0.0,
             );
         } catch (\Throwable $e) {
@@ -204,6 +244,66 @@ final class AssignProductTaxonomyCommand extends BaseCommand
         }
 
         return [$this->parseNameList($resp->text), $resp->costPence];
+    }
+
+    /**
+     * Fallback when pickCategories returns [] — ask Claude to pick the
+     * SINGLE best general category, even if not a perfect fit. Keeps the
+     * product from getting stuck in needs_brand_or_category_assignment
+     * forever just because the storefront lacks a perfect niche category.
+     * Returns [path|null, costPence].
+     *
+     * @param  array<int, string>  $categoryLabels
+     * @return array{0: string|null, 1: int}
+     */
+    private function pickFallbackCategory(Product $product, array $categoryLabels): array
+    {
+        $list = '';
+        foreach ($categoryLabels as $label) {
+            $list .= "- {$label}\n";
+        }
+
+        $system = <<<'PROMPT'
+        You are placing a UK audio-visual / video-conferencing product into ONE
+        WooCommerce category — the previous strict pass found no perfect fit, so
+        now pick the SINGLE CLOSEST category from the list, even if not exact.
+        Any home is better than no home — the product must publish somewhere.
+
+        Prefer the BROAD parent category over a niche child (e.g. a USB extension
+        cable with no "Cables" category → pick "Accessories" or the broadest
+        relevant parent). Avoid product-type categories the product clearly
+        ISN'T (don't put a camera under "Displays").
+
+        Reply with ONLY the single chosen category path, copied VERBATIM from
+        the list (no JSON, no quotes, no markdown). If the list contains
+        absolutely NOTHING that could plausibly hold this product (very rare),
+        reply with the literal word: NONE
+        PROMPT;
+
+        $user = "Product: {$product->name}\n"
+            .'Short description: '.strip_tags((string) $product->short_description)."\n\n"
+            ."Allowed category paths:\n{$list}";
+
+        try {
+            $resp = $this->claude->generate(
+                systemPrompt: $system,
+                messages: [new UserMessage($user)],
+                maxTokens: 80,
+                temperature: 0.0,
+            );
+        } catch (\Throwable) {
+            return [null, 0];
+        }
+
+        $picked = trim($resp->text);
+        $picked = (string) preg_replace('/^```[a-zA-Z]*\s*|\s*```$/m', '', $picked);
+        $picked = trim($picked, " \t\n\r\0\x0B\"'");
+
+        if ($picked === '' || strcasecmp($picked, 'NONE') === 0) {
+            return [null, $resp->costPence];
+        }
+
+        return [$picked, $resp->costPence];
     }
 
     /**

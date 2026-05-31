@@ -57,31 +57,161 @@ class TaxonomyResolver
     }
 
     /**
-     * Exact (case-insensitive) category-name → id lookup. Used after Claude has
-     * picked a name VERBATIM from allCategories(), so no fuzzy needed.
+     * Exact (case-insensitive) category-label → id lookup. Tries the full PATH
+     * first ("Projectors > 10000+ lumens"), then falls back to NAME (only when
+     * unambiguous). Used after Claude has picked a label VERBATIM from
+     * allCategoriesForPicking(), so no fuzzy needed.
+     *
+     * Replaces the older name-only lookup, which silently collided on the
+     * many name-duplicates (e.g. "56-65 inch" appears 6 times on the live
+     * storefront with different parents) and returned the FIRST match.
      */
-    public function categoryIdByName(string $name): ?int
+    public function categoryIdByLabel(string $label): ?int
     {
-        $needle = $this->normalise($name);
-        foreach ($this->allCategories() as $term) {
-            if ($this->normalise($term['name']) === $needle) {
+        $needle = $this->normalise($label);
+
+        // 1) Exact path match (the picking list shows paths now).
+        foreach ($this->allCategoriesForPicking() as $term) {
+            if ($this->normalise($term['path']) === $needle) {
                 return $term['id'];
             }
         }
 
-        return null;
+        // 2) Unambiguous name fallback (only when ONE category has this name).
+        $hits = [];
+        foreach ($this->allCategoriesWithMeta() as $term) {
+            if ($this->normalise($term['name']) === $needle) {
+                $hits[] = $term['id'];
+            }
+        }
+
+        return count($hits) === 1 ? $hits[0] : null;
+    }
+
+    /**
+     * BACKWARDS COMPAT — preserved for existing callers that just want a flat
+     * name list. New code should prefer allCategoriesForPicking() (which strips
+     * filter-junk + builds paths).
+     */
+    public function categoryIdByName(string $name): ?int
+    {
+        return $this->categoryIdByLabel($name);
     }
 
     /**
      * All Woo product categories as [['id'=>int,'name'=>string], ...].
+     * Kept for backward compat — callers that need parent/count/path should
+     * use allCategoriesWithMeta() or allCategoriesForPicking() instead.
      *
      * @return array<int, array{id:int, name:string}>
      */
     public function allCategories(): array
     {
-        return Cache::remember('taxonomy.categories', self::CACHE_TTL_SECONDS, function (): array {
+        return array_map(
+            static fn (array $t): array => ['id' => $t['id'], 'name' => $t['name']],
+            $this->allCategoriesWithMeta(),
+        );
+    }
+
+    /**
+     * All Woo product categories with parent + count so callers can build
+     * paths and filter empty/junk terms. Cached for 1h.
+     *
+     * @return array<int, array{id:int, name:string, parent:int, count:int}>
+     */
+    public function allCategoriesWithMeta(): array
+    {
+        return Cache::remember('taxonomy.categories.meta', self::CACHE_TTL_SECONDS, function (): array {
             return $this->paginate('products/categories');
         });
+    }
+
+    /**
+     * Curated category list for the Claude category-picking prompt:
+     *
+     *   - DROPS attribute-filter noise (storefront facet values like
+     *     "10000+ lumens" / "56-65 inch" / "1-Year" that the storefront
+     *     surfaces as filters but a buyer never browses BY). These dominate
+     *     the raw 447-term list and were causing Claude to (correctly)
+     *     return [] for genuine retail products like USB cables, because
+     *     nothing fit. Pattern: starts with digits and ends with a known
+     *     unit word, nothing else.
+     *
+     *   - DROPS empty terms (count == 0).
+     *
+     *   - BUILDS the human-readable PATH from parent ids (e.g. "Projectors >
+     *     10000+ lumens"). The raw list contains many name-duplicates that
+     *     differ only by parent — paths make them distinguishable to Claude
+     *     and to the verbatim lookup that follows.
+     *
+     * @return array<int, array{id:int, name:string, path:string, count:int}>
+     */
+    public function allCategoriesForPicking(): array
+    {
+        $all = $this->allCategoriesWithMeta();
+        $byId = [];
+        foreach ($all as $t) {
+            $byId[$t['id']] = $t;
+        }
+
+        $out = [];
+        foreach ($all as $t) {
+            if (($t['count'] ?? 0) <= 0) {
+                continue;
+            }
+            if ($this->looksLikeFilterFacet($t['name'])) {
+                continue;
+            }
+            $out[] = [
+                'id' => $t['id'],
+                'name' => $t['name'],
+                'path' => $this->buildPath($t['id'], $byId),
+                'count' => (int) $t['count'],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Walk parent ids to build "Grandparent > Parent > Self". Detects
+     * cycles defensively (Woo allows category trees to be edited freely;
+     * a malformed tree would otherwise infinite-loop).
+     *
+     * @param  array<int, array{id:int, name:string, parent:int, count:int}>  $byId
+     */
+    private function buildPath(int $id, array $byId): string
+    {
+        $parts = [];
+        $cursor = $id;
+        $seen = [];
+        while ($cursor !== 0 && isset($byId[$cursor]) && ! isset($seen[$cursor])) {
+            $seen[$cursor] = true;
+            array_unshift($parts, (string) $byId[$cursor]['name']);
+            $cursor = (int) ($byId[$cursor]['parent'] ?? 0);
+        }
+
+        return implode(' > ', $parts);
+    }
+
+    /**
+     * Is the term name a storefront filter facet rather than a retail
+     * shopping category? Matches things like "10000+ lumens", "56-65 inch",
+     * "3000-3999 lumens", "1-Year". Conservative — only triggers when the
+     * name is JUST digits/range + a known measurement unit (so legitimate
+     * names like "4K Displays", "1080p Webcams" are preserved).
+     */
+    private function looksLikeFilterFacet(string $name): bool
+    {
+        $trimmed = trim($name);
+        if ($trimmed === '') {
+            return false;
+        }
+
+        return preg_match(
+            '/^\d[\d\+\-\s]*\s*(lumens?|inch(es)?|gb|mb|mp|hz|khz|mhz|ghz|nits?|fps|ppi|kg|cm|mm|hours?|hrs?|years?|yrs?|months?|mo|days?|watts?|w)\s*$/i',
+            $trimmed,
+        ) === 1;
     }
 
     /**
@@ -190,9 +320,10 @@ class TaxonomyResolver
     }
 
     /**
-     * Page through a Woo terms endpoint (per_page=100) into [id,name] rows.
+     * Page through a Woo terms endpoint (per_page=100) into [id,name,parent,count] rows.
+     * `parent` and `count` are 0 when the endpoint doesn't expose them (e.g. brands).
      *
-     * @return array<int, array{id:int, name:string}>
+     * @return array<int, array{id:int, name:string, parent:int, count:int}>
      */
     private function paginate(string $endpoint): array
     {
@@ -219,7 +350,12 @@ class TaxonomyResolver
                 $id = $term['id'] ?? null;
                 $name = (string) ($term['name'] ?? '');
                 if (is_numeric($id) && $name !== '') {
-                    $out[] = ['id' => (int) $id, 'name' => $name];
+                    $out[] = [
+                        'id' => (int) $id,
+                        'name' => $name,
+                        'parent' => (int) ($term['parent'] ?? 0),
+                        'count' => (int) ($term['count'] ?? 0),
+                    ];
                 }
             }
             $page++;

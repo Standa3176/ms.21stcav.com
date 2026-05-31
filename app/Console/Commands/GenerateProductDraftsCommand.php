@@ -177,6 +177,11 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 // Null when Claude returns no usable rows; PublishProductJob skips the
                 // payload key when null/empty.
                 'attributes_json' => $this->normaliseAttributes($content['attributes'] ?? null),
+                // WC product tags — short discovery keywords (brand, product type,
+                // compatibility platforms, use cases). PublishProductJob posts these
+                // as `tags: [{name}]`; Woo auto-creates the tag term + /product-tag
+                // archive page. Null/empty when Claude returns nothing usable.
+                'tags' => $this->normaliseTags($content['tags'] ?? null),
                 // GTIN/EAN/UPC barcode from supplier_db — persisted so
                 // PublishProductJob can push it onto Woo as `global_unique_id`
                 // (WC 9.x structured slot used by Google Merchant Center /
@@ -287,6 +292,17 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
           "meta_description": a single line, 155 characters or fewer, for SEO — facts only.
 
+          "tags": an array of 5-10 short discovery tags WooCommerce creates as /product-tag/
+            archive pages on publish (used for cross-sells, related-products, and SEO long-tail).
+            Each tag ≤ 30 chars, Title Case where natural, single word or short phrase — NEVER a
+            sentence, NEVER a duplicate of the title. Pick keywords a buyer would actually type
+            into search: the brand, the product type, key compatibility platforms named in the
+            facts (e.g. "Microsoft Teams", "Zoom Rooms" — only if the facts mention them), form
+            factor, and 1-2 primary use cases. Always include the brand as the FIRST tag. No
+            duplicates (case-insensitive). Examples of good tags for a video bar:
+            ["Logitech", "Video Conferencing", "Conference Cameras", "Microsoft Teams",
+            "Zoom Rooms", "Small Meeting Rooms", "All-in-One"].
+
           "attributes": an array of 5-8 key/value spec rows for the WooCommerce "Additional
             Information" tab (the storefront's spec table). Each row is an object
             {"name": "...", "value": "..."} — name is a short spec label (≤ 22 chars,
@@ -382,6 +398,44 @@ final class GenerateProductDraftsCommand extends BaseCommand
         }
 
         return $byKey === [] ? null : array_values($byKey);
+    }
+
+    /**
+     * Clean Claude's tags[] into a list of short discovery strings — trim, drop
+     * blanks, dedupe case-insensitively, cap each tag at 30 chars, hard-cap the
+     * list at 10. Returns null when nothing usable (column cast as JSON null).
+     *
+     * @return array<int, string>|null
+     */
+    private function normaliseTags(mixed $raw): ?array
+    {
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        $seen = [];
+        $out = [];
+        foreach ($raw as $t) {
+            if (! is_string($t)) {
+                continue;
+            }
+            $tag = trim($t);
+            if ($tag === '') {
+                continue;
+            }
+            $tag = mb_substr($tag, 0, 30);
+            $key = mb_strtolower($tag);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[] = $tag;
+            if (count($out) >= 10) {
+                break;
+            }
+        }
+
+        return $out === [] ? null : $out;
     }
 
     /**

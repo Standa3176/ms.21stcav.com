@@ -49,23 +49,28 @@ declare(strict_types=1);
 */
 
 return [
-    'margin_delta_threshold_bps'   => (int) env('COMPETITOR_MARGIN_DELTA_BPS', 800),       // 8% in bps
+    'margin_delta_threshold_bps' => (int) env('COMPETITOR_MARGIN_DELTA_BPS', 800),       // 8% in bps
     'consecutive_scrapes_required' => (int) env('COMPETITOR_SCRAPES_REQUIRED', 3),
-    'sales_threshold_90d'          => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
-    'min_margin_floor_bps'         => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
-    'beat_by_pennies'              => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
-    'csv_retention_days'           => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
-    'stale_feed_hours'             => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),
-    'csv_chunk_size'               => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
-    'filename_regex'               => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
+    'sales_threshold_90d' => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
+    'min_margin_floor_bps' => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
+    'beat_by_pennies' => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
+    'csv_retention_days' => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
+    'stale_feed_hours' => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),
+    'csv_chunk_size' => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
+    'filename_regex' => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
 
     // Phase 11.1 Plan 01 — D-05 step 4 + D-12 circuit breaker + D-01 timeout.
     // Phase 11.2 Plan 01 — D-10 stale-feed red-text threshold for the Filament
     //   CompetitorFtpFeedResource remote_file_date column.
     'ftp' => [
-        'max_file_mb'                    => (int) env('COMPETITOR_FTP_MAX_FILE_MB', 50),
+        'max_file_mb' => (int) env('COMPETITOR_FTP_MAX_FILE_MB', 50),
         'consecutive_failures_threshold' => (int) env('COMPETITOR_FTP_FAILURE_THRESHOLD', 3),
-        'connection_timeout_seconds'     => (int) env('COMPETITOR_FTP_TIMEOUT_SECONDS', 30),
-        'stale_days'                     => (int) env('COMPETITOR_FTP_STALE_DAYS', 30),
+        'connection_timeout_seconds' => (int) env('COMPETITOR_FTP_TIMEOUT_SECONDS', 30),
+        // Threshold for the CompetitorFtpFeedResource "Remote File Date" column
+        // to render in red — and (Phase 11.2 D-10) for the StaleFeedTrafficLight
+        // widget. Lowered to 4 days 2026-05-31 per operator: most competitor
+        // feeds refresh daily or every-other-day, so anything >4 days is a
+        // real concern (not just a fortnight-old default).
+        'stale_days' => (int) env('COMPETITOR_FTP_STALE_DAYS', 4),
     ],
 ];

@@ -211,10 +211,11 @@ class CompetitorFtpFeedResource extends Resource
 
                 TextColumn::make('remote_file_date')
                     ->label('Remote File Date')
-                    ->dateTime('Y-m-d')
                     ->sortable()
                     ->placeholder('—')
-                    ->color(fn ($state): ?string => self::staleColor($state)), // D-10
+                    ->formatStateUsing(fn ($state): string => self::formatRemoteFileDate($state))
+                    ->color(fn ($state): ?string => self::staleColor($state)) // D-10
+                    ->tooltip(fn ($state): ?string => self::staleTooltip($state)),
 
                 TextColumn::make('remote_filename')
                     ->label('Remote Filename')
@@ -289,16 +290,49 @@ class CompetitorFtpFeedResource extends Resource
     }
 
     /**
-     * D-10 — red text when remote_file_date is older than configured stale_days.
+     * D-10 — red text when remote_file_date is older than configured stale_days
+     * (default 4 days per operator 2026-05-31; was 30 days previously).
      */
     protected static function staleColor(mixed $state): ?string
     {
         if (! $state instanceof Carbon && ! $state instanceof CarbonInterface) {
             return null;
         }
-        $threshold = (int) config('competitor.ftp.stale_days', 30);
+        $threshold = (int) config('competitor.ftp.stale_days', 4);
 
         return $state->lt(now()->subDays($threshold)) ? 'danger' : null;
+    }
+
+    /**
+     * Render "YYYY-MM-DD (N days old)" so operators can spot staleness without
+     * mental subtraction — the parenthetical age makes "is this >4 days?"
+     * trivial to read at a glance.
+     */
+    protected static function formatRemoteFileDate(mixed $state): string
+    {
+        if (! $state instanceof Carbon && ! $state instanceof CarbonInterface) {
+            return '—';
+        }
+        $days = (int) $state->startOfDay()->diffInDays(now()->startOfDay(), absolute: true);
+        $suffix = $days === 0 ? 'today' : ($days === 1 ? '1 day old' : "{$days} days old");
+
+        return $state->format('Y-m-d').' ('.$suffix.')';
+    }
+
+    /**
+     * Hover tooltip — explains *why* the cell is red when staleness fires.
+     */
+    protected static function staleTooltip(mixed $state): ?string
+    {
+        if (! $state instanceof Carbon && ! $state instanceof CarbonInterface) {
+            return null;
+        }
+        $threshold = (int) config('competitor.ftp.stale_days', 4);
+        if (! $state->lt(now()->subDays($threshold))) {
+            return null;
+        }
+
+        return 'Stale: older than '.$threshold.' days — competitor feed refresh expected by now.';
     }
 
     public static function getPages(): array

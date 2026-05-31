@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 return [
 
     /*
@@ -68,6 +70,22 @@ return [
     'woocommerce' => [
         // Alias (some Filament plugins check services.woocommerce.*)
         'webhook_secret' => env('WC_WEBHOOK_SECRET'),
+    ],
+
+    // WP REST API (separate from WC REST). Used for taxonomies + post-type
+    // operations that WC's REST schema doesn't expose — primarily writes to
+    // the `product_brand` taxonomy that drives meetingstore.co.uk's clickable
+    // `Brand: <link>` storefront display (the WC native /products/brands
+    // endpoint is dormant on this storefront — see memory
+    // meetingstore-brand-display). The WC consumer key/secret only auths
+    // /wc/v3/* — for /wp/v2/* we need a WordPress Application Password
+    // (operator generates per-user in WP Admin → Profile → Application
+    // Passwords). Password value contains spaces — MUST be double-quoted
+    // in .env or dotenv parser errors.
+    'wp_rest' => [
+        'base_url' => env('WP_REST_BASE_URL', rtrim((string) env('WOO_URL'), '/').'/wp-json'),
+        'username' => env('WP_REST_USERNAME'),
+        'app_password' => env('WP_REST_APP_PASSWORD'),
     ],
 
     // Phase 2 Plan 02 — 21stcav.com supplier API (SYNC-01 + SYNC-02 JWT auth).

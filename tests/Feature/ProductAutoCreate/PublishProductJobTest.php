@@ -5,8 +5,11 @@ declare(strict_types=1);
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
+use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
+use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Services\WpRestClient;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -28,6 +31,37 @@ use Illuminate\Support\Str;
 beforeEach(function (): void {
     Context::add('correlation_id', (string) Str::uuid());
 });
+
+/** TaxonomyResolver stub returning a canned brand list (or empty). */
+function noBrandsTaxonomy(): TaxonomyResolver
+{
+    return new class extends TaxonomyResolver
+    {
+        public function __construct() {}
+
+        public function allBrands(): array
+        {
+            return [];
+        }
+    };
+}
+
+/** ProductBrandTermResolver stub that records calls but never hits the network. */
+function noopBrandResolver(): ProductBrandTermResolver
+{
+    return new class(new WpRestClient('https://example.test/wp-json', null, null)) extends ProductBrandTermResolver
+    {
+        public function getTermIdForName(?string $brandName): ?int
+        {
+            return null;
+        }
+
+        public function assignToProduct(int $wooProductId, array $termIds): bool
+        {
+            return false;
+        }
+    };
+}
 
 it('constructor sets queue=sync-woo-push and tries=3', function (): void {
     $job = new PublishProductJob(productId: 1, publishedByUserId: 99);
@@ -55,7 +89,7 @@ it('path A: PUTs status=publish (no leading slash) + flips published + fires eve
     $woo->shouldNotReceive('post');
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 7);
-    $job->handle($woo, new PriceCalculator);
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
     $product->refresh();
     expect($product->auto_create_status)->toBe('published');
@@ -111,7 +145,7 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
         ->andReturn(['id' => 90210, 'slug' => 'acme-widget-2']);
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 3);
-    $job->handle($woo, new PriceCalculator);
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
     $product->refresh();
     expect((int) $product->woo_product_id)->toBe(90210);
@@ -142,7 +176,7 @@ it('shadow mode: path B does NOT mark published and fires no event (stays in rev
         ->andReturn(['shadow_mode' => true, 'diff_id' => 7]); // WOO_WRITE_ENABLED=false
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1);
-    $job->handle($woo, new PriceCalculator);
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
     $product->refresh();
     expect($product->woo_product_id)->toBeNull();
@@ -197,7 +231,7 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
         ->andReturn(['id' => 12345, 'slug' => 'spec-rich-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator);
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('path B: includes global_unique_id when product has an EAN, omits the key when null', function (): void {
@@ -221,7 +255,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->andReturn(['id' => 1001, 'slug' => 'gtin-widget']);
 
     (new PublishProductJob(productId: (int) $withEan->id, publishedByUserId: 1))
-        ->handle($woo1, new PriceCalculator);
+        ->handle($woo1, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
     // Without EAN — must not include the key (Woo would otherwise store an empty GTIN).
     $withoutEan = Product::factory()->create([
@@ -241,7 +275,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->andReturn(['id' => 1002, 'slug' => 'no-gtin-widget']);
 
     (new PublishProductJob(productId: (int) $withoutEan->id, publishedByUserId: 1))
-        ->handle($woo2, new PriceCalculator);
+        ->handle($woo2, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('path B: NEVER includes brands payload key, even when brand_id is set', function (): void {
@@ -273,7 +307,7 @@ it('path B: NEVER includes brands payload key, even when brand_id is set', funct
         ->andReturn(['id' => 4321, 'slug' => 'branded-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator);
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping blanks', function (): void {
@@ -303,7 +337,7 @@ it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping
         ->andReturn(['id' => 5555, 'slug' => 'tagged-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator);
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('path B: omits tags payload key when products.tags is null or empty', function (): void {
@@ -326,7 +360,7 @@ it('path B: omits tags payload key when products.tags is null or empty', functio
         ->andReturn(['id' => 6666, 'slug' => 'untagged-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator);
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('path B: omits attributes payload key when attributes_json is null or empty (no empty Woo attributes)', function (): void {
@@ -353,7 +387,7 @@ it('path B: omits attributes payload key when attributes_json is null or empty (
         ->andReturn(['id' => 555, 'slug' => 'bare-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator);
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
 it('shadow mode: path A does NOT mark published either', function (): void {
@@ -371,7 +405,7 @@ it('shadow mode: path A does NOT mark published either', function (): void {
         ->andReturn(['shadow_mode' => true, 'diff_id' => 8]);
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1);
-    $job->handle($woo, new PriceCalculator);
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
     $product->refresh();
     expect($product->auto_create_status)->toBe('approved'); // unchanged

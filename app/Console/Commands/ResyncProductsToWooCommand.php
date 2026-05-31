@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
@@ -49,6 +50,7 @@ final class ResyncProductsToWooCommand extends BaseCommand
     public function __construct(
         private readonly WooClient $woo,
         private readonly TaxonomyResolver $taxonomy,
+        private readonly ProductBrandTermResolver $brandResolver,
     ) {
         parent::__construct();
     }
@@ -133,6 +135,29 @@ final class ResyncProductsToWooCommand extends BaseCommand
                 if ($rest !== []) {
                     $this->woo->put("products/{$product->woo_product_id}", $rest);
                 }
+
+                // ── Brand → product_brand taxonomy (separate WP REST call) ──
+                // Drives the storefront's clickable Brand: <link> → /brand/<slug>/
+                // display. Best-effort: failure here does NOT mark the resync
+                // as failed (brand still shows via tags + attributes table).
+                $brandName = $brandNameById[(int) ($product->brand_id ?? 0)] ?? null;
+                if ($brandName !== null && $product->brand_id !== null) {
+                    $termId = $this->brandResolver->getTermIdForName($brandName);
+                    if ($termId !== null) {
+                        $assigned = $this->brandResolver->assignToProduct(
+                            (int) $product->woo_product_id,
+                            [$termId],
+                        );
+                        if ($assigned) {
+                            $this->line("    + product_brand: {$brandName} (term #{$termId})");
+                        } else {
+                            $this->warn("    ⚠ product_brand assign failed for {$brandName}");
+                        }
+                    } else {
+                        $this->warn("    ⚠ could not resolve product_brand term for {$brandName}");
+                    }
+                }
+
                 $this->info('  ✓ patched');
                 $ok++;
             } catch (\Throwable $e) {

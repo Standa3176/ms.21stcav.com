@@ -129,6 +129,7 @@ use App\Domain\Sync\Policies\ImportIssuePolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Services\WpRestClient;
 use App\Domain\TradePricing\Models\CustomerGroup;
 use App\Domain\TradePricing\Policies\CustomerGroupPolicy;
 use App\Domain\TradePricing\Services\RoleToGroupMapper;
@@ -212,6 +213,21 @@ class AppServiceProvider extends ServiceProvider
             return new WooClient(
                 $app->make(IntegrationLogger::class),
                 $app->make(IntegrationCredentialResolver::class),
+            );
+        });
+
+        // WpRestClient — Basic Auth wrapper for WordPress REST API endpoints
+        // (`/wp/v2/...`). Distinct from WooClient because the WC consumer
+        // key/secret only auths `/wc/v3/*`. Used for `product_brand`
+        // taxonomy writes (the storefront's clickable Brand: <link> on
+        // meetingstore.co.uk reads from this taxonomy — see memory
+        // meetingstore-brand-display). Singleton to share one Http client
+        // per request.
+        $this->app->singleton(WpRestClient::class, function ($app) {
+            return new WpRestClient(
+                baseUrl: (string) config('services.wp_rest.base_url'),
+                username: config('services.wp_rest.username'),
+                appPassword: config('services.wp_rest.app_password'),
             );
         });
 

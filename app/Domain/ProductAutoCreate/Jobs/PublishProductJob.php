@@ -6,6 +6,8 @@ namespace App\Domain\ProductAutoCreate\Jobs;
 
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
+use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
+use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -66,8 +68,12 @@ final class PublishProductJob implements ShouldQueue
         $this->onQueue('sync-woo-push');
     }
 
-    public function handle(WooClient $woo, PriceCalculator $calculator): void
-    {
+    public function handle(
+        WooClient $woo,
+        PriceCalculator $calculator,
+        TaxonomyResolver $taxonomy,
+        ProductBrandTermResolver $brandResolver,
+    ): void {
         $product = Product::findOrFail($this->productId);
 
         $wooId = (int) ($product->woo_product_id ?? 0);
@@ -116,6 +122,41 @@ final class PublishProductJob implements ShouldQueue
             wooProductId: $wooId,
             publishedByUserId: $this->publishedByUserId,
         ));
+
+        // ── Brand linkage via product_brand taxonomy ─────────────────────
+        // Best-effort, non-blocking — failures here don't fail the publish
+        // (brand still surfaces via tags + attributes spec row). Drives
+        // the storefront's clickable Brand: <link> → /brand/<slug>/ display.
+        // See memory meetingstore-brand-display for why this is a separate
+        // post-publish step (WP REST, not WC REST).
+        if ($product->brand_id !== null && $wooId > 0) {
+            $brandName = $this->resolveBrandName((int) $product->brand_id, $taxonomy);
+            if ($brandName !== null) {
+                $termId = $brandResolver->getTermIdForName($brandName);
+                if ($termId !== null) {
+                    $brandResolver->assignToProduct($wooId, [$termId]);
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve our local brand_id (which points at the WC native
+     * /products/brands term ids) to a brand NAME. Brand name is the
+     * cross-taxonomy identity used by ProductBrandTermResolver to find
+     * or create the matching product_brand term.
+     */
+    private function resolveBrandName(int $brandId, TaxonomyResolver $taxonomy): ?string
+    {
+        foreach ($taxonomy->allBrands() as $b) {
+            if ((int) ($b['id'] ?? 0) === $brandId) {
+                $name = trim((string) ($b['name'] ?? ''));
+
+                return $name !== '' ? $name : null;
+            }
+        }
+
+        return null;
     }
 
     /**

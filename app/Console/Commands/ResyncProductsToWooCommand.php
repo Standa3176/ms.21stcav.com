@@ -113,8 +113,26 @@ final class ResyncProductsToWooCommand extends BaseCommand
                 continue;
             }
 
+            // SPLIT INTO TWO PUTs — first regular_price ALONE, then everything
+            // else. Empirically (2026-05-31), sending regular_price together
+            // with tags + attributes in one PUT made WC silently drop the
+            // price while keeping tags + attrs (verified: direct PUT of just
+            // regular_price sticks, combined PUT loses it). Most likely cause:
+            // the Cost-of-Goods plugin (_alg_wc_cog_*) hooks into product save
+            // and recomputes regular_price from buy_price when other fields
+            // are mass-updated. Splitting isolates the price write so the
+            // plugin's recompute happens first (with no price), then we
+            // overwrite with our value in the dedicated 2nd PUT.
             try {
-                $this->woo->put("products/{$product->woo_product_id}", $payload);
+                if (isset($payload['regular_price'])) {
+                    $this->woo->put("products/{$product->woo_product_id}", [
+                        'regular_price' => $payload['regular_price'],
+                    ]);
+                }
+                $rest = array_diff_key($payload, ['regular_price' => null]);
+                if ($rest !== []) {
+                    $this->woo->put("products/{$product->woo_product_id}", $rest);
+                }
                 $this->info('  ✓ patched');
                 $ok++;
             } catch (\Throwable $e) {

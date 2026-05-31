@@ -1,0 +1,265 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Console\Commands;
+
+use App\Domain\Integrations\Enums\IntegrationCredentialKind;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\Console\Command\Command as SymfonyCommand;
+
+/**
+ * products:draft-from-suggestions — bulk pre-filter for the auto-create pipeline.
+ *
+ * Pulls SKUs from the Suggestions table (kind=new_product_opportunity,
+ * status=pending), joins each against supplier_products to get its
+ * manufacturer, then filters to:
+ *
+ *   - sourceable (at least one supplier carries it)
+ *   - brand exists on Woo (so PublishProductJob's brand link will resolve)
+ *   - optionally, manufacturer matches the operator-supplied --brands list
+ *
+ * Then chains `products:generate-drafts` and `products:assign-taxonomy` on
+ * the filtered batch. Optionally also runs `products:source-images`. Designed
+ * for operator-paced batches like "draft the next 100 Yealink + Samsung
+ * tonight, no images yet, I'll review before sourcing images".
+ *
+ * Always preview with --dry-run before spending real Claude money.
+ *
+ *   php artisan products:draft-from-suggestions --brands=Yealink,Samsung --limit=50 --dry-run
+ *   php artisan products:draft-from-suggestions --brands=Yealink,Samsung --limit=50
+ *   php artisan products:draft-from-suggestions --brands=Yealink --limit=20 --source-images
+ *
+ * Default is drafts + taxonomy only (no images) — fastest signal at lowest
+ * cost. Opt in to images with --source-images, or run `products:source-images`
+ * separately on the keepers after operator review.
+ */
+final class DraftFromSuggestionsCommand extends BaseCommand
+{
+    /** Per-product Claude cost ballpark in pence (for the operator estimate). */
+    private const COST_DRAFTS_PENCE = 2;
+
+    private const COST_TAXONOMY_PENCE = 1;
+
+    private const COST_IMAGES_PENCE = 10;
+
+    protected $signature = 'products:draft-from-suggestions
+        {--brands= : Comma-separated case-insensitive brand filter. Default: all brands on Woo.}
+        {--limit=100 : Max products to include in this batch (0 = unbounded — careful)}
+        {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
+        {--dry-run : Print the SKU list + cost estimate, do not call generate-drafts}';
+
+    protected $description = 'Pre-filter Suggestions → chain generate-drafts + assign-taxonomy for sourceable + brand-on-Woo products.';
+
+    public function __construct(
+        private readonly IntegrationCredentialResolver $resolver,
+        private readonly TaxonomyResolver $taxonomy,
+    ) {
+        parent::__construct();
+    }
+
+    protected function perform(): int
+    {
+        $brandsFilter = $this->parseBrandsFilter((string) ($this->option('brands') ?? ''));
+        $limit = max(0, (int) $this->option('limit'));
+        $sourceImages = (bool) $this->option('source-images');
+        $dryRun = (bool) $this->option('dry-run');
+
+        // ── 1. Resolve current Woo brand list (cached by TaxonomyResolver) ──
+        $wooBrandsByLower = [];
+        foreach ($this->taxonomy->allBrands() as $b) {
+            $name = trim((string) ($b['name'] ?? ''));
+            if ($name !== '') {
+                $wooBrandsByLower[mb_strtolower($name)] = $name;
+            }
+        }
+        if ($wooBrandsByLower === []) {
+            $this->error('No Woo brand terms found — cannot filter. Aborting.');
+
+            return SymfonyCommand::FAILURE;
+        }
+        $this->info('Loaded '.count($wooBrandsByLower).' Woo brand terms.');
+
+        // ── 2. Validate --brands filter against the Woo brand set ──
+        if ($brandsFilter !== null) {
+            $missing = array_diff($brandsFilter, array_keys($wooBrandsByLower));
+            if ($missing !== []) {
+                $this->warn('Brand(s) not on Woo (will be ignored): '.implode(', ', $missing));
+            }
+            $brandsFilter = array_values(array_intersect($brandsFilter, array_keys($wooBrandsByLower)));
+            if ($brandsFilter === []) {
+                $this->error('No --brands entries match any Woo brand. Aborting.');
+
+                return SymfonyCommand::FAILURE;
+            }
+            $canonicalNames = array_map(static fn (string $lc) => $wooBrandsByLower[$lc], $brandsFilter);
+            $this->info('Filtering to '.count($brandsFilter).' brand(s): '.implode(', ', $canonicalNames));
+        }
+
+        // ── 3. Connect supplier_db ──
+        $c = $this->resolver->for(IntegrationCredentialKind::SupplierDb);
+        mysqli_report(MYSQLI_REPORT_OFF);
+        $m = @new \mysqli(
+            (string) $c['host'], (string) $c['username'], (string) $c['password'],
+            (string) $c['database'], (int) ($c['port'] ?? 3306),
+        );
+        if ($m->connect_errno !== 0) {
+            $this->error('supplier_db connect failed: '.$m->connect_error);
+
+            return SymfonyCommand::FAILURE;
+        }
+
+        // ── 4. Walk pending suggestions in chunks; collect candidates ──
+        /** @var array<string, string> $candidates  sku → canonical Woo brand name */
+        $candidates = [];
+        /** @var array<string, array<int, string>> $byBrand  canonical brand → [skus] */
+        $byBrand = [];
+
+        DB::table('suggestions')
+            ->where('kind', 'new_product_opportunity')
+            ->where('status', 'pending')
+            ->orderBy('id')
+            ->chunk(200, function ($rows) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, $limit) {
+                if ($limit > 0 && count($candidates) >= $limit) {
+                    return false; // stop chunking
+                }
+                $skus = [];
+                foreach ($rows as $sug) {
+                    $ev = json_decode((string) $sug->evidence, true);
+                    $sku = trim((string) ($ev['sku'] ?? ''));
+                    if ($sku !== '' && ! isset($candidates[$sku])) {
+                        $skus[] = $sku;
+                    }
+                }
+                if ($skus === []) {
+                    return null;
+                }
+
+                $ph = implode(',', array_fill(0, count($skus), '?'));
+                $stmt = $m->prepare("SELECT suppliersku, mpn, manufacturer FROM supplier_products WHERE suppliersku IN ($ph) OR mpn IN ($ph)");
+                $params = array_merge($skus, $skus);
+                $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+                $stmt->execute();
+                $supMap = [];
+                $res = $stmt->get_result();
+                while ($r = $res->fetch_assoc()) {
+                    $mfr = trim((string) $r['manufacturer']);
+                    if ($mfr === '') {
+                        continue;
+                    }
+                    $supMap[strtolower((string) $r['suppliersku'])] = $mfr;
+                    $supMap[strtolower((string) $r['mpn'])] = $mfr;
+                }
+                $stmt->close();
+
+                foreach ($skus as $sku) {
+                    if ($limit > 0 && count($candidates) >= $limit) {
+                        return false;
+                    }
+                    $key = strtolower($sku);
+                    if (! isset($supMap[$key])) {
+                        continue;
+                    }
+                    $mfrLower = mb_strtolower($supMap[$key]);
+                    if (! isset($wooBrandsByLower[$mfrLower])) {
+                        continue;
+                    }
+                    if ($brandsFilter !== null && ! in_array($mfrLower, $brandsFilter, true)) {
+                        continue;
+                    }
+                    $canonical = $wooBrandsByLower[$mfrLower];
+                    $candidates[$sku] = $canonical;
+                    $byBrand[$canonical][] = $sku;
+                }
+
+                return null;
+            });
+
+        $m->close();
+
+        $skuList = array_keys($candidates);
+        $count = count($skuList);
+        if ($count === 0) {
+            $this->info('No matching SKUs to draft.');
+
+            return SymfonyCommand::SUCCESS;
+        }
+
+        // ── 5. Summary + cost estimate ──
+        ksort($byBrand);
+        $this->newLine();
+        $this->info("Batch: {$count} product(s) across ".count($byBrand).' brand(s)');
+        foreach ($byBrand as $brand => $skus) {
+            $this->line('  '.str_pad((string) count($skus), 5, ' ', STR_PAD_LEFT).'  '.$brand);
+        }
+
+        $perProductPence = self::COST_DRAFTS_PENCE + self::COST_TAXONOMY_PENCE + ($sourceImages ? self::COST_IMAGES_PENCE : 0);
+        $totalPence = $count * $perProductPence;
+        $this->newLine();
+        $this->info(sprintf(
+            'Estimated Claude spend: ~%dp (~£%s) at ~%dp/product [%s]',
+            $totalPence, number_format($totalPence / 100, 2), $perProductPence,
+            $sourceImages ? 'drafts + taxonomy + images' : 'drafts + taxonomy (no images)',
+        ));
+
+        if ($dryRun) {
+            $this->newLine();
+            $this->info('Dry-run — exiting without dispatching.');
+
+            return SymfonyCommand::SUCCESS;
+        }
+
+        // ── 6. Confirm before spending real money ──
+        if (! $this->confirm("Proceed with chained run on {$count} product(s)?", false)) {
+            $this->warn('Aborted by operator.');
+
+            return SymfonyCommand::FAILURE;
+        }
+
+        $skusCsv = implode(',', $skuList);
+
+        // ── 7. Chain the pipeline. Each child command prints its own progress ──
+        $this->newLine();
+        $this->info('==> products:generate-drafts');
+        $this->call('products:generate-drafts', ['--skus' => $skusCsv]);
+
+        $this->newLine();
+        $this->info('==> products:assign-taxonomy');
+        $this->call('products:assign-taxonomy', ['--skus' => $skusCsv]);
+
+        if ($sourceImages) {
+            $this->newLine();
+            $this->info('==> products:source-images');
+            $this->call('products:source-images', ['--skus' => $skusCsv]);
+        } else {
+            $this->newLine();
+            $this->info('Images skipped — run `products:source-images --skus=...` on keepers after review.');
+        }
+
+        $this->newLine();
+        $this->info("Done. {$count} draft(s) ready in /admin/auto-create-reviews.");
+
+        return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * Parse --brands=A,B,C into a lowercased array. Returns null when filter is empty.
+     *
+     * @return array<int, string>|null
+     */
+    private function parseBrandsFilter(string $raw): ?array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        $parts = array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $s): bool => $s !== '',
+        );
+
+        return array_values(array_unique(array_map('mb_strtolower', $parts)));
+    }
+}

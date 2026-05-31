@@ -30,31 +30,31 @@ beforeEach(function (): void {
     Context::add('correlation_id', (string) Str::uuid());
 });
 
-/** TaxonomyResolver stub that returns no brand payload (most tests). */
+/** TaxonomyResolver stub that returns no brand entry (most tests). */
 function nullTaxonomy(): TaxonomyResolver
 {
     return new class extends TaxonomyResolver
     {
         public function __construct() {}
 
-        public function wooAttributePayloadForBrand(int $brandId): ?array
+        public function wooBrandsFieldEntry(int $brandId): ?array
         {
             return null;
         }
     };
 }
 
-/** TaxonomyResolver stub that returns a canned brand payload (brand-specific tests). */
-function taxonomyReturning(array $brandPayload): TaxonomyResolver
+/** TaxonomyResolver stub that returns a canned brand entry (brand-specific tests). */
+function taxonomyReturning(array $brandEntry): TaxonomyResolver
 {
-    return new class($brandPayload) extends TaxonomyResolver
+    return new class($brandEntry) extends TaxonomyResolver
     {
-        /** @param array<string, mixed> $payload */
-        public function __construct(private array $payload) {}
+        /** @param array<string, mixed> $entry */
+        public function __construct(private array $entry) {}
 
-        public function wooAttributePayloadForBrand(int $brandId): ?array
+        public function wooBrandsFieldEntry(int $brandId): ?array
         {
-            return $this->payload;
+            return $this->entry;
         }
     };
 }
@@ -274,7 +274,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->handle($woo2, new PriceCalculator, nullTaxonomy());
 });
 
-it('path B: prepends the brand global-attribute (pa_brand) entry to attributes[] when brand_id is set', function (): void {
+it('path B: adds brand via top-level brands[] (native Woo Brands taxonomy) when brand_id is set', function (): void {
     Event::fake([ProductPublished::class]);
 
     $product = Product::factory()->create([
@@ -282,43 +282,60 @@ it('path B: prepends the brand global-attribute (pa_brand) entry to attributes[]
         'sku' => 'BRAND-1',
         'name' => 'Branded Widget',
         'sell_price' => 50.00,
-        'brand_id' => 3082,
+        'brand_id' => 2907,
         'attributes_json' => [
+            ['name' => 'Brand', 'value' => 'Acer'],
             ['name' => 'Resolution', 'value' => '4K'],
-            ['name' => 'Connection', 'value' => 'USB-C'],
         ],
         'auto_create_status' => 'draft',
         'status' => 'draft',
     ]);
 
-    $brandPayload = ['id' => 7, 'options' => ['Huddly'], 'visible' => true, 'variation' => false];
+    // Canned brand resolved by the TaxonomyResolver stub.
+    $brandsEntry = ['id' => 2907];
 
     $woo = Mockery::mock(WooClient::class);
     $woo->shouldReceive('post')
         ->once()
-        ->with('products', Mockery::on(function (array $payload) use ($brandPayload): bool {
-            if (! isset($payload['attributes']) || ! is_array($payload['attributes'])) {
-                return false;
-            }
-            $first = $payload['attributes'][0];
-            $isBrand = ($first['id'] ?? null) === $brandPayload['id']
-                && ($first['options'] ?? null) === ['Huddly']
-                && ($first['visible'] ?? null) === true
-                && ($first['variation'] ?? null) === false
-                && ($first['position'] ?? null) === 0;
-            $customNames = array_column(array_slice($payload['attributes'], 1), 'name');
+        ->with('products', Mockery::on(function (array $payload) use ($brandsEntry): bool {
+            // Brand goes to top-level `brands` field (not inside attributes).
+            $brandsOk = ($payload['brands'] ?? null) === [$brandsEntry];
+            // Custom attributes remain unchanged (no brand-prepend any more).
+            $attributes = $payload['attributes'] ?? [];
+            $names = array_column($attributes, 'name');
 
-            return $isBrand
-                && count($payload['attributes']) === 3
-                && in_array('Resolution', $customNames, true)
-                && in_array('Connection', $customNames, true)
-                && ($payload['attributes'][1]['position'] ?? null) === 1
-                && ($payload['attributes'][2]['position'] ?? null) === 2;
+            return $brandsOk
+                && count($attributes) === 2
+                && in_array('Brand', $names, true)
+                && in_array('Resolution', $names, true);
         }))
         ->andReturn(['id' => 4321, 'slug' => 'branded-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, taxonomyReturning($brandPayload));
+        ->handle($woo, new PriceCalculator, taxonomyReturning($brandsEntry));
+});
+
+it('path B: omits brands payload key when brand_id is null or unresolvable', function (): void {
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'NO-BRAND-1',
+        'name' => 'Brandless Widget',
+        'sell_price' => 10.00,
+        'brand_id' => null,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('brands', $p)))
+        ->andReturn(['id' => 4322, 'slug' => 'brandless-widget']);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, nullTaxonomy());
 });
 
 it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping blanks', function (): void {

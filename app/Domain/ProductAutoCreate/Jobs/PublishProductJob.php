@@ -195,30 +195,24 @@ final class PublishProductJob implements ShouldQueue
         // which all carry _product_attributes meta (Colour, Compatibility,
         // Material, Connection, etc.). Source: GenerateProductDraftsCommand's
         // Claude schema (attributes[] of {name, value}). All non-variation,
-        // visible on storefront, position from array order.
+        // visible on storefront, position from array order. The "Brand: ..."
+        // row is included here for display in the spec table; the actual
+        // brand TAXONOMY link goes through the top-level `brands` field below
+        // (so /product-brand/<slug> archive + Brand filter sidebar work).
         $attributes = $this->wooAttributes($product);
-
-        // Brand attribute — linked to the GLOBAL `pa_brand` Woo taxonomy
-        // (via attribute id, not just name), so Brand filter pages + the
-        // /product-brand/<slug> archive route work for auto-created products
-        // the same way they do for existing ones. Prepended so brand renders
-        // first in the spec table. Returns null when brand_id is missing or
-        // can't be resolved on Woo — payload simply omits it then.
-        $brandAttribute = $product->brand_id !== null
-            ? $taxonomy->wooAttributePayloadForBrand((int) $product->brand_id)
-            : null;
-        if ($brandAttribute !== null) {
-            array_unshift($attributes, $brandAttribute);
-            // Re-number positions after prepending (custom attributes set
-            // their own position from the array order in wooAttributes()).
-            foreach ($attributes as $i => &$attr) {
-                $attr['position'] = $i;
-            }
-            unset($attr);
-        }
-
         if ($attributes !== []) {
             $payload['attributes'] = $attributes;
+        }
+
+        // Brand → native Woo Brands taxonomy via the top-level `brands[]`
+        // field (not as a pa_brand attribute entry — see TaxonomyResolver
+        // 2026-05-31 comment). One brand per product; payload key omitted
+        // when brand_id is missing or unresolvable.
+        $brandEntry = $product->brand_id !== null
+            ? $taxonomy->wooBrandsFieldEntry((int) $product->brand_id)
+            : null;
+        if ($brandEntry !== null) {
+            $payload['brands'] = [$brandEntry];
         }
 
         // Product tags — WC REST accepts `[{name: "..."}]` and auto-creates

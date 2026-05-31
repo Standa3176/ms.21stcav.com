@@ -85,17 +85,36 @@ class TaxonomyResolver
     }
 
     /**
-     * All Woo brand terms as [['id'=>int,'name'=>string], ...]. Resolves the
-     * pa_brand attribute id first; falls back to the native /products/brands.
+     * All Woo brand terms as [['id'=>int,'name'=>string], ...].
+     *
+     * PRIORITY INVERTED 2026-05-31: the native Woo `/products/brands`
+     * taxonomy is now the primary source (where meetingstore.co.uk's 100+
+     * real brand terms live). The `pa_brand` global attribute is the
+     * fallback for legacy/alternative setups.
+     *
+     * The previous behaviour (pa_brand first) caused a real production miss:
+     * the site's pa_brand attribute held a single stale term
+     * ("Huddlecamhd") that the resolver returned exclusively, ignoring the
+     * 100+ real brands in /products/brands and silently fuzzy-matching
+     * everything (Sony, Barco, ViewSonic, Huddly) to the wrong neighbour.
      *
      * @return array<int, array{id:int, name:string}>
      */
     public function allBrands(): array
     {
         return Cache::remember('taxonomy.brands', self::CACHE_TTL_SECONDS, function (): array {
-            $taxonomy = (string) config('product_auto_create.brand_taxonomy', 'pa_brand');
+            // 1) Native Woo Brands taxonomy — the primary source.
+            try {
+                $terms = $this->paginate('products/brands');
+                if ($terms !== []) {
+                    return $terms;
+                }
+            } catch (\Throwable) {
+                // ignore — fall through to legacy pa_brand attribute
+            }
 
-            // 1) Brand-as-attribute: find the attribute id for the slug.
+            // 2) Legacy fallback: pa_brand global attribute terms.
+            $taxonomy = (string) config('product_auto_create.brand_taxonomy', 'pa_brand');
             $attributeId = $this->brandAttributeId($taxonomy);
             if ($attributeId !== null) {
                 $terms = $this->paginate("products/attributes/{$attributeId}/terms");
@@ -104,59 +123,37 @@ class TaxonomyResolver
                 }
             }
 
-            // 2) Native Woo Brands taxonomy fallback.
-            try {
-                $terms = $this->paginate('products/brands');
-                if ($terms !== []) {
-                    return $terms;
-                }
-            } catch (\Throwable) {
-                // ignore
-            }
-
             return [];
         });
     }
 
     /**
-     * Build the WC REST `attributes[]` entry for the brand global attribute
-     * (default slug `pa_brand`), so PublishProductJob can push it as part of
-     * a product create. Returns null when:
+     * Build the WC REST top-level `brands[]` payload entry for a brand term,
+     * so PublishProductJob can link the product to Woo's native Brands
+     * taxonomy on create. Returns null when:
      *   - brand_id is unknown or zero
-     *   - the global brand attribute cannot be resolved on Woo
      *   - the brand term id doesn't appear in the cached brand-term list
      *
-     * Shape matches what the WC REST API expects to LINK a product to a global
-     * attribute (id + options + visible + variation), rather than create a
-     * per-product custom attribute (which would be name-only).
+     * Single-element associative array — caller wraps in [$entry] for the
+     * payload's `brands` key. Format matches what WC's product endpoint
+     * accepts to LINK an existing term (id only is sufficient).
      *
-     * @return array{id:int, options:array<int,string>, visible:bool, variation:bool}|null
+     * 2026-05-31: replaced the previous wooAttributePayloadForBrand (which
+     * pushed brand via the pa_brand global attribute). The Brand taxonomy
+     * is the right surface — links populate the /product-brand/<slug>
+     * archive routes + the Brand filter sidebar.
+     *
+     * @return array{id:int}|null
      */
-    public function wooAttributePayloadForBrand(int $brandId): ?array
+    public function wooBrandsFieldEntry(int $brandId): ?array
     {
         if ($brandId <= 0) {
             return null;
         }
 
-        $taxonomy = (string) config('product_auto_create.brand_taxonomy', 'pa_brand');
-        $attributeId = $this->brandAttributeId($taxonomy);
-        if ($attributeId === null) {
-            return null;
-        }
-
         foreach ($this->allBrands() as $term) {
             if ((int) ($term['id'] ?? 0) === $brandId) {
-                $name = trim((string) ($term['name'] ?? ''));
-                if ($name === '') {
-                    return null;
-                }
-
-                return [
-                    'id' => $attributeId,
-                    'options' => [$name],
-                    'visible' => true,
-                    'variation' => false,
-                ];
+                return ['id' => (int) $term['id']];
             }
         }
 

@@ -6,7 +6,9 @@ namespace App\Console\Commands;
 
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\Products\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -49,6 +51,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         {--brands= : Comma-separated case-insensitive brand filter. Default: all brands on Woo.}
         {--limit=100 : Max products to include in this batch (0 = unbounded — careful)}
         {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
+        {--auto-approve : Bypass the review inbox — auto-dispatch PublishProductJob to push each draft live on Woo (requires WOO_WRITE_ENABLED=true)}
         {--dry-run : Print the SKU list + cost estimate, do not call generate-drafts}';
 
     protected $description = 'Pre-filter Suggestions → chain generate-drafts + assign-taxonomy for sourceable + brand-on-Woo products.';
@@ -65,6 +68,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $brandsFilter = $this->parseBrandsFilter((string) ($this->option('brands') ?? ''));
         $limit = max(0, (int) $this->option('limit'));
         $sourceImages = (bool) $this->option('source-images');
+        $autoApprove = (bool) $this->option('auto-approve');
         $dryRun = (bool) $this->option('dry-run');
 
         // ── 1. Resolve current Woo brand list (cached by TaxonomyResolver) ──
@@ -198,11 +202,21 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $perProductPence = self::COST_DRAFTS_PENCE + self::COST_TAXONOMY_PENCE + ($sourceImages ? self::COST_IMAGES_PENCE : 0);
         $totalPence = $count * $perProductPence;
         $this->newLine();
+        $stages = ['drafts', 'taxonomy'];
+        if ($sourceImages) {
+            $stages[] = 'images';
+        }
+        if ($autoApprove) {
+            $stages[] = 'auto-publish to Woo';
+        }
         $this->info(sprintf(
             'Estimated Claude spend: ~%dp (~£%s) at ~%dp/product [%s]',
             $totalPence, number_format($totalPence / 100, 2), $perProductPence,
-            $sourceImages ? 'drafts + taxonomy + images' : 'drafts + taxonomy (no images)',
+            implode(' + ', $stages),
         ));
+        if ($autoApprove) {
+            $this->warn('⚠ --auto-approve will publish all '.$count.' product(s) DIRECTLY to live Woo storefront. Customers will see them immediately. No review gate.');
+        }
 
         if ($dryRun) {
             $this->newLine();
@@ -211,8 +225,11 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             return SymfonyCommand::SUCCESS;
         }
 
-        // ── 6. Confirm before spending real money ──
-        if (! $this->confirm("Proceed with chained run on {$count} product(s)?", false)) {
+        // ── 6. Confirm before spending real money / writing to live store ──
+        $confirmMsg = $autoApprove
+            ? "PUBLISH {$count} product(s) to LIVE Woo storefront? (auto-approve)"
+            : "Proceed with chained run on {$count} product(s)?";
+        if (! $this->confirm($confirmMsg, false)) {
             $this->warn('Aborted by operator.');
 
             return SymfonyCommand::FAILURE;
@@ -238,8 +255,53 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             $this->info('Images skipped — run `products:source-images --skus=...` on keepers after review.');
         }
 
+        // ── 8. Optional: auto-approve → dispatch PublishProductJob per draft ──
+        if ($autoApprove) {
+            $this->newLine();
+            $this->info('==> auto-publish to Woo (PublishProductJob per draft)');
+            $published = 0;
+            $shadowed = 0;
+            $failed = 0;
+            foreach ($skuList as $sku) {
+                $product = Product::where('sku', $sku)->first();
+                if ($product === null) {
+                    $this->warn("  ✗ {$sku}: local product missing — skipped");
+                    $failed++;
+
+                    continue;
+                }
+                try {
+                    // dispatchSync runs the job inline, so we can capture the
+                    // back-fill of woo_product_id without waiting on Horizon.
+                    PublishProductJob::dispatchSync((int) $product->id, 0);
+                    $product->refresh();
+                    if ($product->woo_product_id !== null && (int) $product->woo_product_id > 0) {
+                        $this->line(sprintf('  ✓ %s → Woo #%d', $sku, $product->woo_product_id));
+                        $published++;
+                    } else {
+                        // No woo_product_id back-filled = shadow mode (WOO_WRITE_ENABLED=false)
+                        // or some other no-op path. Stays in review inbox.
+                        $this->warn("  ⊘ {$sku}: no Woo id back-filled (shadow mode?) — stays in review inbox");
+                        $shadowed++;
+                    }
+                } catch (\Throwable $e) {
+                    $this->warn(sprintf('  ✗ %s: %s', $sku, $e->getMessage()));
+                    $failed++;
+                }
+            }
+            $this->newLine();
+            $this->info(sprintf(
+                'Auto-publish complete: %d live on Woo, %d shadowed, %d failed.',
+                $published, $shadowed, $failed,
+            ));
+        }
+
         $this->newLine();
-        $this->info("Done. {$count} draft(s) ready in /admin/auto-create-reviews.");
+        if ($autoApprove) {
+            $this->info("Done. Batch of {$count} processed end-to-end.");
+        } else {
+            $this->info("Done. {$count} draft(s) ready in /admin/auto-create-reviews.");
+        }
 
         return SymfonyCommand::SUCCESS;
     }

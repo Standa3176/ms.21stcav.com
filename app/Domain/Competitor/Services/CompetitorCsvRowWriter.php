@@ -41,8 +41,7 @@ final class CompetitorCsvRowWriter
         private readonly PriceParser $priceParser,
         private readonly OrphanDetector $orphanDetector,
         private readonly PriceCalculator $priceCalculator,
-    ) {
-    }
+    ) {}
 
     /**
      * @param  array<string, mixed>  $mapping  keys: sku_column_index, price_column_index, decimal_format
@@ -57,6 +56,29 @@ final class CompetitorCsvRowWriter
         $values = array_values($row);     // tolerate both numeric and associative rows
         $sku = trim((string) ($values[$skuIdx] ?? ''));
         $priceRaw = (string) ($values[$priceIdx] ?? '');
+
+        // 2026-05-31 — silently skip two classes of noise BEFORE the SKU-fallback
+        // heuristic below (which would otherwise rescue a fake-SKU from the id
+        // column for these rows and then log them as "non-numeric price" errors,
+        // which is exactly the 1,065-error Onedirect pile-up we just cleaned up):
+        //
+        //   a) DUPLICATE HEADER ROWS — competitor exports that append on each run
+        //      (Onedirect ships SKU,Price,Name,id,createdAt,updatedAt fresh in
+        //      every export, accumulating headers throughout the file).
+        //   b) INFORMATIONAL NAME-ONLY ROWS — both SKU and Price columns empty
+        //      (Onedirect lists out-of-stock / EOL products with just a name +
+        //      internal id + timestamps; no actionable competitor price data).
+        //
+        // Returning here writes nothing + logs nothing — neither rows_written
+        // nor rows_errored is incremented, matching the existing semantics of
+        // "a row that holds no data".
+        $priceTrim = trim($priceRaw);
+        $looksLikeRepeatedHeader = strcasecmp($sku, 'sku') === 0
+            && strcasecmp($priceTrim, 'price') === 0;
+        $hasNoActionableData = $sku === '' && $priceTrim === '';
+        if ($looksLikeRepeatedHeader || $hasNoActionableData) {
+            return;
+        }
 
         // Quick task 260504-edk — when the configured SKU column is empty, fall
         // back to the first non-empty short alphanumeric token elsewhere in the

@@ -34,7 +34,27 @@ class TaxonomyResolver
 {
     private const CACHE_TTL_SECONDS = 3600;
 
-    private const FUZZY_THRESHOLD = 0.55;
+    /**
+     * Brand-name fuzzy-match threshold (max of jaccard + similar_text).
+     *
+     * 0.85 is calibrated to PASS the legitimate cases on this storefront:
+     *   - exact match → 1.00 (e.g. "Yealink" → "Yealink")
+     *   - substring contains → 0.90 (e.g. "Yealink - SIP" → "Yealink",
+     *     "Neatframe Limited" → "Neat")
+     *
+     * And REJECT cross-brand letter-swaps that the previous 0.55 threshold
+     * allowed:
+     *   - similar_text("lindy","linsn") = 0.60 → would falsely match
+     *   - similar_text("denon","drawmer") = ~0.55 → would falsely match
+     *
+     * Set 2026-06-01 after 4 LINDY products were created with brand "Linsn"
+     * on the storefront — the resolver picked Linsn as closest fuzzy match
+     * because Lindy didn't exist in the WC native brands list at the time.
+     * If new edge cases surface, tighten more (don't loosen) — false-positive
+     * brand mappings propagate into tags + spec table + product_brand
+     * taxonomy and are visible on the storefront.
+     */
+    private const FUZZY_THRESHOLD = 0.85;
 
     public function __construct(private WooClient $woo) {}
 

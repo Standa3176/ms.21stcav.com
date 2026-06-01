@@ -84,7 +84,36 @@ final class PublishProductJob implements ShouldQueue
             $response = $woo->put("products/{$wooId}", ['status' => 'publish']);
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
-            $response = $woo->post('products', $this->buildCreatePayload($product, $calculator));
+            $payload = $this->buildCreatePayload($product, $calculator);
+
+            try {
+                $response = $woo->post('products', $payload);
+            } catch (\Throwable $e) {
+                // WC 9.x rejects duplicate `global_unique_id` (GTIN/EAN) values.
+                // Some suppliers share one EAN across SKU variants (Optoma
+                // H1F0H06/H1F0H07, Cisco device-vs-bundle, Epson colour
+                // variants, etc.). When that happens, retry ONCE without the
+                // EAN — published-no-GTIN beats not-published-at-all.
+                // Also clear local EAN so subsequent ops don't re-collide.
+                // 2026-06-01: 3 SKUs blocked tonight's batch (H1F0H07BW101,
+                // CP-8821-K9-BUN, V11HB07140) before this retry shipped.
+                if (
+                    is_string($e->getMessage())
+                    && str_contains($e->getMessage(), 'product_invalid_global_unique_id')
+                    && ! empty($payload['global_unique_id'])
+                ) {
+                    Log::info('auto_create.publish.ean_collision_retry', [
+                        'product_id' => $product->id,
+                        'sku' => $product->sku,
+                        'ean' => $payload['global_unique_id'],
+                    ]);
+                    unset($payload['global_unique_id']);
+                    $response = $woo->post('products', $payload);
+                    $product->forceFill(['ean' => null])->saveQuietly();
+                } else {
+                    throw $e;
+                }
+            }
 
             $newWooId = (int) ($response['id'] ?? 0);
             if ($newWooId > 0) {

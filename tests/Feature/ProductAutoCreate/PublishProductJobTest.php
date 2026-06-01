@@ -278,6 +278,79 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->handle($woo2, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 });
 
+it('path B: retries WITHOUT global_unique_id when WC rejects EAN as duplicate', function (): void {
+    // WC 9.x rejects duplicate GTINs. Some suppliers share one EAN across SKU
+    // variants (Optoma H1F0H06/H1F0H07, Cisco device/bundle, Epson colour
+    // variants etc.) — 3 SKUs blocked tonight's 2026-06-01 batch before this
+    // retry shipped. Behaviour: catch product_invalid_global_unique_id,
+    // re-POST without the global_unique_id field, AND clear local EAN so
+    // future ops do not re-collide.
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'EAN-DUPE-1',
+        'name' => 'EAN-Collision Widget',
+        'sell_price' => 30.00,
+        'ean' => '5055387668683', // a real collision-prone EAN shape
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    // First POST — has global_unique_id, WC rejects with the magic error code.
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ($p['global_unique_id'] ?? null) === '5055387668683'))
+        ->andThrow(new RuntimeException('Error: Invalid or duplicated GTIN, UPC, EAN or ISBN. [product_invalid_global_unique_id]'));
+
+    // Retry POST — no global_unique_id, succeeds.
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('global_unique_id', $p)))
+        ->andReturn(['id' => 9999, 'slug' => 'ean-collision-widget']);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
+
+    $product->refresh();
+    expect((int) $product->woo_product_id)->toBe(9999);
+    expect($product->auto_create_status)->toBe('published');
+    // Local EAN cleared so future ops do NOT re-collide.
+    expect($product->ean)->toBeNull();
+});
+
+it('path B: re-throws on unrelated errors instead of stripping EAN', function (): void {
+    // Sanity: a non-EAN-collision error must NOT be silently retried —
+    // otherwise we mask genuine bugs by losing the EAN field on retry.
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'OTHER-ERR-1',
+        'name' => 'Other-Error Widget',
+        'sell_price' => 20.00,
+        'ean' => '1234567890123',
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')
+        ->once()
+        ->andThrow(new RuntimeException('Error: Some completely different WC validation message.'));
+
+    expect(function () use ($product, $woo): void {
+        (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+            ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
+    })->toThrow(RuntimeException::class);
+
+    $product->refresh();
+    expect($product->woo_product_id)->toBeNull();
+    expect($product->ean)->toBe('1234567890123'); // preserved
+    expect($product->auto_create_status)->toBe('draft'); // still in inbox
+});
+
 it('path B: NEVER includes brands payload key, even when brand_id is set', function (): void {
     // 2026-05-31 investigation showed pushing `brands: [{id}]` to the WC
     // products endpoint is silently dropped on meetingstore.co.uk — the live

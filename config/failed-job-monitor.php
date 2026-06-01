@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Alerting\Notifiables\NullNotifiable;
 use Spatie\FailedJobMonitor\Notification;
 
 /*
@@ -13,10 +14,20 @@ use Spatie\FailedJobMonitor\Notification;
 | alerting via App\Domain\Alerting\Listeners\ThrottledFailedJobNotifier
 | (registered on Illuminate\Queue\Events\JobFailed in EventServiceProvider).
 |
-| This config SUPPRESSES the spatie package's auto-listener by setting
-| `notifiable => null`. With a null notifiable, the package's built-in
-| JobFailed listener short-circuits before notifying, leaving our custom
-| ThrottledFailedJobNotifier as the only email path.
+| This config SUPPRESSES the spatie package's auto-listener by sending its
+| notification to App\Domain\Alerting\Notifiables\NullNotifiable, whose
+| notify() method is a no-op.
+|
+| Previously this was `notifiable => null`, but the package's
+| FailedJobNotifier unconditionally calls
+|   $notifiable = app(config('failed-job-monitor.notifiable'));
+|   ...
+|   $notifiable->notify($notification);
+| With a null config value, `app(null)` returns the Illuminate Application
+| instance, and Application::notify() doesn't exist → BadMethodCallException
+| on every job failure. The exception cascaded into job-failure paths
+| (e.g. PublishProductJob retries), hiding the original exception. Fixed
+| 2026-06-01.
 |
 | Do NOT restore the default `\Spatie\FailedJobMonitor\Notifiable::class`
 | unless you also unregister our listener — that would double-send alerts.
@@ -31,9 +42,10 @@ return [
     'notification' => Notification::class,
 
     /*
-     * Package's auto-listener notifiable is DISABLED — our listener owns dispatch.
+     * Package's auto-listener notifiable is a NO-OP sink — our listener
+     * (ThrottledFailedJobNotifier in EventServiceProvider) owns dispatch.
      */
-    'notifiable' => null,
+    'notifiable' => NullNotifiable::class,
 
     'notificationFilter' => null,
 

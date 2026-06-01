@@ -86,6 +86,21 @@ final class PublishProductJob implements ShouldQueue
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
             $payload = $this->buildCreatePayload($product, $calculator);
 
+            // SPLIT WRITE — POST creates the product WITHOUT regular_price,
+            // then a follow-up PUT sets the price in isolation. Why: the
+            // storefront's Cost-of-Goods plugin (_alg_wc_cog_*) hooks into
+            // product save and recomputes/clobbers regular_price when other
+            // fields are mass-updated in the same save cycle. Verified
+            // 2026-05-31 — the original POST left regular_price empty on all
+            // 26 of the first batch; the resync split-PUT (price-first PUT
+            // alone, then everything else) made it stick. We bake the same
+            // isolation into the create path here so future batches don't
+            // need the manual resync-for-price step. Trade-off: 2 HTTP calls
+            // per create instead of 1; the price PUT is cheap (single field)
+            // so latency cost is ~50-100ms per product.
+            $deferredPrice = $payload['regular_price'] ?? null;
+            unset($payload['regular_price']);
+
             try {
                 $response = $woo->post('products', $payload);
             } catch (\Throwable $e) {
@@ -124,6 +139,26 @@ final class PublishProductJob implements ShouldQueue
                     'slug' => (string) ($response['slug'] ?? $product->slug),
                 ])->saveQuietly();
                 $wooId = $newWooId;
+
+                // SPLIT-PUT step 2 — set regular_price now that the product
+                // exists and the Cost-of-Goods plugin's create-time recompute
+                // has fired. A price-only PUT doesn't re-trigger CoG's hooks
+                // (it watches for buy_price changes, not regular_price), so
+                // our value sticks. Failures are non-fatal — the product is
+                // already live; the operator can fix price in admin.
+                if ($deferredPrice !== null && $deferredPrice !== '') {
+                    try {
+                        $woo->put("products/{$wooId}", ['regular_price' => $deferredPrice]);
+                    } catch (\Throwable $priceErr) {
+                        Log::warning('auto_create.publish.price_put_failed', [
+                            'product_id' => $product->id,
+                            'sku' => $product->sku,
+                            'woo_id' => $wooId,
+                            'price' => $deferredPrice,
+                            'error' => $priceErr->getMessage(),
+                        ]);
+                    }
+                }
             }
         }
 

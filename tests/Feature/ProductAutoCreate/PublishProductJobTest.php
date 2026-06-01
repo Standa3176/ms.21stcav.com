@@ -124,7 +124,7 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
     ]);
 
     $woo = Mockery::mock(WooClient::class);
-    $woo->shouldNotReceive('put');
+    // Path B split-write: POST creates the product WITHOUT regular_price.
     $woo->shouldReceive('post')
         ->once()
         ->with('products', Mockery::on(function (array $payload): bool {
@@ -133,7 +133,7 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
                 && $payload['slug'] === 'acme-widget'
                 && $payload['status'] === 'publish'
                 && $payload['type'] === 'simple'
-                && $payload['regular_price'] === '120.00'
+                && ! array_key_exists('regular_price', $payload)   // ← price stripped from POST
                 && $payload['short_description'] === 'Short blurb'
                 && $payload['description'] === '<p>Long body</p>'
                 && $payload['categories'] === [['id' => 42], ['id' => 99]]
@@ -143,6 +143,12 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
                 ];
         }))
         ->andReturn(['id' => 90210, 'slug' => 'acme-widget-2']);
+    // Follow-up PUT sets regular_price in isolation (Cost-of-Goods plugin
+    // bypass — see PublishProductJob docblock).
+    $woo->shouldReceive('put')
+        ->once()
+        ->with('products/90210', ['regular_price' => '120.00'])
+        ->andReturn(['id' => 90210, 'regular_price' => '120.00']);
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 3);
     $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
@@ -158,6 +164,50 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
             && $e->wooProductId === 90210
             && $e->publishedByUserId === 3;
     });
+});
+
+it('path B: split-write — price-PUT failure does NOT roll back the create', function (): void {
+    // The storefront Cost-of-Goods plugin clobbers regular_price when other
+    // fields are mass-updated in the same save cycle, so PublishProductJob
+    // splits the create into a POST (no price) + follow-up PUT (price only).
+    // If the PRICE-only PUT fails, the product is already live on Woo — we
+    // must NOT roll back. Log + continue + leave the product published-but-
+    // priceless (operator can fix in admin).
+    Event::fake([ProductPublished::class]);
+
+    $product = Product::factory()->create([
+        'woo_product_id' => null,
+        'sku' => 'PRICE-PUT-FAIL-1',
+        'name' => 'Price-PUT-Fail Widget',
+        'sell_price' => 75.00,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    // POST succeeds (no price in payload).
+    $woo->shouldReceive('post')
+        ->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('regular_price', $p)))
+        ->andReturn(['id' => 7777, 'slug' => 'price-put-fail-widget']);
+
+    // Price-only PUT fails — must NOT block publish.
+    $woo->shouldReceive('put')
+        ->once()
+        ->with('products/7777', ['regular_price' => '75.00'])
+        ->andThrow(new RuntimeException('Some random WC timeout'));
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
+
+    $product->refresh();
+    // Product IS published — the create succeeded.
+    expect((int) $product->woo_product_id)->toBe(7777);
+    expect($product->auto_create_status)->toBe('published');
+    expect($product->status)->toBe('publish');
+
+    // Event fires (PublishProductJob's responsibility is "did we put it live")
+    Event::assertDispatched(ProductPublished::class);
 });
 
 it('shadow mode: path B does NOT mark published and fires no event (stays in review)', function (): void {
@@ -193,7 +243,7 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
         'woo_product_id' => null,
         'sku' => 'ATTR-SKU-1',
         'name' => 'Spec-Rich Widget',
-        'sell_price' => 50.00,
+        'sell_price' => null,
         'attributes_json' => [
             ['name' => 'Brand', 'value' => 'Acme'],
             ['name' => 'Resolution', 'value' => '4K UHD'],
@@ -242,7 +292,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         'woo_product_id' => null,
         'sku' => 'EAN-SKU-1',
         'name' => 'GTIN Widget',
-        'sell_price' => 25.00,
+        'sell_price' => null,
         'ean' => '7090043790993',
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -262,7 +312,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         'woo_product_id' => null,
         'sku' => 'NO-EAN-1',
         'name' => 'No GTIN Widget',
-        'sell_price' => 10.00,
+        'sell_price' => null,
         'ean' => null,
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -310,6 +360,12 @@ it('path B: retries WITHOUT global_unique_id when WC rejects EAN as duplicate', 
         ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('global_unique_id', $p)))
         ->andReturn(['id' => 9999, 'slug' => 'ean-collision-widget']);
 
+    // Follow-up PUT sets price (split-write).
+    $woo->shouldReceive('put')
+        ->once()
+        ->with('products/9999', ['regular_price' => '30.00'])
+        ->andReturn(['id' => 9999, 'regular_price' => '30.00']);
+
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
         ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver());
 
@@ -329,7 +385,7 @@ it('path B: re-throws on unrelated errors instead of stripping EAN', function ()
         'woo_product_id' => null,
         'sku' => 'OTHER-ERR-1',
         'name' => 'Other-Error Widget',
-        'sell_price' => 20.00,
+        'sell_price' => null,
         'ean' => '1234567890123',
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -367,7 +423,7 @@ it('path B: NEVER includes brands payload key, even when brand_id is set', funct
         'woo_product_id' => null,
         'sku' => 'BRAND-1',
         'name' => 'Branded Widget',
-        'sell_price' => 50.00,
+        'sell_price' => null,
         'brand_id' => 2907,
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -390,7 +446,7 @@ it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping
         'woo_product_id' => null,
         'sku' => 'TAG-1',
         'name' => 'Tagged Widget',
-        'sell_price' => 25.00,
+        'sell_price' => null,
         'tags' => ['Conferencing', '', '  Conferencing  ', 'Bestseller', '   '],
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -420,7 +476,7 @@ it('path B: omits tags payload key when products.tags is null or empty', functio
         'woo_product_id' => null,
         'sku' => 'NOTAG-1',
         'name' => 'Untagged Widget',
-        'sell_price' => 10.00,
+        'sell_price' => null,
         'tags' => [],
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -443,7 +499,7 @@ it('path B: omits attributes payload key when attributes_json is null or empty (
         'woo_product_id' => null,
         'sku' => 'NOATTR-1',
         'name' => 'Bare Widget',
-        'sell_price' => 10.00,
+        'sell_price' => null,
         'attributes_json' => null,
         'auto_create_status' => 'draft',
         'status' => 'draft',

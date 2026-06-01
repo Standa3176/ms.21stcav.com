@@ -9,6 +9,7 @@ use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -241,6 +242,32 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $this->newLine();
         $this->info('==> products:generate-drafts');
         $this->call('products:generate-drafts', ['--skus' => $skusCsv]);
+
+        // ── 7a. Mark matching suggestions as applied ───────────────────
+        // generate-drafts creates a local Product row per SKU it handled.
+        // The corresponding Suggestion (kind=new_product_opportunity,
+        // status=pending) should flip to status=applied so the same SKU
+        // is not re-surfaced on the next batch. Without this, every
+        // run of products:draft-from-suggestions used to silently re-
+        // process already-drafted SKUs and pending stayed flat at 14,101
+        // (operator hit this 2026-06-01 and had to backfill 330 rows by
+        // hand — see commits 26e7e01 / 60cb7e2 era).
+        // Match on evidence.sku via JSON_EXTRACT. Only marks suggestions
+        // for SKUs whose local Product actually exists after drafting
+        // (so we never falsely mark applied on a Claude failure or
+        // supplier-row miss — those products won't be in $createdSkus).
+        $createdSkus = Product::whereIn('sku', $skuList)->pluck('sku')->toArray();
+        $marked = Suggestion::where('kind', 'new_product_opportunity')
+            ->where('status', 'pending')
+            ->whereIn(
+                DB::raw('JSON_UNQUOTE(JSON_EXTRACT(evidence, "$.sku"))'),
+                $createdSkus,
+            )
+            ->update(['status' => 'applied']);
+        $this->info(sprintf(
+            '==> marked %d suggestion(s) as applied (was pending)',
+            $marked,
+        ));
 
         $this->newLine();
         $this->info('==> products:assign-taxonomy');

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -36,15 +35,18 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if ($this->isAlreadyText()) {
+        // SQLite stores TEXT-like columns dynamically — there is no fixed
+        // VARCHAR(255) constraint to widen. The original create migration
+        // used $t->string() which on SQLite already maps to TEXT-ish under
+        // the hood. So the migration is a no-op on SQLite (tests run on
+        // :memory: SQLite). Production MySQL is the only target.
+        if (Schema::getConnection()->getDriverName() !== 'mysql') {
             return;
         }
 
-        Schema::table('integration_events', function (Blueprint $t) {
-            // doctrine/dbal is NOT installed in this project, so use a
-            // raw statement (Laravel's $t->text(...)->change() requires
-            // doctrine/dbal for schema introspection).
-        });
+        if ($this->isAlreadyText()) {
+            return;
+        }
 
         Schema::getConnection()->statement(
             'ALTER TABLE integration_events MODIFY endpoint TEXT NULL',
@@ -53,6 +55,10 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (Schema::getConnection()->getDriverName() !== 'mysql') {
+            return;
+        }
+
         // Defensive: only narrow back if currently TEXT. Rolling back to
         // VARCHAR(255) on a prod row that exceeds 255 chars would silently
         // truncate, so this down() is best-effort.
@@ -65,6 +71,9 @@ return new class extends Migration
         );
     }
 
+    /**
+     * MySQL-only — caller guards on getDriverName() === 'mysql' before invoking.
+     */
     private function isAlreadyText(): bool
     {
         $row = Schema::getConnection()->selectOne(

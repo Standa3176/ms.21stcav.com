@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Pricing\Services;
 
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Models\SupplierOfferSnapshot;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -282,12 +281,24 @@ final class CompetitorPositionScanner
     }
 
     /**
-     * Batched product_id → cheapest-current supplier_name map (Products domain —
-     * deptrac-allowed). Mirrors PriceHistoryPage's cheapest-current selection
+     * Batched product_id → cheapest-current supplier_name map.
+     *
+     * Mirrors PriceHistoryPage's cheapest-current selection
      * (recorded_at DESC, price ASC) so the displayed supplier MATCHES the offer
      * that set buy_price. Restricted to the same recency window as the scan so an
      * aged-out offer never surfaces a stale supplier. Returns no entry (→ null at
      * the call site) for products with no qualifying offer row.
+     *
+     * 2026-06-01: rewritten from Eloquent `whereIn->get()` to a windowed SQL
+     * pass after the pricing-operations page hit a 128 MB PHP OOM. The old
+     * implementation pulled EVERY snapshot row in the window for the matched-
+     * product id set (potentially ~100K rows × full Eloquent hydration with
+     * casts + activitylog hooks) just to keep the first row per product in
+     * PHP. The window function returns at most ONE row per product, so the
+     * result set drops to O(products) instead of O(snapshots).
+     *
+     * MySQL 8 + SQLite ≥ 3.25 both support ROW_NUMBER() — matches
+     * lowestCompetitorByKey's existing pattern.
      *
      * @param  array<int, int>  $productIds
      * @return array<int, string>
@@ -299,29 +310,27 @@ final class CompetitorPositionScanner
         }
 
         $cutoffDate = today()->subDays($maxAgeDays)->toDateString();
+        $placeholders = implode(',', array_fill(0, count($productIds), '?'));
 
-        // Single query; group + pick cheapest-current per product in PHP. The id
-        // set is bounded by the kept rows so this stays one pass (no N+1).
-        $offers = SupplierOfferSnapshot::query()
-            ->whereIn('product_id', $productIds)
-            ->whereNotNull('price')
-            ->where('recorded_at', '>=', $cutoffDate)
-            ->orderBy('recorded_at', 'desc')
-            ->orderBy('price', 'asc')
-            ->get(['product_id', 'supplier_name', 'price', 'recorded_at']);
+        $rows = DB::select(
+            'SELECT product_id, supplier_name FROM ('
+            .'SELECT product_id, supplier_name, '
+            .'ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC, price ASC) AS rn '
+            .'FROM supplier_offer_snapshots '
+            .'WHERE recorded_at >= ? AND price IS NOT NULL '
+            .'AND product_id IN ('.$placeholders.')'
+            .') t WHERE t.rn = 1',
+            array_merge([$cutoffDate], array_values($productIds)),
+        );
 
         /** @var array<int, string> $names */
         $names = [];
-        foreach ($offers as $offer) {
-            $pid = (int) $offer->product_id;
-            if (isset($names[$pid])) {
-                continue; // first row per product = cheapest current (ordering above)
-            }
-            $supplierName = $offer->supplier_name;
-            if ($supplierName === null || $supplierName === '') {
+        foreach ($rows as $r) {
+            $name = $r->supplier_name ?? null;
+            if ($name === null || $name === '') {
                 continue;
             }
-            $names[$pid] = (string) $supplierName;
+            $names[(int) $r->product_id] = (string) $name;
         }
 
         return $names;

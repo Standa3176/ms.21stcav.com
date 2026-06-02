@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Products\Filament\Resources;
 
 use App\Domain\Products\Filament\Resources\ProductExceptionResource\Pages;
+use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductException;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -21,6 +23,7 @@ use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * Operator-managed SKU allowlist preventing the supplier-sync demotion
@@ -59,12 +62,46 @@ class ProductExceptionResource extends Resource
     public static function form(Form $form): Form
     {
         return $form->schema([
-            TextInput::make('sku')
+            // Searchable SKU picker — same pattern as ProductOverrideResource
+            // but storing the sku string (not a foreign key) so the
+            // FlagProductsMissingBuyPriceCommand hashmap lookup stays
+            // O(1) and the audit log column matches what shows up on
+            // Woo + integration_events.
+            //
+            // Search hits both sku AND product name (operator may know
+            // the part by name, not the cryptic SKU). Display shows
+            // "SKU — Name" so the operator can confirm they picked the
+            // right row. Free-text input deliberately removed — too
+            // easy to typo or whitespace-paste a SKU that does not
+            // exist locally.
+            Select::make('sku')
                 ->label('SKU')
-                ->helperText('Exact SKU as it appears on Woo + in supplier_db.')
+                ->helperText('Search by SKU or product name. Picks from the products table — prevents typos.')
                 ->required()
-                ->unique(ignoreRecord: true)
-                ->maxLength(64),
+                ->unique(ignoreRecord: true, table: 'product_exceptions', column: 'sku')
+                ->searchable()
+                ->getSearchResultsUsing(fn (string $search): array => Product::query()
+                    ->where(function ($q) use ($search) {
+                        $q->where('sku', 'like', "%{$search}%")
+                            ->orWhere('name', 'like', "%{$search}%");
+                    })
+                    ->orderBy('sku')
+                    ->limit(50)
+                    ->get(['sku', 'name'])
+                    ->mapWithKeys(fn (Product $p) => [
+                        $p->sku => $p->sku.' — '.Str::limit((string) $p->name, 70),
+                    ])
+                    ->all())
+                ->getOptionLabelUsing(function (?string $value): string {
+                    if ($value === null || $value === '') {
+                        return '';
+                    }
+                    $p = Product::query()->where('sku', $value)->first(['sku', 'name']);
+
+                    return $p === null
+                        ? $value.' — (not found in local products)'
+                        : $p->sku.' — '.Str::limit((string) $p->name, 70);
+                }),
             TextInput::make('reason')
                 ->label('Reason')
                 ->helperText('Short label — shows in the table.')

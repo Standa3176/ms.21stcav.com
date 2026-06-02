@@ -50,9 +50,11 @@ final class DraftFromSuggestionsCommand extends BaseCommand
 
     protected $signature = 'products:draft-from-suggestions
         {--brands= : Comma-separated case-insensitive brand filter. Default: all brands on Woo.}
+        {--skus= : Comma-separated explicit SKU list. When set, bypass the Suggestion walk and use these SKUs directly (still filtered to sourceable + brand-on-Woo). Used by the Filament "Auto-create all in this tab" header action.}
         {--limit=100 : Max products to include in this batch (0 = unbounded — careful)}
         {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
         {--auto-approve : Bypass the review inbox — auto-dispatch PublishProductJob to push each draft live on Woo (requires WOO_WRITE_ENABLED=true)}
+        {--no-confirm : Skip the interactive confirmation prompt (queue/job invocation). Implicitly set when stdin is non-interactive.}
         {--dry-run : Print the SKU list + cost estimate, do not call generate-drafts}';
 
     protected $description = 'Pre-filter Suggestions → chain generate-drafts + assign-taxonomy for sourceable + brand-on-Woo products.';
@@ -71,6 +73,9 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $sourceImages = (bool) $this->option('source-images');
         $autoApprove = (bool) $this->option('auto-approve');
         $dryRun = (bool) $this->option('dry-run');
+        $explicitSkus = $this->parseSkusOption((string) ($this->option('skus') ?? ''));
+        $skipConfirm = (bool) $this->option('no-confirm')
+            || ! $this->input->isInteractive();
 
         // ── 1. Resolve current Woo brand list (cached by TaxonomyResolver) ──
         $wooBrandsByLower = [];
@@ -122,65 +127,92 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         /** @var array<string, array<int, string>> $byBrand  canonical brand → [skus] */
         $byBrand = [];
 
-        DB::table('suggestions')
-            ->where('kind', 'new_product_opportunity')
-            ->where('status', 'pending')
-            ->orderBy('id')
-            ->chunk(200, function ($rows) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, $limit) {
+        // Chunk processor — accepts an iterable of {evidence-shape stdClass} OR
+        // can be invoked directly with an array of raw SKU strings via the
+        // adapter below. Returns false to stop processing (limit reached).
+        $chunkProcessor = function (iterable $skusInChunk) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, $limit): bool {
+            if ($limit > 0 && count($candidates) >= $limit) {
+                return false; // stop processing
+            }
+            $skus = [];
+            foreach ($skusInChunk as $sku) {
+                $sku = trim((string) $sku);
+                if ($sku !== '' && ! isset($candidates[$sku])) {
+                    $skus[] = $sku;
+                }
+            }
+            if ($skus === []) {
+                return true;
+            }
+
+            $ph = implode(',', array_fill(0, count($skus), '?'));
+            $stmt = $m->prepare("SELECT suppliersku, mpn, manufacturer FROM supplier_products WHERE suppliersku IN ($ph) OR mpn IN ($ph)");
+            $params = array_merge($skus, $skus);
+            $stmt->bind_param(str_repeat('s', count($params)), ...$params);
+            $stmt->execute();
+            $supMap = [];
+            $res = $stmt->get_result();
+            while ($r = $res->fetch_assoc()) {
+                $mfr = trim((string) $r['manufacturer']);
+                if ($mfr === '') {
+                    continue;
+                }
+                $supMap[strtolower((string) $r['suppliersku'])] = $mfr;
+                $supMap[strtolower((string) $r['mpn'])] = $mfr;
+            }
+            $stmt->close();
+
+            foreach ($skus as $sku) {
                 if ($limit > 0 && count($candidates) >= $limit) {
-                    return false; // stop chunking
+                    return false;
                 }
-                $skus = [];
-                foreach ($rows as $sug) {
-                    $ev = json_decode((string) $sug->evidence, true);
-                    $sku = trim((string) ($ev['sku'] ?? ''));
-                    if ($sku !== '' && ! isset($candidates[$sku])) {
-                        $skus[] = $sku;
-                    }
+                $key = strtolower($sku);
+                if (! isset($supMap[$key])) {
+                    continue;
                 }
-                if ($skus === []) {
-                    return null;
+                $mfrLower = mb_strtolower($supMap[$key]);
+                if (! isset($wooBrandsByLower[$mfrLower])) {
+                    continue;
                 }
+                if ($brandsFilter !== null && ! in_array($mfrLower, $brandsFilter, true)) {
+                    continue;
+                }
+                $canonical = $wooBrandsByLower[$mfrLower];
+                $candidates[$sku] = $canonical;
+                $byBrand[$canonical][] = $sku;
+            }
 
-                $ph = implode(',', array_fill(0, count($skus), '?'));
-                $stmt = $m->prepare("SELECT suppliersku, mpn, manufacturer FROM supplier_products WHERE suppliersku IN ($ph) OR mpn IN ($ph)");
-                $params = array_merge($skus, $skus);
-                $stmt->bind_param(str_repeat('s', count($params)), ...$params);
-                $stmt->execute();
-                $supMap = [];
-                $res = $stmt->get_result();
-                while ($r = $res->fetch_assoc()) {
-                    $mfr = trim((string) $r['manufacturer']);
-                    if ($mfr === '') {
-                        continue;
-                    }
-                    $supMap[strtolower((string) $r['suppliersku'])] = $mfr;
-                    $supMap[strtolower((string) $r['mpn'])] = $mfr;
-                }
-                $stmt->close();
+            return true;
+        };
 
-                foreach ($skus as $sku) {
-                    if ($limit > 0 && count($candidates) >= $limit) {
-                        return false;
-                    }
-                    $key = strtolower($sku);
-                    if (! isset($supMap[$key])) {
-                        continue;
-                    }
-                    $mfrLower = mb_strtolower($supMap[$key]);
-                    if (! isset($wooBrandsByLower[$mfrLower])) {
-                        continue;
-                    }
-                    if ($brandsFilter !== null && ! in_array($mfrLower, $brandsFilter, true)) {
-                        continue;
-                    }
-                    $canonical = $wooBrandsByLower[$mfrLower];
-                    $candidates[$sku] = $canonical;
-                    $byBrand[$canonical][] = $sku;
+        // Source of SKUs: explicit --skus list (Filament tab bulk-action path)
+        // OR walk the pending Suggestions table (default operator path).
+        if ($explicitSkus !== []) {
+            $this->info('Using --skus list ('.count($explicitSkus).' SKU(s) provided) — bypassing Suggestion walk.');
+            foreach (array_chunk($explicitSkus, 200) as $skuChunk) {
+                if ($chunkProcessor($skuChunk) === false) {
+                    break;
                 }
+            }
+        } else {
+            DB::table('suggestions')
+                ->where('kind', 'new_product_opportunity')
+                ->where('status', 'pending')
+                ->orderBy('id')
+                ->chunk(200, function ($rows) use ($chunkProcessor) {
+                    // Adapt suggestion rows → raw SKU strings for the processor.
+                    $skus = [];
+                    foreach ($rows as $sug) {
+                        $ev = json_decode((string) $sug->evidence, true);
+                        $sku = trim((string) ($ev['sku'] ?? ''));
+                        if ($sku !== '') {
+                            $skus[] = $sku;
+                        }
+                    }
 
-                return null;
-            });
+                    return $chunkProcessor($skus) === false ? false : null;
+                });
+        }
 
         $m->close();
 
@@ -227,13 +259,19 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         }
 
         // ── 6. Confirm before spending real money / writing to live store ──
-        $confirmMsg = $autoApprove
-            ? "PUBLISH {$count} product(s) to LIVE Woo storefront? (auto-approve)"
-            : "Proceed with chained run on {$count} product(s)?";
-        if (! $this->confirm($confirmMsg, false)) {
-            $this->warn('Aborted by operator.');
+        // Skipped when --no-confirm is passed (queued job invocation path) or
+        // when stdin is non-interactive (e.g. cron, Horizon worker, CI).
+        if (! $skipConfirm) {
+            $confirmMsg = $autoApprove
+                ? "PUBLISH {$count} product(s) to LIVE Woo storefront? (auto-approve)"
+                : "Proceed with chained run on {$count} product(s)?";
+            if (! $this->confirm($confirmMsg, false)) {
+                $this->warn('Aborted by operator.');
 
-            return SymfonyCommand::FAILURE;
+                return SymfonyCommand::FAILURE;
+            }
+        } else {
+            $this->info('--no-confirm / non-interactive — proceeding without prompt.');
         }
 
         $skusCsv = implode(',', $skuList);
@@ -350,5 +388,27 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         );
 
         return array_values(array_unique(array_map('mb_strtolower', $parts)));
+    }
+
+    /**
+     * Parse the comma-separated --skus list. Returns [] when empty (operator
+     * is using the default Suggestion-walk path). Returns deduped trimmed
+     * SKU strings — case is PRESERVED here because SKUs are case-sensitive
+     * in Woo + supplier_db (downstream lookups handle their own normalisation).
+     *
+     * @return array<int, string>
+     */
+    private function parseSkusOption(string $raw): array
+    {
+        $raw = trim($raw);
+        if ($raw === '') {
+            return [];
+        }
+        $parts = array_filter(
+            array_map('trim', explode(',', $raw)),
+            static fn (string $s): bool => $s !== '',
+        );
+
+        return array_values(array_unique($parts));
     }
 }

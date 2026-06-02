@@ -103,7 +103,9 @@ use App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy;
 use App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand;
 use App\Domain\Products\Console\Commands\SnapshotsPruneCommand;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductException;
 use App\Domain\Products\Models\ProductVariant;
+use App\Domain\Products\Policies\ProductExceptionPolicy;
 use App\Domain\Products\Policies\ProductPolicy;
 use App\Domain\Products\Policies\ProductVariantPolicy;
 use App\Domain\Quotes\Console\Commands\QuotesExpireCommand;
@@ -424,6 +426,11 @@ class AppServiceProvider extends ServiceProvider
         // DO NOT regenerate via shield:generate — see per-policy docblocks.
         Gate::policy(Product::class, ProductPolicy::class);
         Gate::policy(ProductVariant::class, ProductVariantPolicy::class);
+        // Operator-managed allowlist preserving publish status against the
+        // FlagProductsMissingBuyPriceCommand demotion. Filament Resource at
+        // /admin/product-exceptions. admin+pricing_manager CRUD, sales+
+        // read_only view-only, admin-only delete.
+        Gate::policy(ProductException::class, ProductExceptionPolicy::class);
         Gate::policy(SyncRun::class, SyncRunPolicy::class);
         Gate::policy(ImportIssue::class, ImportIssuePolicy::class);
 

@@ -17,11 +17,13 @@ use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Infolists\Infolist;
+use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class SuggestionResource extends Resource
@@ -81,13 +83,13 @@ class SuggestionResource extends Resource
      * the request()-aware `when()` clause exposes them when the user has
      * filtered explicitly by kind.
      */
-    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    public static function getEloquentQuery(): Builder
     {
         return parent::getEloquentQuery()
             ->with(['resolvedByUser'])
             ->when(
                 ! request()->filled('tableFilters.kind.value'),
-                fn (\Illuminate\Database\Eloquent\Builder $q) => $q->where('kind', '!=', 'agent_guardrail_blocked'),
+                fn (Builder $q) => $q->where('kind', '!=', 'agent_guardrail_blocked'),
             );
     }
 
@@ -104,7 +106,7 @@ class SuggestionResource extends Resource
                     ->fontFamily('mono')
                     ->copyable()
                     ->placeholder('—')
-                    ->searchable(query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder => $query->where('evidence->sku', 'like', "%{$search}%")),
+                    ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('evidence->sku', 'like', "%{$search}%")),
                 // Comp — # of competitors tracking this orphan SKU. Sortable, and
                 // the table default-sorts on it DESC so the strongest
                 // opportunities (most competitors) surface first.
@@ -116,7 +118,7 @@ class SuggestionResource extends Resource
                         ? (int) (data_get($record->evidence, 'supporting_competitors', 0))
                         : null)
                     ->placeholder('—')
-                    ->sortable(query: fn (\Illuminate\Database\Eloquent\Builder $query, string $direction): \Illuminate\Database\Eloquent\Builder => $query->orderBy('evidence->supporting_competitors', $direction)),
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('evidence->supporting_competitors', $direction)),
                 // Which competitors list it (names from competitor_sightings[]).
                 TextColumn::make('competitors')
                     ->label('Competitors')
@@ -184,6 +186,40 @@ class SuggestionResource extends Resource
                     'applied' => 'Applied',
                     'failed' => 'Failed',
                 ]),
+                // Competitor-count bucket filter for new_product_opportunity
+                // suggestions. Reads the denormalised evidence.supporting_competitors
+                // value with a portable whereRaw (matches Laravel's JSON path
+                // syntax used elsewhere in this Resource for the SKU search).
+                // Replaces the tabs attempt (commits 41bcf90 / fd4028b / a389b8c)
+                // which produced a Filament 3 internal 500 — see commit f2391b8
+                // for the trace; the search wraps `where(Closure)` and somewhere
+                // in that chain $this->model goes null when tabs are involved.
+                // Filter-based UI sits in the existing filter row, no novel
+                // Filament integration paths.
+                SelectFilter::make('competitor_count_bucket')
+                    ->label('Competitor count')
+                    ->options([
+                        '3plus' => '3+ competitors',
+                        '2' => '2 competitors',
+                        '1' => '1 competitor',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if ($value === null || $value === '') {
+                            return $query;
+                        }
+                        $cmp = match ($value) {
+                            '3plus' => '>= 3',
+                            '2' => '= 2',
+                            '1' => '= 1',
+                            default => null,
+                        };
+                        if ($cmp === null) {
+                            return $query;
+                        }
+
+                        return $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) {$cmp}");
+                    }),
             ])
             ->actions([
                 Action::make('approve')
@@ -363,7 +399,7 @@ class SuggestionResource extends Resource
                         ]);
                         ApplySuggestionJob::dispatch($record->id);
 
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->success()
                             ->title('Auto-create replay dispatched')
                             ->body('Check the Auto-Create Review inbox after a few seconds.')
@@ -485,7 +521,7 @@ class SuggestionResource extends Resource
                         ]);
                         ApplySuggestionJob::dispatch($record->id);
 
-                        \Filament\Notifications\Notification::make()
+                        Notification::make()
                             ->success()
                             ->title('CRM push replay dispatched')
                             ->body('Check CRM Push Log after a few seconds for the retry result.')

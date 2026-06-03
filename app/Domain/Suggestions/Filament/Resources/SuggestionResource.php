@@ -222,10 +222,10 @@ class SuggestionResource extends Resource
                         return $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) {$cmp}");
                     }),
             ])
-            // Render filters inline above the table (instead of behind a
-            // funnel icon dropdown). Operator feedback 2026-06-03 —
-            // filters were too easy to miss in the default dropdown.
-            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
+            // Render filters always-visible above the table (operator
+            // feedback 2026-06-03 — Collapsible variant still hid them
+            // behind a funnel icon toggle, defeating the goal).
+            ->filtersLayout(FiltersLayout::AboveContent)
             ->actions([
                 Action::make('approve')
                     ->icon('heroicon-o-check-circle')

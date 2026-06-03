@@ -21,6 +21,7 @@ use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -221,6 +222,10 @@ class SuggestionResource extends Resource
                         return $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) {$cmp}");
                     }),
             ])
+            // Render filters inline above the table (instead of behind a
+            // funnel icon dropdown). Operator feedback 2026-06-03 —
+            // filters were too easy to miss in the default dropdown.
+            ->filtersLayout(FiltersLayout::AboveContentCollapsible)
             ->actions([
                 Action::make('approve')
                     ->icon('heroicon-o-check-circle')

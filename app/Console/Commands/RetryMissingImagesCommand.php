@@ -29,10 +29,11 @@ final class RetryMissingImagesCommand extends BaseCommand
     protected $signature = 'products:retry-missing-images
         {--brand= : Brand name (case-insensitive). When set, only products with this brand_id are retried.}
         {--days= : Only products created in the last N days.}
+        {--status= : Comma-separated auto_create_status values (e.g. draft,pending_review). Default: all non-null.}
         {--limit=0 : Max products this run (0 = unbounded).}
         {--all : Include legacy WC-migration products (auto_create_status IS NULL). DANGER: legacy products typically have images on Woo already; re-sourcing creates duplicates and burns Claude spend. Default behavior is auto-created products only.}
         {--resync : Also run products:resync-to-woo on the retried SKUs afterwards (push new images live).}
-        {--dry-run : List the SKUs that would be retried; do not call source-images.}';
+        {--dry-run : List the SKUs that would be retried + show status/age breakdown; do not call source-images.}';
 
     protected $description = 'Re-run products:source-images on products that have empty gallery_image_urls.';
 
@@ -45,6 +46,7 @@ final class RetryMissingImagesCommand extends BaseCommand
     {
         $brandName = trim((string) ($this->option('brand') ?? ''));
         $days = (int) ($this->option('days') ?? 0);
+        $statusFilter = array_values(array_filter(array_map('trim', explode(',', (string) ($this->option('status') ?? '')))));
         $limit = max(0, (int) $this->option('limit'));
         $includeAll = (bool) $this->option('all');
         $resync = (bool) $this->option('resync');
@@ -61,6 +63,11 @@ final class RetryMissingImagesCommand extends BaseCommand
             $this->info('Scoping to auto-created products only (auto_create_status IS NOT NULL). Pass --all to include legacy WC-migration products.');
         } else {
             $this->warn('--all is set: legacy WC-migration products will be included. These typically have Woo images already.');
+        }
+
+        if ($statusFilter !== []) {
+            $query->whereIn('auto_create_status', $statusFilter);
+            $this->info('Status filter: '.implode(', ', $statusFilter));
         }
 
         if ($days > 0) {
@@ -103,6 +110,39 @@ final class RetryMissingImagesCommand extends BaseCommand
 
         if ($dryRun) {
             $this->newLine();
+            $this->info('Breakdown by auto_create_status:');
+            $statusCounts = (clone $query)
+                ->selectRaw('auto_create_status, COUNT(*) as n')
+                ->groupBy('auto_create_status')
+                ->orderByDesc('n')
+                ->get();
+            foreach ($statusCounts as $row) {
+                $this->line('  '.str_pad((string) $row->n, 6, ' ', STR_PAD_LEFT).'  '.($row->auto_create_status ?? '(null)'));
+            }
+
+            $this->newLine();
+            $this->info('Breakdown by created_at age:');
+            $ageCounts = (clone $query)
+                ->selectRaw("CASE
+                    WHEN created_at >= DATE_SUB(NOW(), INTERVAL 1 DAY)  THEN '0-1d'
+                    WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)  THEN '1-7d'
+                    WHEN created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN '7-30d'
+                    WHEN created_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN '30-90d'
+                    ELSE '90d+'
+                END as bucket, COUNT(*) as n")
+                ->groupBy('bucket')
+                ->orderByRaw("FIELD(bucket, '0-1d','1-7d','7-30d','30-90d','90d+')")
+                ->get();
+            foreach ($ageCounts as $row) {
+                $this->line('  '.str_pad((string) $row->n, 6, ' ', STR_PAD_LEFT).'  '.$row->bucket);
+            }
+
+            $costPence = $count * 10;
+            $this->newLine();
+            $this->info(sprintf(
+                'Estimated Claude spend if you run this set: ~%dp (~£%s) at 10p/SKU.',
+                $costPence, number_format($costPence / 100, 2),
+            ));
             $this->info('Dry-run — exiting without calling source-images.');
 
             return SymfonyCommand::SUCCESS;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Suggestions\Filament\Resources;
 
+use App\Domain\ProductAutoCreate\Jobs\RunAutoCreatePipelineJob;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
@@ -13,6 +14,9 @@ use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Audit\Services\Auditor;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\Toggle;
+use Filament\Tables\Actions\BulkAction;
+use Illuminate\Database\Eloquent\Collection;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
@@ -541,6 +545,64 @@ class SuggestionResource extends Resource
             ->bulkActions([
                 static::getExportBulkAction(),
                 QueueCsvExportAction::make(static::class),
+                // Bulk auto-create — dispatches RunAutoCreatePipelineJob which
+                // wraps `products:draft-from-suggestions --skus=... --no-confirm`
+                // so the whole chain (generate-drafts → mark-applied →
+                // assign-taxonomy → source-images → auto-publish) runs in one
+                // Horizon job. Only operates on pending new_product_opportunity
+                // rows — other kinds in the selection are silently skipped.
+                BulkAction::make('auto_create_full')
+                    ->label('Auto-create selected (full pipeline)')
+                    ->icon('heroicon-o-sparkles')
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading('Auto-create selected SKUs end-to-end')
+                    ->modalDescription('Runs: generate Claude content → assign brand+category → source 3 validated images → push to Woo. Pipeline runs on Horizon. Non-pending or non-new-product-opportunity rows in the selection are ignored.')
+                    ->modalSubmitActionLabel('Dispatch')
+                    ->authorize(fn (): bool => auth()->user()?->hasRole('admin') ?? false)
+                    ->form([
+                        Toggle::make('source_images')
+                            ->label('Source images (Icecat + web vision-validated)')
+                            ->helperText('Disable for cheaper draft-only runs (~3p/SKU vs ~13p/SKU).')
+                            ->default(true),
+                        Toggle::make('auto_publish')
+                            ->label('Auto-publish to Woo (skip review inbox)')
+                            ->helperText('Publishes DIRECTLY to live storefront. Requires WOO_WRITE_ENABLED=true. Leave OFF to send drafts to /admin/auto-create-reviews for human approval.')
+                            ->default(false),
+                    ])
+                    ->action(function (Collection $records, array $data): void {
+                        $skus = $records
+                            ->filter(fn (Suggestion $s): bool => $s->kind === 'new_product_opportunity'
+                                && $s->status === Suggestion::STATUS_PENDING)
+                            ->map(fn (Suggestion $s): string => trim((string) data_get($s->evidence, 'sku', '')))
+                            ->filter(fn (string $sku): bool => $sku !== '')
+                            ->unique()
+                            ->values()
+                            ->all();
+
+                        if ($skus === []) {
+                            Notification::make()
+                                ->warning()
+                                ->title('No eligible rows in selection')
+                                ->body('Pick pending new_product_opportunity rows that have a SKU in evidence.')
+                                ->send();
+
+                            return;
+                        }
+
+                        RunAutoCreatePipelineJob::dispatch(
+                            $skus,
+                            (bool) ($data['source_images'] ?? true),
+                            (bool) ($data['auto_publish'] ?? false),
+                            (int) auth()->id(),
+                        );
+
+                        Notification::make()
+                            ->success()
+                            ->title(count($skus).' SKU(s) queued')
+                            ->body('Pipeline dispatched on the default queue. Watch /horizon → completed jobs, then /admin/products or /admin/auto-create-reviews.')
+                            ->send();
+                    }),
             ]);
     }
 

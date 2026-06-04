@@ -28,8 +28,9 @@ final class RetryMissingImagesCommand extends BaseCommand
 {
     protected $signature = 'products:retry-missing-images
         {--brand= : Brand name (case-insensitive). When set, only products with this brand_id are retried.}
-        {--days= : Only products created in the last N days. Use to scope to recent auto-create batches and avoid re-sourcing legacy WC-migration products that already have Woo images.}
+        {--days= : Only products created in the last N days.}
         {--limit=0 : Max products this run (0 = unbounded).}
+        {--all : Include legacy WC-migration products (auto_create_status IS NULL). DANGER: legacy products typically have images on Woo already; re-sourcing creates duplicates and burns Claude spend. Default behavior is auto-created products only.}
         {--resync : Also run products:resync-to-woo on the retried SKUs afterwards (push new images live).}
         {--dry-run : List the SKUs that would be retried; do not call source-images.}';
 
@@ -45,6 +46,7 @@ final class RetryMissingImagesCommand extends BaseCommand
         $brandName = trim((string) ($this->option('brand') ?? ''));
         $days = (int) ($this->option('days') ?? 0);
         $limit = max(0, (int) $this->option('limit'));
+        $includeAll = (bool) $this->option('all');
         $resync = (bool) $this->option('resync');
         $dryRun = (bool) $this->option('dry-run');
 
@@ -53,6 +55,13 @@ final class RetryMissingImagesCommand extends BaseCommand
                 $q->whereNull('gallery_image_urls')
                     ->orWhereRaw('JSON_LENGTH(gallery_image_urls) = 0');
             });
+
+        if (! $includeAll) {
+            $query->whereNotNull('auto_create_status');
+            $this->info('Scoping to auto-created products only (auto_create_status IS NOT NULL). Pass --all to include legacy WC-migration products.');
+        } else {
+            $this->warn('--all is set: legacy WC-migration products will be included. These typically have Woo images already.');
+        }
 
         if ($days > 0) {
             $since = now()->subDays($days);

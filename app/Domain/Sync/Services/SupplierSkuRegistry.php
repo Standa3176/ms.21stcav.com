@@ -6,44 +6,32 @@ namespace App\Domain\Sync\Services;
 
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
- * Cached membership registry for sourceable supplier SKUs.
+ * Local membership registry for sourceable supplier SKUs — backs the
+ * "On supplier DB" filter on /admin/suggestions.
  *
- * Streams the remote supplier feeds_products table once per CACHE_TTL_SECONDS
- * and stores a flat list of lowercased mpn + suppliersku keys in the Laravel
- * cache so Filament filter callbacks don't re-scan the feed on every page
- * render. Refresh is also wired to the scheduler post-supplier-sync.
+ * The remote supplier feed (feeds_products) is ~900k rows; loading those
+ * into a Laravel cache array + whereIn clause exceeds MySQL's packet
+ * size, so we materialise the keys into a local `supplier_sku_cache`
+ * table (one column: sku PRIMARY KEY). The filter then runs an EXISTS
+ * subquery against it — index-backed and fast at any scale.
  *
- * Read-only. Cache hot path returns an array<int, string> (lowercased,
- * deduped). Callers that need an O(1) lookup should array_flip() the result
- * (membership-test friendly: `isset($flipped['sku'])`).
+ * refresh() truncates the table and bulk-inserts the current feed in
+ * chunks of 1,000. Called by supplier:refresh-sku-cache (scheduled
+ * Mon-Fri 07:05 London, 5 min after supplier:db-sync) and safe to run
+ * by hand any time.
  */
 class SupplierSkuRegistry
 {
-    private const CACHE_KEY = 'supplier.sourceable_skus';
+    private const TABLE = 'supplier_sku_cache';
 
-    private const CACHE_TTL_SECONDS = 90000;
+    private const CHUNK_SIZE = 1000;
 
     public function __construct(private readonly IntegrationCredentialResolver $resolver) {}
 
-    /** @return array<int, string> */
-    public function allSourceableKeys(): array
-    {
-        return Cache::remember(self::CACHE_KEY, self::CACHE_TTL_SECONDS, fn (): array => $this->scanFeed());
-    }
-
     public function refresh(): int
-    {
-        $keys = $this->scanFeed();
-        Cache::put(self::CACHE_KEY, $keys, self::CACHE_TTL_SECONDS);
-
-        return count($keys);
-    }
-
-    /** @return array<int, string> */
-    private function scanFeed(): array
     {
         $creds = $this->resolver->for(IntegrationCredentialKind::SupplierDb);
 
@@ -70,18 +58,35 @@ class SupplierSkuRegistry
             throw new \RuntimeException("Feed scan failed: {$err}");
         }
 
-        /** @var array<string, true> $seen */
+        DB::table(self::TABLE)->truncate();
+
+        /** @var array<int, array{sku: string}> $buffer */
+        $buffer = [];
         $seen = [];
+        $inserted = 0;
+
         while ($row = $result->fetch_assoc()) {
             foreach ([(string) $row['mpn_key'], (string) $row['ssku_key']] as $k) {
-                if ($k !== '') {
-                    $seen[$k] = true;
+                if ($k === '' || isset($seen[$k])) {
+                    continue;
+                }
+                $seen[$k] = true;
+                $buffer[] = ['sku' => mb_substr($k, 0, 191)];
+                if (count($buffer) >= self::CHUNK_SIZE) {
+                    DB::table(self::TABLE)->insertOrIgnore($buffer);
+                    $inserted += count($buffer);
+                    $buffer = [];
                 }
             }
         }
+        if ($buffer !== []) {
+            DB::table(self::TABLE)->insertOrIgnore($buffer);
+            $inserted += count($buffer);
+        }
+
         $result->free();
         $db->close();
 
-        return array_keys($seen);
+        return $inserted;
     }
 }

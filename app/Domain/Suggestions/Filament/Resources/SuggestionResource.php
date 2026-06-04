@@ -227,10 +227,12 @@ class SuggestionResource extends Resource
                         return $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) {$cmp}");
                     }),
                 // "On supplier DB" — filter to SKUs that a supplier currently
-                // carries (per the cached SupplierSkuRegistry) so the operator
-                // can isolate the genuinely-actionable opportunities from
-                // competitor-only orphan parts. Lowercased-trim membership
-                // test mirrors the matching DraftFromSuggestionsCommand uses.
+                // carries (via the local supplier_sku_cache table, refreshed
+                // Mon-Fri 07:05 London by supplier:refresh-sku-cache) so the
+                // operator can isolate genuinely-actionable opportunities from
+                // competitor-only orphan parts. Uses an EXISTS subquery so it
+                // scales to the ~900k SKU feed without hitting MySQL packet
+                // limits. Lowercased-trim match mirrors DraftFromSuggestionsCommand.
                 SelectFilter::make('on_supplier_db')
                     ->label('On supplier DB')
                     ->options([
@@ -242,16 +244,11 @@ class SuggestionResource extends Resource
                         if ($value === null || $value === '') {
                             return $query;
                         }
-                        $keys = app(SupplierSkuRegistry::class)->allSourceableKeys();
-                        if ($keys === []) {
-                            return $query;
-                        }
-
-                        $skuExpr = "LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.sku'))))";
+                        $existsSub = "SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))))";
 
                         return $value === 'yes'
-                            ? $query->whereIn(\Illuminate\Support\Facades\DB::raw($skuExpr), $keys)
-                            : $query->whereNotIn(\Illuminate\Support\Facades\DB::raw($skuExpr), $keys);
+                            ? $query->whereRaw("EXISTS ($existsSub)")
+                            : $query->whereRaw("NOT EXISTS ($existsSub)");
                     }),
             ])
             // Render filters always-visible above the table (operator

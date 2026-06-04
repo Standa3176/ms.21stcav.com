@@ -74,6 +74,16 @@ Schedule::command('supplier:db-sync')
     ->timezone('Europe/London')
     ->description('Mon-Fri supplier MySQL VPS price + stock sync (07:00 London)');
 
+// Warm the cached set of sourceable supplier SKUs used by the
+// "On supplier DB" Filament filter on /admin/suggestions. Runs 5 minutes
+// after the supplier sync so the filter reflects today's catalogue.
+Schedule::command('supplier:refresh-sku-cache')
+    ->cron('5 7 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Refresh sourceable-SKU cache (post-supplier-sync)');
+
 // Stock-updater parity glue — flip published Products with NULL/zero buy_price
 // to status='pending' so they fall out of the storefront until a real cost
 // lands. Port of the legacy plugin's logProductChanges() / handle_pending_product()

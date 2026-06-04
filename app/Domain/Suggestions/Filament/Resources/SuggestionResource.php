@@ -8,6 +8,7 @@ use App\Domain\ProductAutoCreate\Jobs\RunAutoCreatePipelineJob;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
+use App\Domain\Sync\Services\SupplierSkuRegistry;
 use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
@@ -224,6 +225,33 @@ class SuggestionResource extends Resource
                         }
 
                         return $query->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) {$cmp}");
+                    }),
+                // "On supplier DB" — filter to SKUs that a supplier currently
+                // carries (per the cached SupplierSkuRegistry) so the operator
+                // can isolate the genuinely-actionable opportunities from
+                // competitor-only orphan parts. Lowercased-trim membership
+                // test mirrors the matching DraftFromSuggestionsCommand uses.
+                SelectFilter::make('on_supplier_db')
+                    ->label('On supplier DB')
+                    ->options([
+                        'yes' => 'Yes — sourceable',
+                        'no' => 'No — competitor-only',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if ($value === null || $value === '') {
+                            return $query;
+                        }
+                        $keys = app(SupplierSkuRegistry::class)->allSourceableKeys();
+                        if ($keys === []) {
+                            return $query;
+                        }
+
+                        $skuExpr = "LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.sku'))))";
+
+                        return $value === 'yes'
+                            ? $query->whereIn(\Illuminate\Support\Facades\DB::raw($skuExpr), $keys)
+                            : $query->whereNotIn(\Illuminate\Support\Facades\DB::raw($skuExpr), $keys);
                     }),
             ])
             // Render filters always-visible above the table (operator

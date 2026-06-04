@@ -28,6 +28,7 @@ final class RetryMissingImagesCommand extends BaseCommand
 {
     protected $signature = 'products:retry-missing-images
         {--brand= : Brand name (case-insensitive). When set, only products with this brand_id are retried.}
+        {--days= : Only products created in the last N days. Use to scope to recent auto-create batches and avoid re-sourcing legacy WC-migration products that already have Woo images.}
         {--limit=0 : Max products this run (0 = unbounded).}
         {--resync : Also run products:resync-to-woo on the retried SKUs afterwards (push new images live).}
         {--dry-run : List the SKUs that would be retried; do not call source-images.}';
@@ -42,6 +43,7 @@ final class RetryMissingImagesCommand extends BaseCommand
     protected function perform(): int
     {
         $brandName = trim((string) ($this->option('brand') ?? ''));
+        $days = (int) ($this->option('days') ?? 0);
         $limit = max(0, (int) $this->option('limit'));
         $resync = (bool) $this->option('resync');
         $dryRun = (bool) $this->option('dry-run');
@@ -51,6 +53,12 @@ final class RetryMissingImagesCommand extends BaseCommand
                 $q->whereNull('gallery_image_urls')
                     ->orWhereRaw('JSON_LENGTH(gallery_image_urls) = 0');
             });
+
+        if ($days > 0) {
+            $since = now()->subDays($days);
+            $this->info("Filtering to products created since {$since->toDateTimeString()} ({$days} days).");
+            $query->where('created_at', '>=', $since);
+        }
 
         if ($brandName !== '') {
             $brandId = $this->resolveBrandId($brandName);

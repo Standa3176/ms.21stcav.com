@@ -21,12 +21,13 @@ uses(RefreshDatabase::class);
 |   - snapshots:prune --days=0 is a no-op safety guard
 */
 
-it('writes exactly nine dashboard_snapshots rows on first run', function (): void {
+it('writes exactly eleven dashboard_snapshots rows on first run', function (): void {
     expect(DashboardSnapshot::count())->toBe(0);
 
     Artisan::call('dashboard:refresh');
 
-    expect(DashboardSnapshot::count())->toBe(9);
+    // 9 (Phase 7) + 1 (Phase 09.1 integration_health) + 1 (260606-lhp suggestions_triage_health) = 11.
+    expect(DashboardSnapshot::count())->toBe(11);
 
     // Every expected metric_key is present.
     $keys = DashboardSnapshot::query()->pluck('metric_key')->sort()->values()->toArray();
@@ -35,9 +36,11 @@ it('writes exactly nine dashboard_snapshots rows on first run', function (): voi
         'crm_push_success_rate',
         'horizon_failed_jobs',
         'import_issues',
+        'integration_health',
         'last_sync_run',
         'pending_reviews',
         'product_catalogue_health',
+        'suggestions_triage_health',
         'sync_diffs_parity',
         'weekly_report_status',
     ]);
@@ -47,7 +50,7 @@ it('upserts rather than inserts on a second run (idempotent)', function (): void
     Artisan::call('dashboard:refresh');
     Artisan::call('dashboard:refresh');
 
-    expect(DashboardSnapshot::count())->toBe(9);
+    expect(DashboardSnapshot::count())->toBe(11);
 });
 
 it('registers dashboard:refresh and snapshots:prune in the artisan registry', function (): void {

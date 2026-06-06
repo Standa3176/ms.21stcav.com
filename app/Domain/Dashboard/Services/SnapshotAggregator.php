@@ -70,6 +70,9 @@ final class SnapshotAggregator
             'weekly_report_status' => $this->computeWeeklyReportStatus(),
             // Phase 09.1 Plan 01 (D-15) — IntegrationHealthWidget reads this metric_key.
             'integration_health' => $this->computeIntegrationHealth(),
+            // Quick task 260606-lhp — HighConfidenceSourceableWidget +
+            // SuggestionsQueueHealthWidget read this metric_key.
+            'suggestions_triage_health' => $this->computeSuggestionsTriageHealth(),
         ];
     }
 
@@ -106,6 +109,108 @@ final class SnapshotAggregator
         }
 
         return $out;
+    }
+
+    /**
+     * Quick task 260606-lhp — decision-grade Suggestions triage payload.
+     *
+     * Registered in computeAll() under metric_key='suggestions_triage_health'
+     * so dashboard:refresh persists it every 5 min. Powers BOTH Home dashboard
+     * tiles introduced by this task:
+     *   - HighConfidenceSourceableWidget (Tile 1, click-through)
+     *   - SuggestionsQueueHealthWidget   (Tile 2, informational)
+     *
+     * 6-key payload:
+     *   high_confidence_count : int   - shared scope (drift-locked vs sidebar badge)
+     *   sourceable_count      : int   - pending NPO + EXISTS supplier_sku_cache
+     *   raw_pending_count     : int   - pending NPO only
+     *   applied_7d            : int   - status=applied + resolved_at>=now()-7d
+     *   rejected_7d           : int   - status=rejected + resolved_at>=now()-7d
+     *   oldest_pending_days   : ?int  - null when no pending rows
+     *
+     * Defensive try/catch — minimal test envs may lack supplier_sku_cache;
+     * a failed read MUST NOT 500 the dashboard. On any Throwable returns the
+     * zero-payload (matching the empty-state shape Test 3 asserts).
+     *
+     * Performance: one COUNT per of {high-confidence, sourceable, raw-pending}
+     * + one selectRaw collapsing applied/rejected + one min(proposed_at) on the
+     * pending subset. 5 round-trips per refresh — well inside the "single-snapshot
+     * refresh" cadence (5min schedule).
+     *
+     * @return array<string, mixed>
+     */
+    public function computeSuggestionsTriageHealth(): array
+    {
+        $zero = [
+            'high_confidence_count' => 0,
+            'sourceable_count' => 0,
+            'raw_pending_count' => 0,
+            'applied_7d' => 0,
+            'rejected_7d' => 0,
+            'oldest_pending_days' => null,
+        ];
+
+        try {
+            $hasCache = Schema::hasTable('supplier_sku_cache');
+
+            $highConfidence = $hasCache
+                ? Suggestion::query()->highConfidenceSourceable()->count()
+                : 0;
+
+            // Sourceable = pending NPO + EXISTS supplier_sku_cache (NO competitor
+            // gate). Different predicate from the scope deliberately — Tile 1's
+            // description renders both numbers.
+            $sourceable = 0;
+            if ($hasCache) {
+                $skuExpr = DB::connection()->getDriverName() === 'sqlite'
+                    ? "json_extract(suggestions.evidence, '$.sku')"
+                    : "JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))";
+
+                $sourceable = (int) Suggestion::query()
+                    ->where('status', Suggestion::STATUS_PENDING)
+                    ->where('kind', 'new_product_opportunity')
+                    ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM({$skuExpr})))")
+                    ->count();
+            }
+
+            $rawPending = (int) Suggestion::query()
+                ->where('status', Suggestion::STATUS_PENDING)
+                ->where('kind', 'new_product_opportunity')
+                ->count();
+
+            // applied + rejected counts in ONE round-trip via CASE WHEN.
+            $resolvedWindow = DB::table('suggestions')
+                ->where('kind', 'new_product_opportunity')
+                ->whereIn('status', [Suggestion::STATUS_APPLIED, Suggestion::STATUS_REJECTED])
+                ->where('resolved_at', '>=', now()->subDays(7))
+                ->selectRaw("SUM(CASE WHEN status = 'applied' THEN 1 ELSE 0 END) AS applied_7d, SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_7d")
+                ->first();
+
+            $appliedSevenDays = (int) ($resolvedWindow->applied_7d ?? 0);
+            $rejectedSevenDays = (int) ($resolvedWindow->rejected_7d ?? 0);
+
+            $oldest = Suggestion::query()
+                ->where('kind', 'new_product_opportunity')
+                ->where('status', Suggestion::STATUS_PENDING)
+                ->min('proposed_at');
+
+            $oldestPendingDays = $oldest === null
+                ? null
+                : (int) \Carbon\Carbon::parse($oldest)->diffInDays(now());
+
+            return [
+                'high_confidence_count' => (int) $highConfidence,
+                'sourceable_count' => $sourceable,
+                'raw_pending_count' => $rawPending,
+                'applied_7d' => $appliedSevenDays,
+                'rejected_7d' => $rejectedSevenDays,
+                'oldest_pending_days' => $oldestPendingDays,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $zero;
+        }
     }
 
     /**

@@ -117,6 +117,7 @@ use App\Domain\Quotes\Policies\QuoteLinePolicy;
 use App\Domain\Quotes\Policies\QuotePolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
 use App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand;
+use App\Domain\Suggestions\Console\Commands\PruneOrphanSuggestionsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
@@ -711,6 +712,10 @@ class AppServiceProvider extends ServiceProvider
                 // whose delta crosses pricing.auto_apply_threshold_bps (legacy
                 // plugin's setPer() ≥ 8% rule).
                 AutoApplyMarginSuggestionsCommand::class,
+                // Quick task 260606-gnu — auto-reject stale competitor-only
+                // orphan new_product_opportunity Suggestions (off-supplier-DB +
+                // <2 competitors + >=30 days old). Mon 06:00 London cron.
+                PruneOrphanSuggestionsCommand::class,
                 // Stock-updater parity glue — flip published Products with
                 // NULL/zero buy_price to status=pending (legacy plugin's
                 // logProductChanges() / handle_pending_product() behaviour).

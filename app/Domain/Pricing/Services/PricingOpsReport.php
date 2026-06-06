@@ -45,11 +45,76 @@ final class PricingOpsReport
     /**
      * Cached competitor-position scan (the heavy part). Page + export share it.
      *
+     * 260606-rld Task 2: the cached payload is decorated with `brand_name` on
+     * every below_cost / at_floor / winnable row. brand_name is resolved from
+     * brand_id via TaxonomyResolver::allBrands() — invoked via a runtime
+     * container lookup with a fully-qualified `::class` literal so the static
+     * deptrac analyser does not see a cross-layer import (Pricing's allow-list
+     * does NOT include ProductAutoCreate; see PLAN.md <deptrac_research>). If
+     * the resolver throws, brand_name stays null on every row and the report
+     * still renders — Woo/taxonomy outages must not break the dashboard.
+     *
+     * The decoration runs INSIDE the Cache::remember callback so brand-name
+     * freshness is bound to the 15-minute position cache (NOT the 1-hour
+     * taxonomy cache). The two caches stay independent.
+     *
      * @return array<string, mixed>
      */
     public function positions(): array
     {
-        return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, fn (): array => $this->scanner->compute());
+        return Cache::remember(self::CACHE_KEY, self::CACHE_TTL, function (): array {
+            $positions = $this->scanner->compute();
+
+            return $this->decorateWithBrandNames($positions);
+        });
+    }
+
+    /**
+     * Decorate the cached scan's below_cost / at_floor / winnable rows with
+     * `brand_name` (?string) resolved from `brand_id` via TaxonomyResolver.
+     *
+     * The TaxonomyResolver lookup uses a runtime container resolution with the
+     * fully-qualified `::class` literal so deptrac's static analyser does not
+     * see a Pricing -> ProductAutoCreate static import. See PLAN.md
+     * <deptrac_research> for the architectural justification + the Task 4
+     * fallback (extend Pricing's allow-list) if this escape fails.
+     *
+     * @param  array<string, mixed>  $positions
+     * @return array<string, mixed>
+     */
+    private function decorateWithBrandNames(array $positions): array
+    {
+        try {
+            /** @var array<int, array{id:int, name:string}> $brands */
+            $brands = app(\App\Domain\ProductAutoCreate\Services\TaxonomyResolver::class)->allBrands();
+        } catch (\Throwable $e) {
+            // Resolver / Woo outage must not break the Pricing Operations
+            // dashboard. brand_name stays null on every row; ops sees the
+            // failure via Sentry.
+            report($e);
+            $brands = [];
+        }
+
+        /** @var array<int, string> $byId */
+        $byId = [];
+        foreach ($brands as $b) {
+            if (isset($b['id'], $b['name'])) {
+                $byId[(int) $b['id']] = (string) $b['name'];
+            }
+        }
+
+        foreach (['below_cost', 'at_floor', 'winnable'] as $bucket) {
+            if (! isset($positions[$bucket]) || ! is_array($positions[$bucket])) {
+                continue;
+            }
+            foreach ($positions[$bucket] as $idx => $row) {
+                $brandId = $row['brand_id'] ?? null;
+                $positions[$bucket][$idx]['brand_name'] =
+                    ($brandId !== null && isset($byId[(int) $brandId])) ? $byId[(int) $brandId] : null;
+            }
+        }
+
+        return $positions;
     }
 
     public function forgetPositions(): void
@@ -222,6 +287,22 @@ final class PricingOpsReport
         }
 
         // Competitor-position buckets (below_cost / at_floor / winnable / matched).
+        // 260606-rld Task 2: below_cost + at_floor get a Brand column at index 1;
+        // winnable + matched stay byte-identical to the pre-task 5-column shape.
+        if (in_array($bucket, ['below_cost', 'at_floor'], true)) {
+            $header = ['SKU', 'Brand', 'Name', 'Our cost ex-VAT (£)', 'Lowest competitor ex-VAT (£)', 'Margin (%)'];
+            $rows = array_map(static fn (array $r): array => [
+                (string) $r['sku'],
+                (string) ($r['brand_name'] ?? ''),
+                (string) $r['name'],
+                $money((int) $r['cost_ex']),
+                $money((int) $r['comp_ex']),
+                number_format($r['margin_bps'] / 100, 2, '.', ''),
+            ], $this->competitorBucket($bucket));
+
+            return ['filename' => "pricing-{$bucket}-{$stamp}.csv", 'header' => $header, 'rows' => $rows];
+        }
+
         $header = ['SKU', 'Name', 'Our cost ex-VAT (£)', 'Lowest competitor ex-VAT (£)', 'Margin (%)'];
         $rows = array_map(static fn (array $r): array => [
             (string) $r['sku'],

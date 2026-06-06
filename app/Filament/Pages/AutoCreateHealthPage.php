@@ -14,6 +14,7 @@ use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -90,6 +91,74 @@ final class AutoCreateHealthPage extends Page implements HasTable
         $user = auth()->user();
 
         return (bool) $user?->hasRole('admin');
+    }
+
+    /**
+     * Sidebar attention badge — unhealthy count in 'warning' tone.
+     *
+     * Wrapped in try/catch returning null on Throwable (mirror
+     * SuggestionResource:65 precedent) — the badge runs on every
+     * sidebar render, a broken query (table dropped, JSON driver
+     * mismatch on a future DB change) MUST NOT 500 the entire admin
+     * chrome. See threat model T-mx9-02.
+     *
+     * Hides at 0 — operator only sees the badge when there is
+     * actionable drift.
+     */
+    public static function getNavigationBadge(): ?string
+    {
+        try {
+            $count = static::unhealthyQuery()->count();
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
+    }
+
+    /**
+     * Three-tier per-issue breakdown surfaced on badge hover. 60s
+     * Cache::remember keeps the four COUNT queries off the hot
+     * sidebar render path (Filament invokes this on every page
+     * load — without the cache, each load runs 4 queries against
+     * the products table).
+     *
+     * Same defensive try/catch as the badge — a broken query yields
+     * null (tooltip omitted) rather than blowing up the admin
+     * chrome.
+     */
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        try {
+            return Cache::remember('auto_create_health.nav_breakdown', 60, static function (): string {
+                $emptyImagesExpr = static::emptyImagesExpr();
+
+                $base = Product::query()->where('auto_create_status', '!=', 'manual');
+
+                $noImages = (clone $base)
+                    ->where(static fn (Builder $q): Builder => $q->whereNull('gallery_image_urls')
+                        ->orWhereRaw($emptyImagesExpr))
+                    ->count();
+                $noBrand = (clone $base)->whereNull('brand_id')->count();
+                $noCategory = (clone $base)->whereNull('category_id')->count();
+                $noWoo = (clone $base)->whereNull('woo_product_id')->count();
+
+                return sprintf(
+                    '%s no images • %s no brand • %s no category • %s no Woo',
+                    number_format($noImages),
+                    number_format($noBrand),
+                    number_format($noCategory),
+                    number_format($noWoo),
+                );
+            });
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

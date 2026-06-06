@@ -159,11 +159,31 @@ class PricingOperationsPage extends Page
             ->modalCancelActionLabel('Close')
             ->modalContent(function () use ($bucket): View {
                 $rows = $this->report()->competitorBucket($bucket);
+                $sliced = array_slice($rows, 0, self::MODAL_ROW_CAP);
+
+                // 260606-rld Task 3: below_cost + at_floor get Brand column +
+                // 3 client-side SelectFilters (brand/supplier/competitor).
+                // Other buckets get neither — the blade guards every site
+                // with @if ($showBrand) so the byte-shape is unchanged for
+                // winnable / matched.
+                $distinct = static fn (array $rows, string $key): array => collect($rows)
+                    ->pluck($key)
+                    ->filter(static fn ($v): bool => $v !== null && $v !== '')
+                    ->unique()->sort()->values()->all();
+
+                $showFilters = in_array($bucket, ['below_cost', 'at_floor'], true);
+                $brandOptions = $showFilters ? $distinct($sliced, 'brand_name') : [];
+                $supplierOptions = $showFilters ? $distinct($sliced, 'supplier_name') : [];
+                $competitorOptions = $showFilters ? $distinct($sliced, 'competitor_name') : [];
 
                 return view('filament.pages.pricing-ops-bucket', [
-                    'rows' => array_slice($rows, 0, self::MODAL_ROW_CAP),
+                    'rows' => $sliced,
                     'total' => count($rows),
                     'cap' => self::MODAL_ROW_CAP,
+                    'bucket' => $bucket,
+                    'brandOptions' => $brandOptions,
+                    'supplierOptions' => $supplierOptions,
+                    'competitorOptions' => $competitorOptions,
                 ]);
             })
             ->extraModalFooterActions([

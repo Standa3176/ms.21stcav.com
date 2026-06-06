@@ -1,10 +1,19 @@
 {{-- Competitor-position bucket table, rendered inside a tile modal. Live-filterable
-     (client-side Alpine) over the shown rows; $rows (sliced), $total, $cap. --}}
+     (client-side Alpine) over the shown rows; $rows (sliced), $total, $cap.
+
+     260606-rld Task 3: below_cost + at_floor get a Brand column + 3 client-side
+     SelectFilters (brand / supplier / competitor) above the search box. Every
+     brand-touching site is guarded by @if ($showBrand) so winnable / matched
+     remain byte-identical to the pre-task render. --}}
 @php
     $money = fn (int $p) => '£' . number_format($p / 100, 2);
+    $showBrand = in_array($bucket ?? '', ['below_cost', 'at_floor'], true);
+    $brandOptions = $brandOptions ?? [];
+    $supplierOptions = $supplierOptions ?? [];
+    $competitorOptions = $competitorOptions ?? [];
 @endphp
 
-<div class="space-y-3" x-data="{ q: '' }">
+<div class="space-y-3" x-data="{ q: '', filterBrand: '', filterSupplier: '', filterCompetitor: '' }">
     @if ($total > count($rows))
         <p class="text-xs text-gray-500 dark:text-gray-400">
             Showing the worst {{ number_format(count($rows)) }} of {{ number_format($total) }} by margin — use <strong>Export</strong> for the full list.
@@ -16,6 +25,32 @@
     @if (count($rows) === 0)
         <p class="text-sm text-gray-500 dark:text-gray-400">No rows in this bucket. 🎉</p>
     @else
+        @if ($showBrand)
+            <div class="flex flex-wrap gap-2">
+                <select x-model="filterBrand"
+                    class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+                    <option value="">All brands</option>
+                    @foreach ($brandOptions as $opt)
+                        <option value="{{ $opt }}">{{ $opt }}</option>
+                    @endforeach
+                </select>
+                <select x-model="filterSupplier"
+                    class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+                    <option value="">All suppliers</option>
+                    @foreach ($supplierOptions as $opt)
+                        <option value="{{ $opt }}">{{ $opt }}</option>
+                    @endforeach
+                </select>
+                <select x-model="filterCompetitor"
+                    class="rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">
+                    <option value="">All competitors</option>
+                    @foreach ($competitorOptions as $opt)
+                        <option value="{{ $opt }}">{{ $opt }}</option>
+                    @endforeach
+                </select>
+            </div>
+        @endif
+
         <input type="search" x-model="q" placeholder="Filter by SKU or name…"
             class="block w-full rounded-lg border-gray-300 text-sm shadow-sm focus:border-primary-500 focus:ring-primary-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
 
@@ -24,6 +59,9 @@
                 <thead class="sticky top-0 bg-gray-50 text-left text-xs uppercase text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                     <tr>
                         <th class="px-3 py-2">SKU</th>
+                        @if ($showBrand)
+                            <th class="px-3 py-2">Brand</th>
+                        @endif
                         <th class="px-3 py-2">Name</th>
                         <th class="px-3 py-2 text-right">Our cost (ex)</th>
                         <th class="px-3 py-2 text-right">Lowest comp (ex)</th>
@@ -33,9 +71,18 @@
                 <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
                     @foreach ($rows as $r)
                         @php $m = (int) $r['margin_bps']; @endphp
-                        <tr data-search="{{ strtolower($r['sku'].' '.$r['name']) }}"
-                            x-show="q === '' || $el.dataset.search.includes(q.toLowerCase())">
+                        <tr data-search="{{ strtolower(($r['sku'] ?? '').' '.($r['name'] ?? '').' '.($r['brand_name'] ?? '')) }}"
+                            data-brand="{{ $r['brand_name'] ?? '' }}"
+                            data-supplier="{{ $r['supplier_name'] ?? '' }}"
+                            data-competitor="{{ $r['competitor_name'] ?? '' }}"
+                            x-show="(q === '' || $el.dataset.search.includes(q.toLowerCase()))
+                                 && (filterBrand === '' || $el.dataset.brand === filterBrand)
+                                 && (filterSupplier === '' || $el.dataset.supplier === filterSupplier)
+                                 && (filterCompetitor === '' || $el.dataset.competitor === filterCompetitor)">
                             <td class="px-3 py-1.5 font-mono">{{ $r['sku'] }}</td>
+                            @if ($showBrand)
+                                <td class="px-3 py-1.5">{{ ! empty($r['brand_name']) ? \Illuminate\Support\Str::limit($r['brand_name'], 30) : '—' }}</td>
+                            @endif
                             <td class="px-3 py-1.5">{{ \Illuminate\Support\Str::limit($r['name'], 60) }}</td>
                             <td class="px-3 py-1.5 text-right text-gray-500">
                                 <span class="block">{{ $money((int) $r['cost_ex']) }}</span>

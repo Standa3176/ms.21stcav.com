@@ -26,6 +26,13 @@ beforeEach(function (): void {
         'cutover.backup_path' => $this->tmp.'/backups',
         'cutover.drill_report_path' => $this->tmp,
         'cutover.drill_allowed_env_var' => 'CUTOVER_DRILL_ALLOWED',
+        // Gate closed by default — individual tests open it via config().
+        // We override the config value directly (not via putenv) because the
+        // command reads config('cutover.drill_allowed'), and Laravel's config
+        // is loaded once at boot — putenv() after boot does NOT propagate to
+        // config in test runs. (Pattern enforced by tests/Architecture/
+        // EnvUsageTest.php as of 260606-c4o.)
+        'cutover.drill_allowed' => null,
     ]);
     mkdir($this->tmp.'/backups', 0o755, true);
 });
@@ -47,9 +54,6 @@ afterEach(function (): void {
         @rmdir($this->tmp.'/backups');
         @rmdir($this->tmp);
     }
-    // Clean env to prevent leak between tests.
-    putenv('CUTOVER_DRILL_ALLOWED');
-    $_ENV['CUTOVER_DRILL_ALLOWED'] = null;
 });
 
 it('registers cutover:drill-rollback in the artisan registry', function (): void {
@@ -79,8 +83,7 @@ it('dry-run writes drill-report-{YYYY-MM-DD}.md under drill_report_path', functi
 });
 
 it('--live without CUTOVER_DRILL_ALLOWED env fails fast (R3)', function (): void {
-    putenv('CUTOVER_DRILL_ALLOWED'); // ensure unset
-
+    // beforeEach already sets cutover.drill_allowed = null; nothing more to do.
     $exit = Artisan::call('cutover:drill-rollback', ['--live' => true]);
     $output = Artisan::output();
 
@@ -89,8 +92,10 @@ it('--live without CUTOVER_DRILL_ALLOWED env fails fast (R3)', function (): void
 });
 
 it('--live with CUTOVER_DRILL_ALLOWED=true executes the drill', function (): void {
-    putenv('CUTOVER_DRILL_ALLOWED=true');
-    $_ENV['CUTOVER_DRILL_ALLOWED'] = 'true';
+    // Override the config value directly — equivalent to the operator setting
+    // CUTOVER_DRILL_ALLOWED=true in their .env, but survives Laravel's config
+    // load order in tests (env() reads after boot are too late).
+    config(['cutover.drill_allowed' => 'true']);
 
     $exit = Artisan::call('cutover:drill-rollback', ['--live' => true]);
     $output = Artisan::output();

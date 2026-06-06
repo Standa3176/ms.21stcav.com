@@ -36,8 +36,12 @@ class DisableLegacyPluginsCommand extends BaseCommand
         $live = (bool) $this->option('live');
 
         if ($live) {
+            // Read the gate VALUE via config (not env()) — env() outside
+            // config/*.php returns the .env default at config:cache time
+            // (see d7d0e39 + 2026-05-31 incident). The gate env var NAME
+            // is kept in config for the human-readable error message below.
             $envVarName = (string) config('cutover.disable_live_allowed_env_var', 'CUTOVER_DISABLE_LIVE_ALLOWED');
-            $envValue = env($envVarName);
+            $envValue = config('cutover.disable_live_allowed');
             if ($envValue !== true && $envValue !== 'true' && $envValue !== '1' && $envValue !== 1) {
                 $this->error(sprintf(
                     '%s is not true in this environment. Refusing --live.',

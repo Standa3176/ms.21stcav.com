@@ -50,9 +50,31 @@ return [
     // cutover commands. Storing the NAME here is safer than storing the
     // value: an ops admin setting CUTOVER_DRILL_ALLOWED=true directly does
     // nothing until the command explicitly reads this config key.
+    //
+    // The NAME keys (*_env_var) are kept for backward-compat and for the
+    // human-readable error messages the commands print ("Set %s=true in .env"
+    // — the operator needs to know which env var to flip).
     'drill_allowed_env_var' => 'CUTOVER_DRILL_ALLOWED',
     'disable_live_allowed_env_var' => 'CUTOVER_DISABLE_LIVE_ALLOWED',
     'immediate_publish_allowed_env_var' => 'CUTOVER_IMMEDIATE_PUBLISH_ALLOWED',
+
+    // D-17 (cont.) — the VALUES of those gate env vars, resolved at
+    // config-load time. Commands read these via config() instead of env()
+    // because env() reads outside config/*.php return the .env default in
+    // cached-config mode (see d7d0e39 + 2026-05-31 cutover incident).
+    //
+    // The two-step safety property survives: setting CUTOVER_DRILL_ALLOWED=true
+    // in the operator's shell only ARMS the gate; the command still needs to
+    // explicitly read config('cutover.drill_allowed') (the deliberate-lookup
+    // half of the D-17 design).
+    //
+    // Nullable on purpose: a missing env var binds to null, which the
+    // commands' truthy-check treats as "gate closed" (refuses --live). Tests
+    // override via config(['cutover.drill_allowed' => 'true']) instead of
+    // putenv() so the override survives Laravel's config caching.
+    'drill_allowed' => env('CUTOVER_DRILL_ALLOWED'),
+    'disable_live_allowed' => env('CUTOVER_DISABLE_LIVE_ALLOWED'),
+    'immediate_publish_allowed' => env('CUTOVER_IMMEDIATE_PUBLISH_ALLOWED'),
 
     // CUT-04 — mysqldump + gzip output directory.
     'backup_path' => env('CUTOVER_BACKUP_PATH', storage_path('app/cutover/backups')),

@@ -33,6 +33,13 @@ beforeEach(function (): void {
             'woocommerce-bitrix24-integration',
         ],
         'cutover.disable_live_allowed_env_var' => 'CUTOVER_DISABLE_LIVE_ALLOWED',
+        // Gate closed by default — individual tests open it via config().
+        // We override the config value directly (not via putenv) because the
+        // command reads config('cutover.disable_live_allowed'), and Laravel's
+        // config is loaded once at boot — putenv() after boot does NOT
+        // propagate to config in test runs. (Pattern enforced by
+        // tests/Architecture/EnvUsageTest.php as of 260606-c4o.)
+        'cutover.disable_live_allowed' => null,
     ]);
 
     // Stub WooClient so --live tests never touch the network.
@@ -45,11 +52,6 @@ beforeEach(function (): void {
             throw new \RuntimeException('WP-CLI endpoint 404 (expected in test env)');
         }
     });
-});
-
-afterEach(function (): void {
-    putenv('CUTOVER_DISABLE_LIVE_ALLOWED');
-    $_ENV['CUTOVER_DISABLE_LIVE_ALLOWED'] = null;
 });
 
 it('registers cutover:disable-legacy-plugins in the artisan registry', function (): void {
@@ -72,8 +74,7 @@ it('dry-run emits all WP-CLI commands to stdout (DL1)', function (): void {
 });
 
 it('--live without env gate fails fast (DL2)', function (): void {
-    putenv('CUTOVER_DISABLE_LIVE_ALLOWED'); // ensure unset
-
+    // beforeEach already sets cutover.disable_live_allowed = null; nothing more to do.
     $exit = Artisan::call('cutover:disable-legacy-plugins', ['--live' => true]);
     $output = Artisan::output();
 
@@ -82,12 +83,20 @@ it('--live without env gate fails fast (DL2)', function (): void {
 });
 
 it('--live with env but --no-interaction auto-declines confirmation (DL3)', function (): void {
-    // Pest/artisan runs non-interactively by default — $this->confirm() returns
-    // the provided default (false) in that mode, so the command aborts.
-    putenv('CUTOVER_DISABLE_LIVE_ALLOWED=true');
-    $_ENV['CUTOVER_DISABLE_LIVE_ALLOWED'] = 'true';
+    // Override the gate config directly — equivalent to the operator setting
+    // CUTOVER_DISABLE_LIVE_ALLOWED=true in .env, but survives Laravel's
+    // config load order in tests.
+    config(['cutover.disable_live_allowed' => 'true']);
 
-    $exit = Artisan::call('cutover:disable-legacy-plugins', ['--live' => true]);
+    // Pass `--no-interaction` explicitly — Pest's Artisan::call does NOT
+    // automatically pass this flag, and on TTY-attached shells (Herd CLI on
+    // Windows) Laravel's $this->confirm() blocks on STDIN read instead of
+    // returning the default. With --no-interaction the helper returns the
+    // provided default (false) immediately, so the command aborts.
+    $exit = Artisan::call('cutover:disable-legacy-plugins', [
+        '--live' => true,
+        '--no-interaction' => true,
+    ]);
     $output = Artisan::output();
 
     expect($exit)->toBe(1);

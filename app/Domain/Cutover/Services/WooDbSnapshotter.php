@@ -63,10 +63,14 @@ class WooDbSnapshotter
         $filename = sprintf('woo-db-backup-%s-%s.sql.gz', $stamp, $safeLabel);
         $path = $backupDir.DIRECTORY_SEPARATOR.$filename;
 
-        $host = (string) env('WOO_DB_HOST', '127.0.0.1');
-        $user = (string) env('WOO_DB_USERNAME', 'root');
-        $pass = (string) env('WOO_DB_PASSWORD', '');
-        $db = (string) env('WOO_DB_DATABASE', 'wordpress');
+        // Read via config() (not env()) — env() outside config/*.php returns
+        // the .env default at config:cache build time, not the live value
+        // (see d7d0e39 + 2026-05-31 cutover incident). Bindings live in
+        // config('cutover.woo_db.*').
+        $host = (string) config('cutover.woo_db.host', '127.0.0.1');
+        $user = (string) config('cutover.woo_db.username', 'root');
+        $pass = (string) config('cutover.woo_db.password', '');
+        $db = (string) config('cutover.woo_db.database', 'wordpress');
 
         // Command assembled with escapeshellarg on every interpolated value
         // (T-07-05-03 mitigation — prevents WOO_DB_PASSWORD leaking via shell

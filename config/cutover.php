@@ -78,4 +78,16 @@ return [
     // (see that comment) — read via config() from routes/console.php.
     'divergence_scan_schedule_enabled' => (bool) env('CUTOVER_DIVERGENCE_SCAN_SCHEDULE_ENABLED', false),
 
+    // CUT-04 — Woo WordPress DB connection credentials for mysqldump. Bound
+    // at config-load time so the values survive `php artisan config:cache`
+    // (same cached-config gotcha as d7d0e39 — env() reads outside config/*.php
+    // return the .env default at cache-build time, not the live value). Read
+    // via config('cutover.woo_db.*') from WooDbSnapshotter.
+    'woo_db' => [
+        'host' => env('WOO_DB_HOST', '127.0.0.1'),
+        'username' => env('WOO_DB_USERNAME', 'root'),
+        'password' => env('WOO_DB_PASSWORD', ''),
+        'database' => env('WOO_DB_DATABASE', 'wordpress'),
+    ],
+
 ];

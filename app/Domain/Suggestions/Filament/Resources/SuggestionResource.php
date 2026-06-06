@@ -13,6 +13,7 @@ use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Audit\Services\Auditor;
+use Illuminate\Support\Facades\Cache;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
@@ -47,15 +48,29 @@ class SuggestionResource extends Resource
     protected static ?string $recordTitleAttribute = 'kind';
 
     /**
-     * Quick task 260504-ev5 — pending-suggestion attention badge.
-     * Renders a warning-coloured count when there are pending suggestions
-     * awaiting human triage. Hides entirely when zero (?string null return).
+     * Quick task 260606-gnu — high-confidence sourceable attention badge.
+     *
+     * Counts only rows the operator can actually action: pending +
+     * new_product_opportunity + sku ON supplier DB + supporting_competitors
+     * >= 3. Rationale: 62% of pending rows are competitor-only orphans
+     * (off-supplier-DB), so the raw pending count was inbox noise. The wider
+     * pools stay reachable via existing filters; getNavigationBadgeTooltip()
+     * exposes the three-tier breakdown so the operator can see what they're
+     * filtering out at a glance.
+     *
+     * Defensive try/catch preserved — badge runs on every sidebar render;
+     * a failed query (missing table, broken connection) must NOT 500 the
+     * entire admin chrome.
      */
     public static function getNavigationBadge(): ?string
     {
-        // Defensive: badge runs on every sidebar render — failed query (missing table, broken connection) must not 500 the entire admin.
         try {
-            $count = Suggestion::query()->where('status', Suggestion::STATUS_PENDING)->count();
+            $count = Suggestion::query()
+                ->where('status', Suggestion::STATUS_PENDING)
+                ->where('kind', 'new_product_opportunity')
+                ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
+                ->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) >= 3")
+                ->count();
         } catch (\Throwable) {
             return null;
         }
@@ -66,6 +81,47 @@ class SuggestionResource extends Resource
     public static function getNavigationBadgeColor(): ?string
     {
         return 'warning';
+    }
+
+    /**
+     * Quick task 260606-gnu — three-tier breakdown tooltip.
+     *
+     * Hovering the sidebar badge exposes the underlying counts so the
+     * operator can decide whether to drill into the wider pools via the
+     * existing filters. Cache::remember keeps the three EXISTS queries off
+     * the hot path — refreshed once per minute, which is well below the
+     * cadence at which the inbox actually changes.
+     *
+     * Filament 3 picks this up automatically (documented Resource extension
+     * point alongside getNavigationBadge / getNavigationBadgeColor).
+     */
+    public static function getNavigationBadgeTooltip(): ?string
+    {
+        try {
+            return Cache::remember('suggestions.nav_breakdown', 60, function (): string {
+                $base = Suggestion::query()
+                    ->where('status', Suggestion::STATUS_PENDING)
+                    ->where('kind', 'new_product_opportunity');
+
+                $rawPending = (clone $base)->count();
+                $sourceable = (clone $base)
+                    ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
+                    ->count();
+                $highConfidence = (clone $base)
+                    ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
+                    ->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) >= 3")
+                    ->count();
+
+                return sprintf(
+                    '%s high-confidence • %s sourceable • %s raw',
+                    number_format($highConfidence),
+                    number_format($sourceable),
+                    number_format($rawPending),
+                );
+            });
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**

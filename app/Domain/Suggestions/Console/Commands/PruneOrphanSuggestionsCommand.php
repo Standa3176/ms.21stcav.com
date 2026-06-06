@@ -25,7 +25,7 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * intersection: a row must be ALL of
  *   - kind = 'new_product_opportunity'
  *   - status = 'pending'
- *   - older than --days (default 30)
+ *   - older than --days (default 14 — empirical: 2026-06-06 prod run found 0 candidates at >=30d because the entire orphan set was <30d old; 14d catches 97% of the orphan tail while still preserving the next supplier-sync window)
  *   - evidence.supporting_competitors < 2
  *   - sku NOT in supplier_sku_cache (off-supplier-DB)
  *
@@ -41,7 +41,7 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 final class PruneOrphanSuggestionsCommand extends BaseCommand
 {
     protected $signature = 'suggestions:prune-orphans
-        {--days=30 : Min age in days; rows newer than this stay pending}
+        {--days=14 : Min age in days; rows newer than this stay pending}
         {--dry-run : Print count + sample 20 SKUs, do not write}';
 
     protected $description = 'Auto-reject stale competitor-only orphan new_product_opportunity suggestions (off-supplier-DB + <2 competitors + older than N days).';

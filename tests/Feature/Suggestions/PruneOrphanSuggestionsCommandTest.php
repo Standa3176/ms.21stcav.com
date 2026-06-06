@@ -18,7 +18,7 @@ uses(RefreshDatabase::class);
 | Gate is the 3-way conjunction:
 |   - kind = 'new_product_opportunity'
 |   - status = 'pending'
-|   - proposed_at older than --days (default 30)
+|   - proposed_at older than --days (default 14)
 |   - evidence.supporting_competitors < 2
 |   - sku NOT in supplier_sku_cache (off-supplier-DB)
 |

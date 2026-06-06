@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Jobs;
 
+use App\Models\User;
+use App\Notifications\OperatorJobCompletedNotification;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,6 +15,8 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
+use Throwable;
 
 /**
  * Queued wrapper around `products:draft-from-suggestions` for the Filament
@@ -75,6 +79,51 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
             'triggered_by_user_id' => $this->triggeredByUserId,
         ]);
 
-        return Artisan::call('products:draft-from-suggestions', $args);
+        $exitCode = Artisan::call('products:draft-from-suggestions', $args);
+
+        // Quick task 260606-p4q — bell-icon completion notification for the
+        // triggering operator. Counts Products that now exist in the catalogue
+        // for the requested SKU set; re-runs of the same set still count
+        // already-drafted SKUs as success (idempotent).
+        $totalSkuCount = count($this->skus);
+        $successCount = \App\Domain\Products\Models\Product::whereIn('sku', $this->skus)->count();
+
+        try {
+            if ($this->triggeredByUserId > 0 && ($user = User::find($this->triggeredByUserId))) {
+                $bodySuffix = $this->autoPublish ? ' + published to Woo' : ' (in review inbox)';
+                $user->notify(new OperatorJobCompletedNotification(
+                    title: 'Auto-create pipeline complete',
+                    body: "{$successCount}/{$totalSkuCount} SKUs processed".$bodySuffix,
+                    level: $successCount === $totalSkuCount ? 'success' : 'warning',
+                    url: $this->autoPublish ? '/admin/products' : '/admin/auto-create-reviews',
+                ));
+            }
+        } catch (Throwable $e) {
+            // Notifications table missing (prod not yet migrated) or any other
+            // dispatch failure MUST NOT propagate — pipeline already finished.
+            Log::warning('auto_create_pipeline.notify_failed', ['error' => $e->getMessage()]);
+        }
+
+        return $exitCode;
+    }
+
+    /**
+     * Horizon-invoked failure callback. Mirrors handle() try/catch shape
+     * so a notification-dispatch failure does not re-fail the job.
+     */
+    public function failed(Throwable $e): void
+    {
+        try {
+            if ($this->triggeredByUserId > 0 && ($user = User::find($this->triggeredByUserId))) {
+                $user->notify(new OperatorJobCompletedNotification(
+                    title: 'Auto-create pipeline FAILED',
+                    body: 'Pipeline threw '.class_basename($e).': '.Str::limit($e->getMessage(), 200),
+                    level: 'danger',
+                    url: '/admin/auto-create-reviews',
+                ));
+            }
+        } catch (Throwable $ne) {
+            Log::warning('auto_create_pipeline.notify_failed_on_failure', ['error' => $ne->getMessage()]);
+        }
     }
 }

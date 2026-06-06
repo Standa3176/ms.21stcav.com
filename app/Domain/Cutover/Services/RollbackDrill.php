@@ -50,7 +50,11 @@ class RollbackDrill
         ];
 
         // ── STEP 1 — flag readable ────────────────────────────────────────
-        $flagValue = env('WOO_WRITE_ENABLED');
+        // Read via config() (not env()) — env() outside config/*.php returns
+        // the .env default at config:cache build time (see d7d0e39 +
+        // 2026-05-31 cutover incident). The binding lives in
+        // config('cutover.woo_write_enabled').
+        $flagValue = config('cutover.woo_write_enabled');
         $flagReadable = $flagValue !== null;
         $results['step_1_flag_readable'] = $flagReadable ? 'PASS' : 'FAIL';
         $reportLines[] = sprintf(

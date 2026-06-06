@@ -90,4 +90,12 @@ return [
         'database' => env('WOO_DB_DATABASE', 'wordpress'),
     ],
 
+    // CUT-05 — cutover write gate (D-16 STEP 1 — "flag readable" probe).
+    // RollbackDrill reads this to report whether ops can flip the cutover
+    // back to OFF. Nullable on purpose: the drill PASSES when the value is
+    // non-null and FAILS when unset, so a missing key is itself diagnostic.
+    // Bound here (not read via env() inline) to survive config:cache — same
+    // cached-config rationale as the woo_db block above.
+    'woo_write_enabled' => env('WOO_WRITE_ENABLED'),
+
 ];

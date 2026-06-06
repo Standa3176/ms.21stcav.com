@@ -16,11 +16,13 @@ use App\Filament\Pages\Horizon\HorizonSilencedJobsPage;
 use App\Filament\Pages\NotificationCentrePage;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
+use App\Filament\Widgets\HighConfidenceSourceableWidget;
 use App\Filament\Widgets\HorizonFailedJobsWidget;
 use App\Filament\Widgets\ImportIssuesWidget;
 use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
+use App\Filament\Widgets\SuggestionsQueueHealthWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
@@ -144,6 +146,9 @@ class AdminPanelProvider extends PanelProvider
                 CrmPushSuccessRateWidget::class,
                 CompetitorFreshnessWidget::class,
                 PendingReviewsWidget::class,
+                // Quick task 260606-lhp — decision-grade Suggestions tiles.
+                HighConfidenceSourceableWidget::class,
+                SuggestionsQueueHealthWidget::class,
                 ImportIssuesWidget::class,
                 HorizonFailedJobsWidget::class,
                 SyncDiffsParityWidget::class,

@@ -6,11 +6,14 @@ use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Filament\Pages\HomeDashboardPage;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
+use App\Filament\Widgets\HighConfidenceSourceableWidget;
 use App\Filament\Widgets\HorizonFailedJobsWidget;
 use App\Filament\Widgets\ImportIssuesWidget;
+use App\Filament\Widgets\IntegrationHealthWidget;
 use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
+use App\Filament\Widgets\SuggestionsQueueHealthWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
 use App\Models\User;
@@ -39,21 +42,25 @@ beforeEach(function () {
     }
 });
 
-it('exposes 9 widgets in HomeDashboardPage::getWidgets()', function (): void {
+it('exposes 12 widgets in HomeDashboardPage::getWidgets()', function (): void {
     $page = new HomeDashboardPage();
     $widgets = $page->getWidgets();
 
-    expect($widgets)->toHaveCount(9);
+    // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) = 12.
+    expect($widgets)->toHaveCount(12);
     expect($widgets)->toBe([
         LastSyncRunWidget::class,
         CrmPushSuccessRateWidget::class,
         CompetitorFreshnessWidget::class,
         PendingReviewsWidget::class,
+        HighConfidenceSourceableWidget::class,
+        SuggestionsQueueHealthWidget::class,
         ImportIssuesWidget::class,
         HorizonFailedJobsWidget::class,
         SyncDiffsParityWidget::class,
         ProductCatalogueHealthWidget::class,
         WeeklyReportStatusWidget::class,
+        IntegrationHealthWidget::class,
     ]);
 });
 

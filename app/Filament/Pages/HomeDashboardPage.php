@@ -7,12 +7,14 @@ namespace App\Filament\Pages;
 use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
+use App\Filament\Widgets\HighConfidenceSourceableWidget;
 use App\Filament\Widgets\HorizonFailedJobsWidget;
 use App\Filament\Widgets\ImportIssuesWidget;
 use App\Filament\Widgets\IntegrationHealthWidget;
 use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
+use App\Filament\Widgets\SuggestionsQueueHealthWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
 use Carbon\Carbon;
@@ -120,6 +122,10 @@ class HomeDashboardPage extends Dashboard
             CompetitorFreshnessWidget::class,
             // Row 2 — Actions (what ops should look at)
             PendingReviewsWidget::class,
+            // Quick task 260606-lhp — two decision-grade Suggestions tiles
+            // sit alongside PendingReviewsWidget in the Actions row.
+            HighConfidenceSourceableWidget::class,
+            SuggestionsQueueHealthWidget::class,
             ImportIssuesWidget::class,
             HorizonFailedJobsWidget::class,
             // Row 3 — System health (big picture)
@@ -170,6 +176,9 @@ class HomeDashboardPage extends Dashboard
                 'widgets' => $this->visibleSectionWidgets([
                     ImportIssuesWidget::class,
                     PendingReviewsWidget::class,
+                    // Quick task 260606-lhp — decision-grade Suggestions tiles.
+                    HighConfidenceSourceableWidget::class,
+                    SuggestionsQueueHealthWidget::class,
                 ]),
             ],
             [

@@ -61,6 +61,10 @@ use Illuminate\Support\Facades\Log;
  * intended scope (manual is the legacy / pre-auto-create marker
  * per the same migration's docblock). Tracked in test file's
  * file-level deviation note.
+ *
+ * 260606-o63: extracted to Product::scopeAutoCreated for reuse +
+ * arch-test pinning. Both predicate sites below now call
+ * ->autoCreated() instead of inline `!= 'manual'`.
  */
 final class AutoCreateHealthPage extends Page implements HasTable
 {
@@ -138,7 +142,7 @@ final class AutoCreateHealthPage extends Page implements HasTable
             return Cache::remember('auto_create_health.nav_breakdown', 60, static function (): string {
                 $emptyImagesExpr = static::emptyImagesExpr();
 
-                $base = Product::query()->where('auto_create_status', '!=', 'manual');
+                $base = Product::query()->autoCreated();
 
                 $noImages = (clone $base)
                     ->where(static fn (Builder $q): Builder => $q->whereNull('gallery_image_urls')
@@ -333,7 +337,7 @@ final class AutoCreateHealthPage extends Page implements HasTable
         $emptyImagesExpr = static::emptyImagesExpr();
 
         return Product::query()
-            ->where('auto_create_status', '!=', 'manual')
+            ->autoCreated()
             ->where(function (Builder $q) use ($emptyImagesExpr): void {
                 $q->whereNull('gallery_image_urls')
                     ->orWhereRaw($emptyImagesExpr)

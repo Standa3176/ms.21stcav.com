@@ -31,7 +31,7 @@ final class RetryMissingImagesCommand extends BaseCommand
         {--days= : Only products created in the last N days.}
         {--status= : Comma-separated auto_create_status values (e.g. draft,pending_review). Default: all non-null.}
         {--limit=0 : Max products this run (0 = unbounded).}
-        {--all : Include legacy WC-migration products (auto_create_status IS NULL). DANGER: legacy products typically have images on Woo already; re-sourcing creates duplicates and burns Claude spend. Default behavior is auto-created products only.}
+        {--all : Include legacy WC-migration products (auto_create_status = \'manual\'). DANGER: legacy products typically have images on Woo already; re-sourcing creates duplicates and burns Claude spend. Default behavior is auto-created products only.}
         {--resync : Also run products:resync-to-woo on the retried SKUs afterwards (push new images live).}
         {--dry-run : List the SKUs that would be retried + show status/age breakdown; do not call source-images.}';
 
@@ -59,8 +59,8 @@ final class RetryMissingImagesCommand extends BaseCommand
             });
 
         if (! $includeAll) {
-            $query->whereNotNull('auto_create_status');
-            $this->info('Scoping to auto-created products only (auto_create_status IS NOT NULL). Pass --all to include legacy WC-migration products.');
+            $query->autoCreated();
+            $this->info('Scoping to auto-created products only (auto_create_status != \'manual\'). Pass --all to include legacy WC-migration products.');
         } else {
             $this->warn('--all is set: legacy WC-migration products will be included. These typically have Woo images already.');
         }

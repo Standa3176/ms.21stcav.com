@@ -161,7 +161,35 @@ parameters:
     # PriceCalculator, PriceRecomputer, SimulatedImpactCalculator) remain
     # ignorant of customer groups — only the model-relation arrow crosses.
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
-    Pricing:      [Foundation, Products, Sync, WpDirectDb, TradePricing]
+    # 260606-rld deviation (planner-documented escape b): Pricing allow-list
+    # extended with ProductAutoCreate because PricingOpsReport::decorateWith-
+    # BrandNames() resolves brand_id → brand_name via a runtime container
+    # lookup of TaxonomyResolver. The 260606-rld plan first tried a runtime
+    # FQCN string-literal escape (`app(\App\Domain\ProductAutoCreate\Services\
+    # TaxonomyResolver::class)`) on the theory that deptrac's static analyser
+    # would not resolve a leading-backslash ::class constant to a class
+    # reference. Empirically deptrac DID resolve it (one fresh violation at
+    # PricingOpsReport.php:89). Architectural justification (matches Phase 9
+    # TradePricing precedent):
+    #   - The brand-name lookup is a strictly READ-ONLY consumption of a
+    #     published Woo-taxonomy cache (allBrands() is a 1-hour Cache::remember
+    #     wrapper). Same shape as TradePricing's read decorator on Pricing.
+    #   - ProductAutoCreate already depends on Pricing (auto-create pipeline
+    #     reads RuleResolver / PriceCalculator at WRITE time during product
+    #     creation). The new reverse arrow is bounded to one method
+    #     (allBrands()) and lives at the SERVICE-CALL surface, not a model
+    #     relation. The two arrows compose at the type-graph level but NEVER
+    #     compose into a runtime cycle: Pricing invokes ProductAutoCreate
+    #     only at READ time (dashboard rendering); ProductAutoCreate invokes
+    #     Pricing only at WRITE time (auto-create pipeline). They are
+    #     temporally disjoint by construction — no synchronous call ever
+    #     traverses both arrows.
+    #   - Architectural intent preserved: PricingOpsReport is the ONLY
+    #     Pricing-layer caller; all other Pricing services (RuleResolver,
+    #     PriceCalculator, PriceRecomputer, SimulatedImpactCalculator,
+    #     CompetitorPositionScanner) remain ignorant of taxonomy.
+    # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
+    Pricing:      [Foundation, Products, Sync, WpDirectDb, TradePricing, ProductAutoCreate]
     # Phase 5 Plan 02 — Competitor layer cross-domain allow-list.
     # Plan 05-03 extends: + Webhooks (IncrementSkuSalesCount listener subscribes to
     # OrderReceived event + loads WebhookReceipt to read raw_body.line_items).

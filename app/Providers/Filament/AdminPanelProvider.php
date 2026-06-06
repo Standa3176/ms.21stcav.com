@@ -217,6 +217,13 @@ class AdminPanelProvider extends PanelProvider
             ->plugins([
                 FilamentShieldPlugin::make(),
             ])
+            // Quick task 260606-p4q — bell-icon database notifications + 30s polling.
+            // Closes the silent-completion gap from RunAutoCreatePipelineJob (5-60+ min)
+            // and RetryMissingImagesCommand (variable) — operators no longer need to
+            // tail /horizon to know when their work finished. Bell-icon UI consumes
+            // OperatorJobCompletedNotification payload (title/body/level/url/icon).
+            ->databaseNotifications()
+            ->databaseNotificationsPolling('30s')
             ->authMiddleware([
                 Authenticate::class,
             ]);

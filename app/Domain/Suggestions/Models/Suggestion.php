@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Suggestions\Models;
 
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Human-in-the-loop suggestion. Producers create these; admins approve/reject
@@ -73,5 +75,46 @@ class Suggestion extends Model
     public function resolvedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'resolved_by_user_id');
+    }
+
+    /**
+     * Quick task 260606-lhp — single source of truth for the
+     * "high-confidence sourceable" predicate.
+     *
+     * A row is high-confidence-sourceable iff ALL of:
+     *   - status = 'pending'
+     *   - kind   = 'new_product_opportunity'
+     *   - evidence.sku EXISTS in supplier_sku_cache (LOWER+TRIM match)
+     *   - CAST(evidence.supporting_competitors) >= 3
+     *
+     * Consumed by:
+     *   - SuggestionResource::getNavigationBadge() (sidebar attention count)
+     *   - SuggestionResource::getNavigationBadgeTooltip() (3-tier breakdown)
+     *   - SnapshotAggregator::computeSuggestionsTriageHealth() (Home tile)
+     *
+     * Drift-prevention: every consumer calls this scope; no inline whereRaw
+     * duplicates of the 4-clause conjunction allowed elsewhere.
+     *
+     * Driver-aware JSON expression mirrors PruneOrphanSuggestionsCommand:
+     *   - MySQL  : JSON_UNQUOTE(JSON_EXTRACT(...)) + CAST(... AS UNSIGNED)
+     *   - SQLite : json_extract(...)                + CAST(... AS INTEGER)
+     */
+    public function scopeHighConfidenceSourceable(Builder $q): Builder
+    {
+        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
+
+        $skuExpr = $isSqlite
+            ? "json_extract(suggestions.evidence, '$.sku')"
+            : "JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))";
+
+        $competitorsExpr = $isSqlite
+            ? "CAST(json_extract(evidence, '$.supporting_competitors') AS INTEGER)"
+            : "CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED)";
+
+        return $q
+            ->where('status', self::STATUS_PENDING)
+            ->where('kind', 'new_product_opportunity')
+            ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM({$skuExpr})))")
+            ->whereRaw("{$competitorsExpr} >= 3");
     }
 }

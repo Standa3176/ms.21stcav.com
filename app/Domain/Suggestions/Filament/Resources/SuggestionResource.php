@@ -65,12 +65,11 @@ class SuggestionResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         try {
-            $count = Suggestion::query()
-                ->where('status', Suggestion::STATUS_PENDING)
-                ->where('kind', 'new_product_opportunity')
-                ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
-                ->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) >= 3")
-                ->count();
+            // Quick task 260606-lhp — delegates the 4-clause predicate to the
+            // shared Suggestion::scopeHighConfidenceSourceable scope so the
+            // sidebar badge, the badge tooltip, and the Home dashboard
+            // "High-confidence sourceable opportunities" tile cannot drift.
+            $count = Suggestion::query()->highConfidenceSourceable()->count();
         } catch (\Throwable) {
             return null;
         }
@@ -104,13 +103,21 @@ class SuggestionResource extends Resource
                     ->where('kind', 'new_product_opportunity');
 
                 $rawPending = (clone $base)->count();
+
+                // Sourceable = pending NPO + EXISTS supplier_sku_cache. A
+                // DIFFERENT predicate to "high-confidence" — no competitor
+                // count gate — so it stays inline; the scope deliberately
+                // bundles the competitor gate.
                 $sourceable = (clone $base)
                     ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
                     ->count();
-                $highConfidence = (clone $base)
-                    ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
-                    ->whereRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED) >= 3")
-                    ->count();
+
+                // Quick task 260606-lhp — high-confidence count comes from the
+                // shared scope so the tooltip cannot drift from the sidebar
+                // badge or the Home dashboard tile. The scope already applies
+                // status + kind so the surrounding $base clone is redundant
+                // here; querying via Suggestion::query() avoids double-binding.
+                $highConfidence = Suggestion::query()->highConfidenceSourceable()->count();
 
                 return sprintf(
                     '%s high-confidence • %s sourceable • %s raw',

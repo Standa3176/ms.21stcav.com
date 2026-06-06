@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Products\Models;
 
 use Database\Factories\Domain\Products\ProductFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -114,6 +115,37 @@ final class Product extends Model
     public function getPricingCategoryId(): ?int
     {
         return $this->category_id === null ? null : (int) $this->category_id;
+    }
+
+    /**
+     * Canonical "auto-created products only" predicate.
+     *
+     * WHY THIS EXISTS — 2026-06-06 quick task 260606-mx9 uncovered a latent
+     * bug: callers were using `whereNotNull('auto_create_status')` as the
+     * "exclude legacy WC-migrated products" filter. But the column is
+     * `NOT NULL DEFAULT 'manual'` per migration
+     * `2026_04_22_100300_add_auto_create_columns_to_products_table.php`
+     * (with a belt-and-braces backfill of every pre-existing row to 'manual'
+     * in the same migration's up() body). So `whereNotNull` is vacuous —
+     * it never excludes anything. The 2026-06-06 Manhattan retry dry-run
+     * silently surfaced 5,668 candidates instead of the expected ~36
+     * because of this bug.
+     *
+     * The correct predicate is `!= 'manual'` — 'manual' is the migration's
+     * explicit "legacy / pre-auto-create" marker (per its docblock).
+     *
+     * This scope is the single source of truth so RetryMissingImagesCommand,
+     * AutoCreateHealthPage, and any future caller cannot drift. Quick task
+     * 260606-o63 swapped the two known call sites onto this scope and
+     * installed `tests/Architecture/AutoCreatedPredicateTest.php` to fail
+     * CI if the vacuous predicate is ever re-introduced.
+     *
+     * Eloquent strips the `scope` prefix and lowercases the next char on
+     * call, so callers invoke `Product::query()->autoCreated()`.
+     */
+    public function scopeAutoCreated(Builder $query): Builder
+    {
+        return $query->where('auto_create_status', '!=', 'manual');
     }
 
     protected static function newFactory(): ProductFactory

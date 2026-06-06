@@ -177,3 +177,24 @@ it('breaks competitor ties deterministically on the lowest competitor id', funct
     expect($scan['below_cost_count'])->toBe(1)
         ->and($scan['below_cost'][0]['competitor_name'])->toBe('LowerIdCo');
 });
+
+it('emits brand_id on each row from the products.brand_id column', function (): void {
+    // 260606-rld Task 1: scanner must surface brand_id (?int) on every kept row
+    // so PricingOpsReport can decorate with brand_name without a re-query.
+    // Two below-cost products: one with brand_id=10, one with brand_id=null.
+    Product::factory()->create([
+        'type' => 'simple', 'sku' => 'BRD-1', 'buy_price' => 100.00, 'brand_id' => 10,
+    ]);
+    CompetitorPrice::factory()->forSku('BRD-1')->create(['price_pennies_ex_vat' => 9000]);
+
+    Product::factory()->create([
+        'type' => 'simple', 'sku' => 'BRD-2', 'buy_price' => 100.00, 'brand_id' => null,
+    ]);
+    CompetitorPrice::factory()->forSku('BRD-2')->create(['price_pennies_ex_vat' => 9000]);
+
+    $scan = app(CompetitorPositionScanner::class)->compute();
+
+    expect($scan['below_cost_count'])->toBe(2)
+        ->and(collect($scan['below_cost'])->firstWhere('sku', 'BRD-1')['brand_id'])->toBe(10)
+        ->and(collect($scan['below_cost'])->firstWhere('sku', 'BRD-2')['brand_id'])->toBeNull();
+});

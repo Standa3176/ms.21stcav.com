@@ -36,6 +36,11 @@ use Illuminate\Support\Facades\DB;
  * (NOT the Competitor model) so Pricing keeps zero dependency on the Competitor
  * domain — mirroring how competitor_prices are already read here.
  *
+ * Each row also carries `brand_id` (?int) so the consumer can render Brand
+ * without re-querying the products table (260606-rld Task 1). brand_id is
+ * read directly off the Product Eloquent model in the row-build literal —
+ * no new query, no new cross-domain dependency.
+ *
  * Performance: one windowed SQL pass reduces competitor_prices to the latest
  * row per (competitor, sku) within the window; the rest is in-memory. Cheap
  * enough to run on page load behind a short cache (the page wraps it in
@@ -49,9 +54,9 @@ final class CompetitorPositionScanner
      * small + the scan is cheap, so the full result caches fine.
      *
      * @return array{
-     *   below_cost: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,supplier_name:?string,competitor_name:?string}>,
-     *   at_floor: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,supplier_name:?string,competitor_name:?string}>,
-     *   winnable: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,supplier_name:?string,competitor_name:?string}>,
+     *   below_cost: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,brand_id:?int,supplier_name:?string,competitor_name:?string}>,
+     *   at_floor: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,brand_id:?int,supplier_name:?string,competitor_name:?string}>,
+     *   winnable: array<int, array{sku:string,name:string,cost_ex:int,comp_ex:int,margin_bps:int,brand_id:?int,supplier_name:?string,competitor_name:?string}>,
      *   below_cost_count:int, at_floor_count:int, winnable_count:int, matched_count:int,
      *   floor_bps:int, max_age_days:int, computed_at:string
      * }
@@ -104,6 +109,7 @@ final class CompetitorPositionScanner
                         'cost_ex' => $costEx,
                         'comp_ex' => $compEx,
                         'margin_bps' => $marginBps,
+                        'brand_id' => $product->brand_id === null ? null : (int) $product->brand_id,
                         'supplier_name' => null, // filled in batched after the loop
                         'competitor_name' => null, // filled in batched after the loop
                     ];

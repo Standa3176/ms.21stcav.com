@@ -6,8 +6,11 @@ namespace App\Console\Commands;
 
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
+use App\Models\User;
+use App\Notifications\OperatorJobCompletedNotification;
 use Illuminate\Support\Facades\Artisan;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
+use Throwable;
 
 /**
  * Finds local Products with empty gallery_image_urls and re-runs
@@ -37,6 +40,13 @@ final class RetryMissingImagesCommand extends BaseCommand
 
     protected $description = 'Re-run products:source-images on products that have empty gallery_image_urls.';
 
+    /**
+     * Quick task 260606-p4q — captured at perform() start so the auth context
+     * is preserved across nested Artisan::call() chains. null for cron runs
+     * (no auth user) → notification block is skipped silently.
+     */
+    private ?User $triggeringUser = null;
+
     public function __construct(private readonly TaxonomyResolver $taxonomy)
     {
         parent::__construct();
@@ -44,6 +54,10 @@ final class RetryMissingImagesCommand extends BaseCommand
 
     protected function perform(): int
     {
+        // Quick task 260606-p4q — capture BEFORE any Artisan::call() chain
+        // (auth context can drift across nested command invocations).
+        $this->triggeringUser = auth()->user();
+
         $brandName = trim((string) ($this->option('brand') ?? ''));
         $days = (int) ($this->option('days') ?? 0);
         $statusFilter = array_values(array_filter(array_map('trim', explode(',', (string) ($this->option('status') ?? '')))));
@@ -170,6 +184,23 @@ final class RetryMissingImagesCommand extends BaseCommand
 
         $this->newLine();
         $this->info("Done. {$count} product(s) processed.".($resync ? ' Images pushed to Woo.' : ' Run with --resync to push to Woo.'));
+
+        // Quick task 260606-p4q — bell-icon completion notification for the
+        // CLI operator. Cron-triggered runs have no auth user → $triggeringUser
+        // stays null → block skipped silently. Dry-run + failure paths do NOT
+        // notify (dry-run is read-only; failures surface in command output).
+        if ($this->triggeringUser !== null) {
+            try {
+                $this->triggeringUser->notify(new OperatorJobCompletedNotification(
+                    title: 'retry-missing-images complete',
+                    body: "{$count} product(s) processed".($resync ? ' + resync to Woo' : ''),
+                    level: 'success',
+                    url: '/admin/auto-create-health',
+                ));
+            } catch (Throwable $e) {
+                $this->warn('Notification dispatch failed: '.$e->getMessage());
+            }
+        }
 
         return SymfonyCommand::SUCCESS;
     }

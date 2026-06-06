@@ -62,6 +62,17 @@ Schedule::command('woo:import-products')
     ->timezone('Europe/London')
     ->description('Daily Woo catalogue import (publish + draft + private products)');
 
+// Quick task 260606-gnu — Mon 06:00 London prune of stale competitor-only orphan suggestions.
+// Runs BEFORE supplier:db-sync (Mon-Fri 07:00) so the prune never touches rows whose
+// sourceability status is about to change. Conservative gates (off-supplier + <2 competitors
+// + >=30 days old) mean a misclassified row is at worst preserved one extra week.
+Schedule::command('suggestions:prune-orphans')
+    ->cron('0 6 * * 1')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune stale orphan suggestions (Mon 06:00, before supplier sync)');
+
 // Quick task 260504-m5w + 260504-onx — Mon-Fri supplier DB pull at 07:00 London.
 // Re-pitched from daily 03:30 to Mon-Fri 07:00 per ops preference: aligns the
 // freshest supplier price + stock with start-of-day decisions and skips weekends

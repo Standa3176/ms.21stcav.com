@@ -7,7 +7,9 @@ findings_critical: 0
 findings_high: 2
 findings_medium: 5
 findings_low: 4
-status: shippable_with_followups
+status: high_findings_remediated
+high_remediated_in: 260607-9c6
+high_remediated_at: 2026-06-07
 ---
 
 # Security Review — meetingstore-ops (2026-06-06)
@@ -26,6 +28,8 @@ Two areas worth flagging for next planning cycle: (a) `webhook_receipts.raw_body
 
 ### H-1 — `webhook_receipts.raw_body` stores Woo customer PII indefinitely with no retention prune (GDPR exposure)
 
+> **REMEDIATED 2026-06-07 in quick task [260607-9c6](../260607-9c6-security-high-fixes-h-1-webhooks-prune-r/) — `webhooks:prune-receipts` artisan + nightly 03:25 London cron (per-topic retention: order=30d, customer=7d, other=90d). Field-level body redaction (option 2 in the original fix proposal) deferred — option 1 (retention prune) alone satisfies GDPR Art. 5(1)(e).**
+
 **File:** `app/Domain/Webhooks/Http/Controllers/WooWebhookController.php:62`
 **Also touches:** `app/Domain/Webhooks/Models/WebhookReceipt.php:34-45`, `routes/console.php` (no `webhook-receipts:prune` scheduled)
 
@@ -41,6 +45,8 @@ This is a GDPR Article 5(1)(e) storage-limitation violation if the prod app rece
 ---
 
 ### H-2 — `WooDbSnapshotter` leaks WooDB password via `mysqldump -p<pwd>` argv (visible in `/proc/*/cmdline`)
+
+> **REMEDIATED 2026-06-07 in quick task [260607-9c6](../260607-9c6-security-high-fixes-h-1-webhooks-prune-r/) — `WooDbSnapshotter` now writes a chmod-0600 `.cnf` tempfile and passes `mysqldump --defaults-extra-file=<path>`. Tempfile is unlinked in `finally{}` on both success and failure paths. WooDB password no longer appears in `/proc/*/cmdline`.**
 
 **File:** `app/Domain/Cutover/Services/WooDbSnapshotter.php:79-86`
 

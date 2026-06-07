@@ -72,6 +72,12 @@ Standalone Laravel 12 + Filament 3 application that replaces two legacy WordPres
 | `laravel/pint` | ^1.24 | PSR-12 formatter | Matches existing 21CAV convention. |
 | `nunomaduro/larastan` | ^3.x (phpstan level 6+) | Static analysis | Strongly recommended for this app — three external APIs with strong contracts, static types catch issues before prod. |
 | `barryvdh/laravel-debugbar` | ^3.x (dev only) | Dev feedback loop | Optional; handy when building Filament pages. |
+### Product Enrichment Providers
+| Service | Purpose | Cost | Where used |
+|---|---|---|---|
+| EAN-search.org | Reverse MPN → GTIN lookup. **DEFAULT** EAN backfill provider for `products:backfill-merchant-feed` (config: `integrations.ean_fallback_provider='ean_search'`). Coverage skews strongly to industrial / AV B2B SKUs (Sony FW-Bravia, Panasonic PT-, PTZOptics, Roland, BirdDog, Vivitek) where Icecat returns zero hits. | ~€0.003/query, free tier 100/day | `EanSearchClient` (260607-hxa) |
+| Icecat | Product image URLs (high-res Image + Gallery) — **image-primary, EAN-fallback-opt-in**. Also available as a fallback EAN provider (`integrations.ean_fallback_provider='icecat'`) for forensic A/B comparison + EAN-search downtime. | ~0.2p/query | `IcecatClient` (image: `SourceProductImagesCommand`; opt-in EAN backfill: 260607-g25) |
+| Serper (Web Image Search) | Fallback image source when Icecat doesn't index the SKU. | Per-search subscription | `WebImageSearchClient` |
 ### Development Tools
 | Tool | Purpose | Notes |
 |---|---|---|
@@ -127,6 +133,11 @@ Standalone Laravel 12 + Filament 3 application that replaces two legacy WordPres
 - `maatwebsite/laravel-excel` — popular but heavyweight (PhpSpreadsheet under the hood, loads whole workbooks into memory). Meant for Excel, not CSV streams; memory footprint becomes real pain above ~50k rows.
 - `league/csv` — lower-level, well-made, but we'd end up writing the Laravel integration layer that `spatie/simple-excel` already provides.
 - Native PHP `fgetcsv()` — works, but no BOM handling, no delimiter detection, no generator API. Don't reinvent for a ~50 line save.
+### 7. EAN reverse lookup for Google Merchant Center backfill
+- **Primary:** EAN-search.org via `EanSearchClient` (default — `integrations.ean_fallback_provider='ean_search'`). Free tier 100/day, paid €30/10k queries (~€0.003/query). Coverage skews strongly toward industrial / AV B2B SKUs (Sony FW-Bravia, Panasonic PT-, PTZOptics, Roland, BirdDog, Vivitek) — the segment that 260607-g25 confirmed Icecat returns zero hits on.
+- **Fallback:** Icecat via `IcecatClient` — kept for A/B comparison and as a safety net when EAN-search is down. Flip via `.env`: `EAN_FALLBACK_PROVIDER=icecat`.
+- **Cost cap:** `products:backfill-merchant-feed --max-icecat-spend-pence` (flag name kept for operator muscle memory; actually caps whichever provider is active — ~0.03p/query for ean_search, ~0.2p/query for icecat).
+- **Opt-out:** `--no-icecat-fallback` restores 260607-cgd supplier_db-only behaviour byte-identically.
 ## Installation (composer-only — no npm needed beyond Filament's default)
 # Core framework + admin
 # Queues + monitoring

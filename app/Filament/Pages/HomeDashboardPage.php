@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Pages;
 
 use App\Domain\Dashboard\Models\DashboardSnapshot;
+use App\Filament\Widgets\AdCandidatesReadyWidget;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
 use App\Filament\Widgets\HighConfidenceSourceableWidget;
@@ -126,6 +127,8 @@ class HomeDashboardPage extends Dashboard
             // sit alongside PendingReviewsWidget in the Actions row.
             HighConfidenceSourceableWidget::class,
             SuggestionsQueueHealthWidget::class,
+            // Quick task 260607-pys — golden ad-target campaign-readiness tile.
+            AdCandidatesReadyWidget::class,
             ImportIssuesWidget::class,
             HorizonFailedJobsWidget::class,
             // Row 3 — System health (big picture)
@@ -179,6 +182,8 @@ class HomeDashboardPage extends Dashboard
                     // Quick task 260606-lhp — decision-grade Suggestions tiles.
                     HighConfidenceSourceableWidget::class,
                     SuggestionsQueueHealthWidget::class,
+                    // Quick task 260607-pys — Ad Candidates Ready tile.
+                    AdCandidatesReadyWidget::class,
                 ]),
             ],
             [

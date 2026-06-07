@@ -42,13 +42,13 @@ beforeEach(function () {
     }
 });
 
-it('exposes 13 widgets in HomeDashboardPage::getWidgets()', function (): void {
+it('exposes 14 widgets in HomeDashboardPage::getWidgets()', function (): void {
     $page = new HomeDashboardPage();
     $widgets = $page->getWidgets();
 
     // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) +
-    // 1 (260607-pys AdCandidatesReady) = 13.
-    expect($widgets)->toHaveCount(13);
+    // 1 (260607-pys AdCandidatesReady) + 1 (260607-t6w CategoryAudit) = 14.
+    expect($widgets)->toHaveCount(14);
     expect($widgets)->toBe([
         LastSyncRunWidget::class,
         CrmPushSuccessRateWidget::class,
@@ -57,6 +57,9 @@ it('exposes 13 widgets in HomeDashboardPage::getWidgets()', function (): void {
         HighConfidenceSourceableWidget::class,
         SuggestionsQueueHealthWidget::class,
         \App\Filament\Widgets\AdCandidatesReadyWidget::class,
+        // Quick task 260607-t6w — weekly category audit tile (inserted
+        // after AdCandidatesReady so the actionable triage tiles stay grouped).
+        \App\Filament\Widgets\CategoryAuditWidget::class,
         ImportIssuesWidget::class,
         HorizonFailedJobsWidget::class,
         SyncDiffsParityWidget::class,

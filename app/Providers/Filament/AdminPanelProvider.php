@@ -14,6 +14,7 @@ use App\Filament\Pages\Horizon\HorizonMonitoringPage;
 use App\Filament\Pages\Horizon\HorizonPendingJobsPage;
 use App\Filament\Pages\Horizon\HorizonSilencedJobsPage;
 use App\Filament\Pages\NotificationCentrePage;
+use App\Filament\Widgets\CategoryAuditWidget;
 use App\Filament\Widgets\CompetitorFreshnessWidget;
 use App\Filament\Widgets\CrmPushSuccessRateWidget;
 use App\Filament\Widgets\HighConfidenceSourceableWidget;
@@ -149,6 +150,8 @@ class AdminPanelProvider extends PanelProvider
                 // Quick task 260606-lhp — decision-grade Suggestions tiles.
                 HighConfidenceSourceableWidget::class,
                 SuggestionsQueueHealthWidget::class,
+                // Quick task 260607-t6w — weekly category audit tile.
+                CategoryAuditWidget::class,
                 ImportIssuesWidget::class,
                 HorizonFailedJobsWidget::class,
                 SyncDiffsParityWidget::class,

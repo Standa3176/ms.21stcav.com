@@ -76,7 +76,75 @@ final class SnapshotAggregator
             'suggestions_triage_health' => $this->computeSuggestionsTriageHealth(),
             // Quick task 260607-pys — AdCandidatesReadyWidget reads this.
             'ad_candidates_health' => $this->computeAdCandidatesHealth(),
+            // Quick task 260607-t6w — CategoryAuditWidget reads this.
+            'category_audit_health' => $this->computeCategoryAuditHealth(),
         ];
+    }
+
+    /**
+     * Quick task 260607-t6w — Weekly category-audit findings payload.
+     *
+     * Single SQL round-trip over category_audit_findings (one SELECT with
+     * SUM/CASE columns + MAX(audited_at)). Reflects whatever the latest
+     * Fri 22:00 London cron run produced — the snapshot semantics make
+     * "latest run" and "table contents" synonymous.
+     *
+     * Defensive try/catch mirrors computeCategoryAuditHealth's sibling
+     * tiles — if the table doesn't exist yet (fresh test env that hasn't
+     * run the migration) or any other DB-shape mismatch fires, the
+     * widget gets a zero payload instead of 500ing the dashboard refresh.
+     *
+     * @return array{
+     *     total:int,
+     *     missing:int,
+     *     orphaned:int,
+     *     uncategorized:int,
+     *     suspicious:int,
+     *     last_run_at:?string
+     * }
+     */
+    public function computeCategoryAuditHealth(): array
+    {
+        $zero = [
+            'total' => 0,
+            'missing' => 0,
+            'orphaned' => 0,
+            'uncategorized' => 0,
+            'suspicious' => 0,
+            'last_run_at' => null,
+        ];
+
+        try {
+            if (! Schema::hasTable('category_audit_findings')) {
+                return $zero;
+            }
+
+            $row = DB::table('category_audit_findings')
+                ->selectRaw("
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN issue_type = 'missing' THEN 1 ELSE 0 END) AS missing,
+                    SUM(CASE WHEN issue_type = 'orphaned' THEN 1 ELSE 0 END) AS orphaned,
+                    SUM(CASE WHEN issue_type = 'uncategorized' THEN 1 ELSE 0 END) AS uncategorized,
+                    SUM(CASE WHEN issue_type = 'suspicious' THEN 1 ELSE 0 END) AS suspicious,
+                    MAX(audited_at) AS last_run_at
+                ")
+                ->first();
+
+            return [
+                'total' => (int) ($row->total ?? 0),
+                'missing' => (int) ($row->missing ?? 0),
+                'orphaned' => (int) ($row->orphaned ?? 0),
+                'uncategorized' => (int) ($row->uncategorized ?? 0),
+                'suspicious' => (int) ($row->suspicious ?? 0),
+                'last_run_at' => $row->last_run_at !== null
+                    ? \Carbon\Carbon::parse($row->last_run_at)->toIso8601String()
+                    : null,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $zero;
+        }
     }
 
     /**

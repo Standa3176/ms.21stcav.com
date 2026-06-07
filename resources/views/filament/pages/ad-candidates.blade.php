@@ -20,9 +20,17 @@
         <h2 class="mb-3 text-sm font-semibold text-gray-700 dark:text-gray-200">Filter golden ad targets</h2>
 
         <div class="grid grid-cols-1 gap-4 md:grid-cols-6">
-            {{-- Brand multi-select (wider — spans 3 cols of 6 so it doesn't squash) --}}
-            <div class="md:col-span-3">
+            {{-- Brand multi-select (wider — spans 3 cols of 6 so it doesn't squash).
+                 Alpine x-model="brandQuery" filters visible <option>s client-side as
+                 operator types — no Livewire round-trip until they actually pick a brand. --}}
+            <div class="md:col-span-3" x-data="{ brandQuery: '' }">
                 <label class="block text-xs font-medium text-gray-600 dark:text-gray-300">Brands</label>
+                <input
+                    type="search"
+                    x-model="brandQuery"
+                    placeholder="Type to filter brands…"
+                    class="mt-1 mb-1 block w-full rounded border-gray-300 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                />
                 <select
                     wire:model.live="filterBrandIds"
                     multiple
@@ -30,11 +38,14 @@
                     size="8"
                 >
                     @foreach ($brandOptions as $id => $name)
-                        <option value="{{ $id }}">{{ $name }}</option>
+                        <option
+                            value="{{ $id }}"
+                            x-show="brandQuery === '' || '{{ strtolower(addslashes($name)) }}'.includes(brandQuery.toLowerCase())"
+                        >{{ $name }}</option>
                     @endforeach
                 </select>
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    Cmd/Ctrl-click to multi-select. Empty = all brands.
+                    Type above to narrow. Cmd/Ctrl-click to multi-select. Empty = all brands.
                 </p>
             </div>
 

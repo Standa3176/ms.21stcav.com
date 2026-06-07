@@ -106,7 +106,9 @@ final class AdCandidatesPage extends Page implements HasTable
                 $out[$id] = $name;
             }
         }
-        ksort($out);
+        // Sort alphabetically by brand name (case-insensitive) for the picker.
+        // ksort() was id-order which surfaced brands in a random-looking sequence.
+        uasort($out, fn (string $a, string $b): int => strcasecmp($a, $b));
 
         return $out;
     }

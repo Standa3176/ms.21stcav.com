@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Console\Concerns\NormalisesEan;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Pricing\Services\AdCandidateScanner;
 use App\Domain\ProductAutoCreate\Services\EanSearchClient;
 use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
@@ -86,6 +87,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         private readonly TaxonomyResolver $taxonomy,
         private readonly IcecatClient $icecat,
         private readonly EanSearchClient $eanSearch,
+        private readonly AdCandidateScanner $adCandidates,
     ) {
         parent::__construct();
     }
@@ -132,6 +134,30 @@ class BackfillMerchantFeedCommand extends BaseCommand
 
         $this->info('Fields requested: '.implode(', ', $fields).($dryRun ? '  (dry-run)' : '  (LIVE)'));
 
+        // 260607-pys Task 2: when --skus is OMITTED, narrow candidate
+        // selection to AdCandidateScanner's golden-target SKU set so the
+        // backfill only spends Claude/network credit on products that
+        // actually qualify for the Google Ads campaign. When --skus IS
+        // passed the scanner is bypassed entirely (operator override).
+        //
+        // Threshold rationale: page default is £199 for the campaign-
+        // planning use case (operator browsing /admin/ad-candidates);
+        // backfill default stays at the historical £300 (30000p) — a
+        // tighter cut for the "spend Claude credit only on the BEST
+        // golden-ad targets" automated batch path. Both call the same
+        // scanner with different thresholds. Single SQL surface.
+        $goldenSkus = null;
+        if ($skusFilter === []) {
+            $goldenSkus = $this->adCandidates
+                ->scan(minMarginPence: 30000, stockRequired: true, beatRequired: true)
+                ->pluck('sku')
+                ->filter(static fn ($s): bool => is_string($s) && $s !== '')
+                ->values()
+                ->all();
+            $goldenCount = count($goldenSkus);
+            $this->info("Golden-target narrowing ENABLED: {$goldenCount} SKU(s) qualify (£300 margin + stock + beat).");
+        }
+
         $updatedSkus = [];
 
         if (in_array('ean', $fields, true)) {
@@ -153,19 +179,19 @@ class BackfillMerchantFeedCommand extends BaseCommand
             } else {
                 $this->info('EAN lookup fallback DISABLED — supplier_db only (260607-cgd parity).');
             }
-            $this->backfillEan($dryRun, $skusFilter, $limit, $updatedSkus, $icecatFallback, $maxIcecatSpendPence, $provider);
+            $this->backfillEan($dryRun, $skusFilter, $limit, $updatedSkus, $icecatFallback, $maxIcecatSpendPence, $provider, $goldenSkus);
         }
 
         if (in_array('brand', $fields, true)) {
             $this->newLine();
             $this->info('=== Brand backfill ===');
-            $this->backfillBrand($dryRun, $skusFilter, $limit, $updatedSkus);
+            $this->backfillBrand($dryRun, $skusFilter, $limit, $updatedSkus, $goldenSkus);
         }
 
         if (in_array('category', $fields, true)) {
             $this->newLine();
             $this->info('=== Category backfill ===');
-            $aborted = $this->backfillCategory($dryRun, $skusFilter, $limit, $noConfirm, $updatedSkus);
+            $aborted = $this->backfillCategory($dryRun, $skusFilter, $limit, $noConfirm, $updatedSkus, $goldenSkus);
             if ($aborted) {
                 return SymfonyCommand::FAILURE;
             }
@@ -217,6 +243,8 @@ class BackfillMerchantFeedCommand extends BaseCommand
      * @param  array<int, string>  $skusFilter
      * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
      * @param  string  $provider  'ean_search' (default) or 'icecat' (A/B comparison via env)
+     * @param  array<int, string>|null  $goldenSkus  golden-target narrowing list (260607-pys);
+     *                                              null when --skus override is in effect
      */
     private function backfillEan(
         bool $dryRun,
@@ -226,6 +254,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         bool $icecatFallback = false,
         int $maxIcecatSpendPence = 0,
         string $provider = 'ean_search',
+        ?array $goldenSkus = null,
     ): void {
         $query = Product::query()
             ->where('status', 'publish')
@@ -234,6 +263,12 @@ class BackfillMerchantFeedCommand extends BaseCommand
             });
         if ($skusFilter !== []) {
             $query->whereIn('sku', $skusFilter);
+        } elseif ($goldenSkus !== null) {
+            // Empty golden set legitimately means "no candidates" — pass
+            // an unmatchable list rather than skip the constraint, so an
+            // operator who runs the command on a day when zero products
+            // qualify doesn't accidentally process the entire catalogue.
+            $query->whereIn('sku', $goldenSkus === [] ? ['__NONE__'] : $goldenSkus);
         }
         if ($limit > 0) {
             $query->limit($limit);
@@ -530,9 +565,15 @@ class BackfillMerchantFeedCommand extends BaseCommand
      *
      * @param  array<int, string>  $skusFilter
      * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
+     * @param  array<int, string>|null  $goldenSkus  golden-target narrowing list (260607-pys)
      */
-    private function backfillBrand(bool $dryRun, array $skusFilter, int $limit, array &$updatedSkus): void
-    {
+    private function backfillBrand(
+        bool $dryRun,
+        array $skusFilter,
+        int $limit,
+        array &$updatedSkus,
+        ?array $goldenSkus = null,
+    ): void {
         $query = Product::query()
             ->where('status', 'publish')
             ->where(function ($q): void {
@@ -540,6 +581,8 @@ class BackfillMerchantFeedCommand extends BaseCommand
             });
         if ($skusFilter !== []) {
             $query->whereIn('sku', $skusFilter);
+        } elseif ($goldenSkus !== null) {
+            $query->whereIn('sku', $goldenSkus === [] ? ['__NONE__'] : $goldenSkus);
         }
         if ($limit > 0) {
             $query->limit($limit);
@@ -673,6 +716,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
      *
      * @param  array<int, string>  $skusFilter
      * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
+     * @param  array<int, string>|null  $goldenSkus  golden-target narrowing list (260607-pys)
      */
     private function backfillCategory(
         bool $dryRun,
@@ -680,6 +724,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         int $limit,
         bool $noConfirm,
         array &$updatedSkus,
+        ?array $goldenSkus = null,
     ): bool {
         $query = Product::query()
             ->where('status', 'publish')
@@ -688,6 +733,8 @@ class BackfillMerchantFeedCommand extends BaseCommand
             });
         if ($skusFilter !== []) {
             $query->whereIn('sku', $skusFilter);
+        } elseif ($goldenSkus !== null) {
+            $query->whereIn('sku', $goldenSkus === [] ? ['__NONE__'] : $goldenSkus);
         }
         if ($limit > 0) {
             $query->limit($limit);

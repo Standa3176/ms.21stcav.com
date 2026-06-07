@@ -47,7 +47,12 @@ use stdClass;
  * is already in the deptrac allow-list (260606-rld). All filter values are
  * parameter-bound in DB::select — never interpolated (T-pys-01 mitigation).
  */
-final class AdCandidateScanner
+// Not `final` so Pest test fakes can subclass the scanner with a no-op
+// constructor (skipping the WooClient → TaxonomyResolver real construction
+// path) to stub `scan()` for command-level tests. Mirrors the same fake
+// pattern used for TaxonomyResolver / IcecatClient / EanSearchClient in
+// BackfillMerchantFeedCommandTest.
+class AdCandidateScanner
 {
     /** Default 30-day window — mirrors CompetitorPositionScanner. */
     private const COMPETITOR_WINDOW_DAYS = 30;

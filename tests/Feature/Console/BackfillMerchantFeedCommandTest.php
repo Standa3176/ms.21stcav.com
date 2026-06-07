@@ -4,15 +4,28 @@ declare(strict_types=1);
 
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Pricing\Services\AdCandidateScanner;
 use App\Domain\ProductAutoCreate\Services\EanSearchClient;
 use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 
 uses(RefreshDatabase::class);
+
+beforeEach(function (): void {
+    // 260607-pys Task 2: when --skus is OMITTED, the command narrows
+    // candidate selection to AdCandidateScanner's golden-target SKU set.
+    // Existing tests (cases A–F + the four early tests) never opted into
+    // that narrowing — they ran against the full candidate set. Bind a
+    // permissive scanner here that returns ALL seeded SKUs so the byte-
+    // identical CLI surface is preserved. Case G overrides this to test
+    // the narrowing behavior.
+    bindPermissiveAdCandidateScanner();
+});
 
 /*
 |--------------------------------------------------------------------------
@@ -466,6 +479,78 @@ it('Case G: EAN_FALLBACK_PROVIDER=icecat routes to IcecatClient instead', functi
     expect($output)->toContain('EAN lookup fallback ENABLED via icecat');
 });
 
+// ── Golden-target narrowing (Task 2 — 260607-pys) ──
+
+it('Case H: without --skus, candidate set is narrowed to AdCandidateScanner golden SKUs', function (): void {
+    // Seed 5 publish products with missing EAN. The scanner stub returns only
+    // 3 of them — the command must process only those 3 (not all 5).
+    foreach (['G1', 'G2', 'G3', 'G4', 'G5'] as $sku) {
+        Product::factory()->create(['sku' => $sku, 'status' => 'publish', 'ean' => null]);
+    }
+
+    // Override the permissive default with a narrow scanner that returns
+    // only G1/G2/G3 as golden targets.
+    bindAdCandidateScannerWithSkus(['G1', 'G2', 'G3']);
+
+    bindEanStub(
+        eanMap: [
+            'g1' => '5033588057222',
+            'g2' => '5033588057223',
+            'g3' => '5033588057224',
+            // G4/G5 supplier rows exist too — but the scanner narrowing
+            // should keep them out of the candidate set entirely.
+            'g4' => '5033588057225',
+            'g5' => '5033588057226',
+        ],
+    );
+
+    $exit = Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'ean',
+        '--no-confirm' => true,
+        '--no-icecat-fallback' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+
+    // Only the 3 golden SKUs should have been updated.
+    expect(Product::where('sku', 'G1')->value('ean'))->toBe('5033588057222');
+    expect(Product::where('sku', 'G2')->value('ean'))->toBe('5033588057223');
+    expect(Product::where('sku', 'G3')->value('ean'))->toBe('5033588057224');
+    // G4 + G5 must remain untouched — the scanner excluded them.
+    expect(Product::where('sku', 'G4')->value('ean'))->toBeNull();
+    expect(Product::where('sku', 'G5')->value('ean'))->toBeNull();
+
+    $output = Artisan::output();
+    expect($output)->toContain('3 candidate products');
+});
+
+it('Case I: with --skus, AdCandidateScanner is bypassed (operator override wins)', function (): void {
+    Product::factory()->create(['sku' => 'OV1', 'status' => 'publish', 'ean' => null]);
+    Product::factory()->create(['sku' => 'OV2', 'status' => 'publish', 'ean' => null]);
+
+    // Bind a scanner that would throw if it were called — the explicit
+    // --skus path must skip the scanner entirely.
+    bindAdCandidateScannerThrowing();
+
+    bindEanStub(
+        eanMap: [
+            'ov1' => '5033588057222',
+            'ov2' => '5033588057223',
+        ],
+    );
+
+    $exit = Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'ean',
+        '--skus' => 'OV1,OV2',
+        '--no-confirm' => true,
+        '--no-icecat-fallback' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+    expect(Product::where('sku', 'OV1')->value('ean'))->toBe('5033588057222');
+    expect(Product::where('sku', 'OV2')->value('ean'))->toBe('5033588057223');
+});
+
 // ── helpers ──
 
 /**
@@ -553,6 +638,7 @@ function bindEanStub(array $eanMap, ?array $eanLookupGtinMap = null, ?array $ice
         app(TaxonomyResolver::class),
         app(IcecatClient::class),
         app(EanSearchClient::class),
+        app(AdCandidateScanner::class),
         $eanMap,
     ) extends BackfillMerchantFeedCommand
     {
@@ -561,10 +647,11 @@ function bindEanStub(array $eanMap, ?array $eanLookupGtinMap = null, ?array $ice
             TaxonomyResolver $taxonomy,
             IcecatClient $icecat,
             EanSearchClient $eanSearch,
+            AdCandidateScanner $adCandidates,
             /** @var array<string, string> */
             private array $eanMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates);
         }
 
         protected function lookupSupplierEans(array $candidateSkus): array
@@ -662,6 +749,7 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
         $taxonomyFake,
         $icecatFake,
         $eanSearchFake,
+        app(AdCandidateScanner::class),
         $mfrMap,
     ) extends BackfillMerchantFeedCommand
     {
@@ -670,10 +758,11 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
             TaxonomyResolver $taxonomy,
             IcecatClient $icecat,
             EanSearchClient $eanSearch,
+            AdCandidateScanner $adCandidates,
             /** @var array<string, string> */
             private array $mfrMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates);
         }
 
         protected function lookupSupplierManufacturers(array $candidateSkus): array
@@ -716,4 +805,107 @@ function bindBrandTermsForEanLookup(array $allBrands): void
         }
     };
     app()->instance(TaxonomyResolver::class, $taxonomyFake);
+}
+
+/**
+ * Bind a permissive AdCandidateScanner fake — returns ALL live products
+ * with sku set. Preserves byte-identical behaviour for existing tests
+ * that never opted into golden-target narrowing.
+ *
+ * Mirrors the fakes-as-anonymous-subclasses pattern used for EanSearchClient
+ * / IcecatClient above; AdCandidateScanner is `final`, but the container
+ * binding swaps the resolved instance, so the test fake doesn't need to
+ * subclass — it simply implements the same scan() shape.
+ */
+function bindPermissiveAdCandidateScanner(): void
+{
+    $fake = new class extends AdCandidateScanner
+    {
+        public function __construct()
+        {
+            // Skip parent constructor — no TaxonomyResolver needed in fake.
+        }
+
+        public function scan(
+            array $brandIds = [],
+            int $minMarginPence = 19900,
+            bool $stockRequired = true,
+            bool $beatRequired = true,
+        ): Collection {
+            return Product::query()
+                ->whereNotNull('sku')
+                ->where('sku', '!=', '')
+                ->get()
+                ->map(static function (Product $p): stdClass {
+                    $row = new stdClass;
+                    $row->sku = (string) $p->sku;
+                    $row->product_id = (int) $p->id;
+
+                    return $row;
+                });
+        }
+    };
+    app()->instance(AdCandidateScanner::class, $fake);
+}
+
+/**
+ * Bind an AdCandidateScanner fake that returns the supplied SKU list as
+ * golden targets — used by Case H to assert narrowing.
+ *
+ * @param  array<int, string>  $skus
+ */
+function bindAdCandidateScannerWithSkus(array $skus): void
+{
+    $fake = new class($skus) extends AdCandidateScanner
+    {
+        public function __construct(/** @var array<int, string> */ private array $skus)
+        {
+            // Skip parent constructor — no TaxonomyResolver needed.
+        }
+
+        public function scan(
+            array $brandIds = [],
+            int $minMarginPence = 19900,
+            bool $stockRequired = true,
+            bool $beatRequired = true,
+        ): Collection {
+            $rows = [];
+            foreach ($this->skus as $sku) {
+                $row = new stdClass;
+                $row->sku = $sku;
+                $row->product_id = 0;
+                $rows[] = $row;
+            }
+
+            return collect($rows);
+        }
+    };
+    app()->instance(AdCandidateScanner::class, $fake);
+}
+
+/**
+ * Bind an AdCandidateScanner fake that throws on any call — used by Case I
+ * to assert the --skus operator-override path bypasses the scanner entirely.
+ */
+function bindAdCandidateScannerThrowing(): void
+{
+    $fake = new class extends AdCandidateScanner
+    {
+        public function __construct()
+        {
+            // Skip parent constructor.
+        }
+
+        public function scan(
+            array $brandIds = [],
+            int $minMarginPence = 19900,
+            bool $stockRequired = true,
+            bool $beatRequired = true,
+        ): Collection {
+            throw new \RuntimeException(
+                'AdCandidateScanner called but --skus operator override was supplied — bypass expected.',
+            );
+        }
+    };
+    app()->instance(AdCandidateScanner::class, $fake);
 }

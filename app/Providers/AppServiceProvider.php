@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
@@ -726,6 +727,13 @@ class AppServiceProvider extends ServiceProvider
                 // SUCCESSFULLY UPDATED SKUs only. Reuses NormalisesEan trait so the
                 // EAN validator stays byte-identical to GenerateProductDraftsCommand.
                 BackfillMerchantFeedCommand::class,
+                // Quick task 260607-v5g — products:backfill-category-from-woo. Backfills
+                // local category_id + category_ids from Woo REST for the 3,244 NULL-category
+                // live products surfaced by the 260607-t6w audit. Free + deterministic +
+                // no Claude. Operator-triggered (NOT scheduled — Woo→MS category drift is
+                // rare once the initial backfill lands). Reuses WooClient::get() — no new
+                // client method needed.
+                BackfillCategoryFromWooCommand::class,
                 // Quick task 260607-9c6 (SECURITY-REVIEW.md H-1) — daily 03:25
                 // London prune of webhook_receipts.raw_body. Per-topic GDPR
                 // retention (order=30d, customer=7d, other=90d). Closes the

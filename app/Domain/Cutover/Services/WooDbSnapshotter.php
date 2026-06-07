@@ -35,6 +35,18 @@ use Symfony\Component\Process\Process;
  *
  * Failures throw RuntimeException; the command wrapper translates this to
  * a non-zero exit code + an error log line (no uncaught crash).
+ *
+ * SECURITY (2026-06-07, quick task 260607-9c6 — H-2 remediation):
+ *   Originally the password was interpolated as `mysqldump -p<pwd>` argv,
+ *   which is shell-injection-safe (escapeshellarg covers metacharacters)
+ *   but VISIBLE in /proc/PID/cmdline for the entire 1h dump window. Any
+ *   local user could read the password while the dump ran. Now we write
+ *   the credentials to a chmod-0600 temp .cnf file (mode set BEFORE
+ *   write so it's never world-readable on disk), pass it via
+ *   `--defaults-extra-file=...` (which mysqldump strips from argv), and
+ *   unlink the temp file in finally{} on both success AND failure. The
+ *   T-07-05-03 shell-injection mitigation is still in place via
+ *   escapeshellarg on every interpolated value.
  */
 class WooDbSnapshotter
 {
@@ -72,19 +84,74 @@ class WooDbSnapshotter
         $pass = (string) config('cutover.woo_db.password', '');
         $db = (string) config('cutover.woo_db.database', 'wordpress');
 
-        // Command assembled with escapeshellarg on every interpolated value
-        // (T-07-05-03 mitigation — prevents WOO_DB_PASSWORD leaking via shell
-        // injection; note the password still briefly appears in `ps` — operator
-        // runs this on a private VPS per the threat register).
-        $cmd = sprintf(
-            'mysqldump --single-transaction --skip-lock-tables -h %s -u %s -p%s %s | gzip > %s',
-            escapeshellarg($host),
-            escapeshellarg($user),
-            escapeshellarg($pass),
-            escapeshellarg($db),
-            escapeshellarg($path),
+        // H-2 remediation (260607-9c6): assemble via --defaults-extra-file
+        // with a chmod-0600 temp .cnf so the password never lands on argv.
+        // T-07-05-03 shell-injection mitigation preserved via escapeshellarg
+        // on every interpolated value below.
+        $this->buildAndRunDump($host, $user, $pass, $db, $path);
+
+        $size = file_exists($path) ? (int) filesize($path) : 0;
+
+        $this->auditor->record('cutover.woo_db_snapshotted', [
+            'filename' => $filename,
+            'path' => $path,
+            'label' => $label,
+            'size_bytes' => $size,
+        ]);
+
+        return [
+            'filename' => $filename,
+            'path' => $path,
+            'size_bytes' => $size,
+        ];
+    }
+
+    /**
+     * H-2 remediation (260607-9c6, SECURITY-REVIEW.md 260606-q7h):
+     * Write credentials to a chmod-0600 temp .cnf file and pass it via
+     * --defaults-extra-file so the password never appears on the mysqldump
+     * argv (which would be visible in /proc/PID/cmdline for the full dump).
+     *
+     * chmod runs BEFORE file_put_contents so the file is mode-0600 from the
+     * instant it exists on disk — other-user reads are blocked even mid-write
+     * (per T-9c6-03 in the quick-task threat model).
+     *
+     * The temp file is unlinked in finally{} so it disappears on BOTH success
+     * AND failure paths (per T-9c6-04). Suppress-error on unlink because the
+     * dump-success path is the read-side of interest, not unlink failures.
+     */
+    protected function buildAndRunDump(string $host, string $user, string $pass, string $db, string $path): void
+    {
+        $cnfPath = tempnam(sys_get_temp_dir(), 'msdmp_');
+        if ($cnfPath === false) {
+            throw new \RuntimeException('mysqldump: failed to allocate temp cnf file');
+        }
+        // chmod BEFORE writing — file is mode-0600 from the moment it exists.
+        @chmod($cnfPath, 0o600);
+        file_put_contents(
+            $cnfPath,
+            "[client]\nuser={$user}\npassword={$pass}\nhost={$host}\n"
         );
 
+        try {
+            $cmd = sprintf(
+                'mysqldump --defaults-extra-file=%s --single-transaction --skip-lock-tables %s | gzip > %s',
+                escapeshellarg($cnfPath),
+                escapeshellarg($db),
+                escapeshellarg($path),
+            );
+            $this->runDumpCommand($cmd);
+        } finally {
+            @unlink($cnfPath);
+        }
+    }
+
+    /**
+     * Extracted so tests can override the Process invocation without invoking
+     * a real mysqldump binary (see WooDbSnapshotterCommandBuilderTest).
+     */
+    protected function runDumpCommand(string $cmd): void
+    {
         $process = Process::fromShellCommandline($cmd);
         $process->setTimeout(3600); // 1h for a large Woo DB
 
@@ -101,20 +168,5 @@ class WooDbSnapshotter
                 $e,
             );
         }
-
-        $size = file_exists($path) ? (int) filesize($path) : 0;
-
-        $this->auditor->record('cutover.woo_db_snapshotted', [
-            'filename' => $filename,
-            'path' => $path,
-            'label' => $label,
-            'size_bytes' => $size,
-        ]);
-
-        return [
-            'filename' => $filename,
-            'path' => $path,
-            'size_bytes' => $size,
-        ];
     }
 }

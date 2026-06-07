@@ -79,6 +79,7 @@ class TestIntegrationAction
             IntegrationCredentialKind::LangfuseObservability => self::testLangfuse(),
             IntegrationCredentialKind::SupplierDb => self::testSupplierDb(),
             IntegrationCredentialKind::Icecat => app(\App\Domain\ProductAutoCreate\Services\IcecatClient::class)->testConnection(),
+            IntegrationCredentialKind::EanSearch => app(\App\Domain\ProductAutoCreate\Services\EanSearchClient::class)->testConnection(),
             IntegrationCredentialKind::ImageSearch => app(\App\Domain\ProductAutoCreate\Services\WebImageSearchClient::class)->testConnection(),
             default => IntegrationTestResult::failed('Unknown kind: ' . ($record->kind?->value ?? 'null'), 0),
         };

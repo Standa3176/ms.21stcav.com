@@ -152,6 +152,20 @@ return [
         'language' => env('ICECAT_LANGUAGE', 'EN'),
     ],
 
+    // Quick task 260607-hxa — EAN-search.org (api.ean-search.org).
+    // DEFAULT GTIN reverse-lookup provider for products:backfill-merchant-feed
+    // (config-switchable via integrations.ean_fallback_provider). Resolver
+    // env-fallback for IntegrationCredentialKind::EanSearch. Operator typically
+    // stores the token via /admin → Integration Credentials.
+    // EAN_SEARCH_TOKEN — bearer token from https://www.ean-search.org/ dashboard
+    //   (free tier 100 queries/day; paid €30/10k ≈ €0.003/query).
+    // EAN_SEARCH_BASE_URL — defaults to the public endpoint; only set for
+    //   testing / alternative deployments.
+    'ean_search' => [
+        'token' => env('EAN_SEARCH_TOKEN', ''),
+        'base_url' => env('EAN_SEARCH_BASE_URL', 'https://api.ean-search.org/api'),
+    ],
+
     // Web image search (manufacturer product images by "{brand} {mpn}" query).
     // Resolver env-fallback for IntegrationCredentialKind::ImageSearch; operator
     // typically stores the api_key via /admin → Integration Credentials.

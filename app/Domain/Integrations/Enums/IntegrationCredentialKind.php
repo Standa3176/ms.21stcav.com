@@ -25,6 +25,7 @@ enum IntegrationCredentialKind: string
     case LangfuseObservability = 'langfuse_observability';
     case SupplierDb = 'supplier_db';
     case Icecat = 'icecat';
+    case EanSearch = 'ean_search';
     case ImageSearch = 'image_search';
 
     /**
@@ -47,6 +48,10 @@ enum IntegrationCredentialKind: string
             // them in the payload when saved, but they aren't required for the
             // row to be considered valid — Open Icecat works username-only).
             self::Icecat => ['username'],
+            // Quick task 260607-hxa — EAN-search.org reverse MPN → GTIN lookup.
+            // Single bearer token (?token=... query param). Default GTIN backfill
+            // provider for products:backfill-merchant-feed.
+            self::EanSearch => ['token'],
             // Web image-search provider (Serper.dev by default) — single API key.
             self::ImageSearch => ['api_key'],
         };
@@ -84,6 +89,7 @@ enum IntegrationCredentialKind: string
             self::LangfuseObservability => 'Langfuse Observability',
             self::SupplierDb => 'Supplier DB (Remote MySQL)',
             self::Icecat => 'Icecat Product Content',
+            self::EanSearch => 'EAN-search.org (GTIN lookup)',
             self::ImageSearch => 'Web Image Search (Serper)',
         };
     }
@@ -111,8 +117,9 @@ enum IntegrationCredentialKind: string
             // AnthropicApi, OpenAiApi: no URL fields (just api_key)
             // SupplierDb: host is MySQL hostname or IP — NOT URL-validated
             // Icecat: username + token fields, no URL field
+            // EanSearch: bearer token only — base URL is hard-coded in EanSearchClient
             // ImageSearch: api_key only, no URL field
-            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat, self::ImageSearch => [],
+            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat, self::EanSearch, self::ImageSearch => [],
         };
     }
 
@@ -128,6 +135,7 @@ enum IntegrationCredentialKind: string
             self::LangfuseObservability => 'gray',
             self::SupplierDb => 'success', // data-side green palette (Catalogue group)
             self::Icecat => 'info', // content-enrichment source
+            self::EanSearch => 'info', // content-enrichment source — palette parity with Icecat
             self::ImageSearch => 'info', // content-enrichment source
         };
     }

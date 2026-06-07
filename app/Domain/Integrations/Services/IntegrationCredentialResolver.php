@@ -131,6 +131,9 @@ class IntegrationCredentialResolver
                 'api_token' => (string) config('services.icecat.api_token', ''),
                 'content_token' => (string) config('services.icecat.content_token', ''),
             ],
+            IntegrationCredentialKind::EanSearch => [
+                'token' => (string) config('services.ean_search.token', ''),
+            ],
             IntegrationCredentialKind::ImageSearch => [
                 'api_key' => (string) config('services.image_search.api_key', ''),
             ],

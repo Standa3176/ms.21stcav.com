@@ -303,6 +303,24 @@ Schedule::command('pricing:scan-sourcing-gaps')
     ->timezone('Europe/London')
     ->description('Cache competitor-only no-supplier sourcing gaps for the dashboard (weekly, Sun 05:30)');
 
+// Quick task 260607-t6w — Weekly category audit Fri 22:00 London.
+//
+// Mon-Sun pattern doesn't matter — just Friday so Monday morning the ecom
+// manager has a fresh report to triage over the week. Rule-based + free
+// (no Claude spend); typical runtime under 30 seconds on the live catalogue.
+// timezone('Europe/London') resolves GMT/BST so 22:00 is wall-clock London.
+//
+// Friday slot was empty (no other Fri job) so no collision risk. The
+// audit TRUNCATE-and-replaces category_audit_findings — snapshot semantics
+// per scope. Unconditional schedule (no opt-in flag): the command is safe
+// to run repeatedly because TRUNCATE-and-replace is idempotent.
+Schedule::command('products:audit-categories')
+    ->cron('0 22 * * 5') // cron DOW: 5=Friday
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Weekly category audit (Fri 22:00 London) for ecom manager review');
+
 // Phase 12 Plan 05 SEOAGT-05 — nightly SEO agent batch at 04:30 Europe/London.
 // Slots between competitor:ftp-pull (Sun+Wed 02:00) and supplier:db-sync
 // (Mon-Fri 07:00). Single nightly cadence per SEOAGT-05 success criterion 1.

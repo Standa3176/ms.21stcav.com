@@ -101,6 +101,7 @@ use App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy;
+use App\Domain\Products\Console\Commands\AuditProductCategoriesCommand;
 use App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand;
 use App\Domain\Products\Console\Commands\SnapshotsPruneCommand;
 use App\Domain\Products\Models\Product;
@@ -795,6 +796,15 @@ class AppServiceProvider extends ServiceProvider
                 // Europe/London via routes/console.php (continues the
                 // 03:00..03:50 retention cascade).
                 SnapshotsPruneCommand::class,
+                // Quick task 260607-t6w — products:audit-categories. Weekly
+                // rule-based audit of live product category assignments
+                // (Fri 22:00 London cron in routes/console.php). TRUNCATEs
+                // and re-INSERTs category_audit_findings every run; free +
+                // deterministic + no Claude spend at scan time. Lives under
+                // app/Domain/Products/Console/Commands/ so explicit
+                // registration is required (mirror pattern: SnapshotsPruneCommand,
+                // FlagProductsMissingBuyPriceCommand above).
+                AuditProductCategoriesCommand::class,
             ]);
         }
     }

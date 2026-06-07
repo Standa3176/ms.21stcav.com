@@ -116,7 +116,11 @@ class BackfillMerchantFeedCommand extends BaseCommand
 
         if (in_array('category', $fields, true)) {
             $this->newLine();
-            $this->warn('category backfill not yet implemented in this task (Task 4 lands it).');
+            $this->info('=== Category backfill ===');
+            $aborted = $this->backfillCategory($dryRun, $skusFilter, $limit, $noConfirm, $updatedSkus);
+            if ($aborted) {
+                return SymfonyCommand::FAILURE;
+            }
         }
 
         // --resync: only on SUCCESSFULLY UPDATED SKUs (never the candidate set).
@@ -401,6 +405,137 @@ class BackfillMerchantFeedCommand extends BaseCommand
             }
         }
         $this->info("Updated {$updated} product(s) with brand_id.");
+    }
+
+    /**
+     * Category field path. Chains products:assign-taxonomy (Claude per SKU)
+     * in 50-SKU batches. Returns TRUE if the operator aborted at the cost
+     * confirmation gate, FALSE otherwise (success / dry-run / no-candidates).
+     *
+     * Cost banner shows BEFORE any spend (~1p/SKU). Interactive runs gate on
+     * y/N confirmation unless --no-confirm is passed. Non-interactive runs
+     * (cron / queue) without --no-confirm ABORT — operator must explicitly
+     * opt in to spending Claude credit without a TTY.
+     *
+     * Successfully-updated SKU set is the intersection of (was missing
+     * before this batch) ∩ (present after this batch) — attributes only the
+     * delta this run produced, not legacy assignments.
+     *
+     * @param  array<int, string>  $skusFilter
+     * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
+     */
+    private function backfillCategory(
+        bool $dryRun,
+        array $skusFilter,
+        int $limit,
+        bool $noConfirm,
+        array &$updatedSkus,
+    ): bool {
+        $query = Product::query()
+            ->where('status', 'publish')
+            ->where(function ($q): void {
+                $q->whereNull('category_id')->orWhere('category_id', 0);
+            });
+        if ($skusFilter !== []) {
+            $query->whereIn('sku', $skusFilter);
+        }
+        if ($limit > 0) {
+            $query->limit($limit);
+        }
+
+        $candidateSkus = $query
+            ->orderBy('id')
+            ->pluck('sku')
+            ->filter(static fn ($s): bool => is_string($s) && $s !== '')
+            ->values()
+            ->all();
+
+        $count = count($candidateSkus);
+        if ($count === 0) {
+            $this->info('Category backfill: 0 candidate products.');
+
+            return false;
+        }
+
+        $costPence = $count * 1; // ~1p/SKU per task background; conservative.
+        $costGbp = number_format($costPence / 100, 2);
+        $this->info(
+            "Category backfill candidates: {$count}. "
+            ."Estimated Claude spend: ~{$costPence}p (~£{$costGbp}). Field: category."
+        );
+
+        if ($dryRun) {
+            $this->newLine();
+            $this->info('Sample (first 20 SKUs):');
+            foreach (array_slice($candidateSkus, 0, 20) as $sku) {
+                $this->line("  - {$sku}");
+            }
+            $this->newLine();
+            $this->info('Dry-run — exiting category pass without spending Claude credit.');
+
+            return false;
+        }
+
+        // Live path interactive guard.
+        $isTty = function_exists('posix_isatty') && @posix_isatty(STDIN);
+        if (! $noConfirm) {
+            if ($isTty) {
+                if (! $this->confirm(
+                    "About to spend ~£{$costGbp} on Claude for category backfill. Proceed?",
+                    false,
+                )) {
+                    $this->warn('Aborted by operator.');
+
+                    return true;
+                }
+            } else {
+                $this->error('Non-interactive run without --no-confirm. Refusing to spend Claude credit without explicit opt-in.');
+
+                return true;
+            }
+        }
+
+        // Chunk into 50-SKU batches, chain products:assign-taxonomy per batch.
+        $batches = array_chunk($candidateSkus, 50);
+        $updated = 0;
+        foreach ($batches as $i => $batch) {
+            $batchNo = $i + 1;
+            $this->newLine();
+            $this->info("==> products:assign-taxonomy (batch {$batchNo}/".count($batches).', '.count($batch).' SKUs)');
+
+            // Baseline: which SKUs in this batch were missing category_id BEFORE the call?
+            $beforeMissing = Product::whereIn('sku', $batch)
+                ->where(function ($q): void {
+                    $q->whereNull('category_id')->orWhere('category_id', 0);
+                })
+                ->pluck('sku')
+                ->all();
+
+            $exit = Artisan::call('products:assign-taxonomy', ['--skus' => implode(',', $batch)]);
+            $this->line(Artisan::output());
+
+            // Successfully updated = (missing before) ∩ (has category after)
+            $afterAssigned = Product::whereIn('sku', $batch)
+                ->whereNotNull('category_id')
+                ->where('category_id', '!=', 0)
+                ->pluck('sku')
+                ->all();
+
+            $batchUpdated = array_values(array_intersect($beforeMissing, $afterAssigned));
+            foreach ($batchUpdated as $sku) {
+                $updatedSkus[] = $sku;
+            }
+            $updated += count($batchUpdated);
+
+            if ($exit !== 0) {
+                $this->warn("Batch {$batchNo} exited {$exit} — continuing with remaining batches.");
+            }
+        }
+
+        $this->newLine();
+        $this->info("Category backfill: {$updated} products updated.");
+
+        return false;
     }
 
     /**

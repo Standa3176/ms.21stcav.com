@@ -15,7 +15,7 @@ Artisan::command('inspire', function () {
 | Retention prune schedule (D-09)
 |--------------------------------------------------------------------------
 |
-| All prunes run at 03:00 window staggered by 10-minute intervals to spread
+| All prunes run at 03:00 window staggered by 5–10 minute intervals to spread
 | DB load. `withoutOverlapping(30)` prevents a slow prune colliding with the
 | next day's cron fire. `onOneServer()` ensures multi-worker deployments
 | only run each prune once.
@@ -43,6 +43,18 @@ Schedule::command('sync-errors:prune', ['--days' => 90])
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Prune sync_errors older than 90 days (D-07 retention)');
+
+// Quick task 260607-9c6 (SECURITY-REVIEW.md H-1) — daily 03:25 London prune
+// of webhook_receipts.raw_body. Per-topic retention (defaults applied by the
+// command itself): order=30d, customer=7d (tightest GDPR window), other=90d.
+// Slots between sync-errors:prune (03:20) and sync-diffs:prune (03:30) in the
+// 03:00 retention cascade — keeps the staggered-DB-load invariant.
+Schedule::command('webhooks:prune-receipts')
+    ->cron('25 3 * * *')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Prune webhook_receipts by per-topic GDPR retention (H-1, 260607-9c6)');
 
 // D-08: sync_diffs — conditional (no-op while WOO_WRITE_ENABLED=false per Pitfall L)
 Schedule::command('sync-diffs:prune')

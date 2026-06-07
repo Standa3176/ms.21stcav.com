@@ -22,5 +22,15 @@
         </div>
     </div>
 
+    {{-- 260607-v5g — operator tip pointing at the new Woo-REST-backed
+         category backfill command. Distinct sky-blue palette so it does
+         not blur into the severity-coloured count banner above. --}}
+    <div class="rounded-lg border border-sky-200 dark:border-sky-800 p-4 mb-4 bg-sky-50 dark:bg-sky-900/30 text-sm">
+        <strong>Bulk fix available:</strong> Most <code>missing_category_id</code> findings can be auto-fixed by running
+        <code>php artisan products:backfill-category-from-woo --dry-run</code> first (preview),
+        then re-run without <code>--dry-run</code> to apply. Pulls Woo's own category taxonomy back into MS.
+        Quick task <code>260607-v5g</code>.
+    </div>
+
     {{ $this->table }}
 </x-filament-panels::page>

@@ -6,6 +6,7 @@ namespace App\Domain\Dashboard\Services;
 
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Dashboard\Models\DashboardSnapshot;
+use App\Domain\Pricing\Services\AdCandidateScanner;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Models\SyncRun;
 use App\Domain\Products\Models\Product;
@@ -73,7 +74,59 @@ final class SnapshotAggregator
             // Quick task 260606-lhp — HighConfidenceSourceableWidget +
             // SuggestionsQueueHealthWidget read this metric_key.
             'suggestions_triage_health' => $this->computeSuggestionsTriageHealth(),
+            // Quick task 260607-pys — AdCandidatesReadyWidget reads this.
+            'ad_candidates_health' => $this->computeAdCandidatesHealth(),
         ];
+    }
+
+    /**
+     * Quick task 260607-pys — Golden-ad-target tile payload.
+     *
+     * Reads from AdCandidateScanner at default thresholds (no brand filter,
+     * £199 margin, stock + beat required) — matches the AdCandidatesPage
+     * default view so the dashboard count = the page's default banner
+     * count. Single golden-target SQL surface across the page, the backfill
+     * command, and this aggregator method.
+     *
+     * Registered in computeAll() under 'ad_candidates_health' so
+     * dashboard:refresh persists it every 5 min — widget render never
+     * calls the scanner (T-pys-04 mitigation: cached payload hot path).
+     *
+     * Defensive try/catch matches computeSuggestionsTriageHealth from
+     * 260606-lhp — scanner exceptions MUST NOT 500 the dashboard refresh.
+     * Zero payload returned on any Throwable + report() for ops visibility.
+     *
+     * @return array{count:int, total_margin_pence:int, average_margin_pence:int}
+     */
+    public function computeAdCandidatesHealth(): array
+    {
+        $zero = [
+            'count' => 0,
+            'total_margin_pence' => 0,
+            'average_margin_pence' => 0,
+        ];
+
+        try {
+            $rows = app(AdCandidateScanner::class)->scan();
+
+            $count = $rows->count();
+            if ($count === 0) {
+                return $zero;
+            }
+
+            $total = (int) $rows->sum(static fn ($row): int => (int) ($row->margin_pence ?? 0));
+            $average = (int) intdiv($total, $count);
+
+            return [
+                'count' => $count,
+                'total_margin_pence' => $total,
+                'average_margin_pence' => $average,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $zero;
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Console\Concerns\NormalisesEan;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Models\User;
@@ -16,6 +17,7 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 /**
  * Quick task 260607-cgd — products:backfill-merchant-feed.
+ * Extended 260607-g25 — Icecat EAN fallback for stuck SKUs.
  *
  * Lifts the 89% Google Merchant Center disapproval rate on live products
  * (3,493 TRIPLE FAIL rows — no EAN + no brand_id + no category_id) by pulling
@@ -24,6 +26,11 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  *
  * Three field paths, all idempotent (WHERE clauses exclude already-populated rows):
  *   --field=ean       supplier_db.ean → NormalisesEan trait → products.ean
+ *                     + (260607-g25) Icecat fallback by brand+MPN when supplier_db
+ *                       returns invalid/missing EAN. Default ON; --no-icecat-fallback
+ *                       restores byte-identical 260607-cgd behaviour. Per-run cap via
+ *                       --max-icecat-spend-pence (default 200p = £2; ~0.2p/query).
+ *                       Cap is in-memory, per-process — a killed run loses the counter.
  *   --field=brand     supplier_db.manufacturer → TaxonomyResolver fuzzy ≥ 0.85 → products.brand_id
  *   --field=category  Claude via products:assign-taxonomy in 50-SKU batches (~1p/SKU)
  *
@@ -34,6 +41,8 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  *   php artisan products:backfill-merchant-feed --field=ean --dry-run
  *   php artisan products:backfill-merchant-feed --field=ean,brand --resync
  *   php artisan products:backfill-merchant-feed --field=category --resync
+ *   php artisan products:backfill-merchant-feed --field=ean --no-icecat-fallback   # 260607-cgd parity
+ *   php artisan products:backfill-merchant-feed --field=ean --max-icecat-spend-pence=50
  */
 // Not `final` so the Pest feature test can override the protected
 // lookupSupplierEans / lookupSupplierManufacturers methods via an anonymous
@@ -50,7 +59,10 @@ class BackfillMerchantFeedCommand extends BaseCommand
         {--limit=0 : Max products this run; 0 = unbounded}
         {--dry-run : Print counts + 20-row sample; do NOT write}
         {--resync : After backfill, run products:resync-to-woo on the SUCCESSFULLY UPDATED SKUs only (re-feeds Merchant Center)}
-        {--no-confirm : Skip interactive y/N confirmations (use for cron / non-interactive runs)}';
+        {--no-confirm : Skip interactive y/N confirmations (use for cron / non-interactive runs)}
+        {--icecat-fallback : When supplier_db EAN is missing/invalid, fall back to Icecat by brand+MPN. DEFAULT ON.}
+        {--no-icecat-fallback : Opt out of Icecat fallback (restores 260607-cgd behaviour exactly).}
+        {--max-icecat-spend-pence=200 : Cap cumulative Icecat spend per run (~0.2p/query; default 200p = £2).}';
 
     protected $description = 'Backfill EAN/brand/category from supplier_db onto live products to lift Google Merchant Center disapproval rate.';
 
@@ -63,6 +75,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
         private readonly TaxonomyResolver $taxonomy,
+        private readonly IcecatClient $icecat,
     ) {
         parent::__construct();
     }
@@ -98,6 +111,15 @@ class BackfillMerchantFeedCommand extends BaseCommand
         $resync = (bool) $this->option('resync');
         $noConfirm = (bool) $this->option('no-confirm') || ! $this->input->isInteractive();
 
+        // Icecat fallback resolution. The negative-only flag is the idiomatic
+        // Symfony/Artisan workaround for "default true" semantics — both
+        // --icecat-fallback (no-op when default ON) and --no-icecat-fallback
+        // are accepted in the signature; the negative one is what we actually
+        // read because Symfony's Option API does not cleanly express
+        // default-true negatable booleans.
+        $icecatFallback = ! (bool) $this->option('no-icecat-fallback');
+        $maxIcecatSpendPence = max(0, (int) $this->option('max-icecat-spend-pence'));
+
         $this->info('Fields requested: '.implode(', ', $fields).($dryRun ? '  (dry-run)' : '  (LIVE)'));
 
         $updatedSkus = [];
@@ -105,7 +127,14 @@ class BackfillMerchantFeedCommand extends BaseCommand
         if (in_array('ean', $fields, true)) {
             $this->newLine();
             $this->info('=== EAN backfill ===');
-            $this->backfillEan($dryRun, $skusFilter, $limit, $updatedSkus);
+            // Pre-flight banner — operator consent / behaviour signal.
+            if ($icecatFallback) {
+                $capGbp = number_format($maxIcecatSpendPence / 100, 2);
+                $this->info("Icecat fallback ENABLED — ~0.2p/query, budget cap £{$capGbp} (cumulative, per-process).");
+            } else {
+                $this->info('Icecat fallback DISABLED — supplier_db only (260607-cgd parity).');
+            }
+            $this->backfillEan($dryRun, $skusFilter, $limit, $updatedSkus, $icecatFallback, $maxIcecatSpendPence);
         }
 
         if (in_array('brand', $fields, true)) {
@@ -150,14 +179,32 @@ class BackfillMerchantFeedCommand extends BaseCommand
 
     /**
      * EAN field path. Builds the candidate set (status=publish + missing EAN),
-     * looks up the supplier EAN per SKU, classifies into 4 quadrants, prints
-     * counts + 20-row sample, and on live writes only validated rows.
+     * looks up the supplier EAN per SKU, classifies into 4 quadrants (when
+     * Icecat fallback is OFF) or 7 buckets (when ON), prints counts + sample,
+     * and on live writes only validated rows.
+     *
+     * Cost-counter semantics (260607-g25): the Icecat spend counter is
+     * cumulative per-process, in-memory, not persisted. A killed run loses
+     * the counter; the next run starts at 0. Operator's safety net is the
+     * per-run cap (--max-icecat-spend-pence), not a global ledger. Tenths of
+     * a penny are used internally (each query ticks 2 tenths = 0.2p) so the
+     * arithmetic is integer, not float.
+     *
+     * Recovered-from-Icecat rows ride the SAME $would write path as supplier
+     * rows — the only difference is provenance bookkeeping for the outcome
+     * table + the per-row "Source" column.
      *
      * @param  array<int, string>  $skusFilter
      * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
      */
-    private function backfillEan(bool $dryRun, array $skusFilter, int $limit, array &$updatedSkus): void
-    {
+    private function backfillEan(
+        bool $dryRun,
+        array $skusFilter,
+        int $limit,
+        array &$updatedSkus,
+        bool $icecatFallback = false,
+        int $maxIcecatSpendPence = 0,
+    ): void {
         $query = Product::query()
             ->where('status', 'publish')
             ->where(function ($q): void {
@@ -195,11 +242,41 @@ class BackfillMerchantFeedCommand extends BaseCommand
 
         $supplierEanBySku = $this->lookupSupplierEans($candidateSkusLower);
 
-        // Classify each candidate into one of four outcomes.
+        // Pre-load Product rows + brand-name map ONCE when fallback is ON
+        // (skip the Woo brand-cache cost when fallback is OFF — matches the
+        // efficiency of the supplier_db batch lookup).
+        /** @var array<string, Product> $productBySku */
+        $productBySku = [];
+        $brandNameById = [];
+        if ($icecatFallback) {
+            $productBySku = Product::query()
+                ->whereIn('sku', $candidateSkus)
+                ->get()
+                ->keyBy('sku')
+                ->all();
+
+            foreach ($this->taxonomy->allBrands() as $term) {
+                $id = (int) ($term['id'] ?? 0);
+                $name = (string) ($term['name'] ?? '');
+                if ($id > 0 && $name !== '') {
+                    $brandNameById[$id] = $name;
+                }
+            }
+        }
+
+        // Classify each candidate into one of (4 or 7) outcomes.
         $would = [];
-        $skippedInvalid = [];
+        $sourceBySku = [];          // sku => 'supplier' | 'icecat'
+        $skippedInvalid = [];        // when fallback OFF — kept for output parity
         $skippedNoMatch = [];
-        $alreadyPopulated = []; // empty by construction — WHERE clause excludes
+        $alreadyPopulated = [];      // empty by construction — WHERE clause excludes
+        $recoveredFromIcecat = [];   // sku => validated EAN
+        $icecatNoMatch = [];
+        $icecatInvalidEan = [];
+        $icecatBudgetExhausted = [];
+        // Tenths-of-pence integer arithmetic (each query = 2 tenths = 0.2p).
+        $icecatSpendTenthPence = 0;
+        $maxIcecatSpendTenthPence = $maxIcecatSpendPence * 10;
         $sample = [];
 
         foreach ($candidateSkus as $sku) {
@@ -207,52 +284,183 @@ class BackfillMerchantFeedCommand extends BaseCommand
             if (! array_key_exists($key, $supplierEanBySku)) {
                 $skippedNoMatch[] = $sku;
                 if (count($sample) < 20) {
-                    $sample[] = [$sku, '(no supplier row)', 'skipped_no_supplier_match'];
+                    $sample[] = [$sku, '(no supplier row)', '-', 'skipped_no_supplier_match'];
                 }
 
                 continue;
             }
             $rawEan = $supplierEanBySku[$key];
             $validated = $this->normaliseEan($rawEan);
-            if ($validated === null) {
-                $skippedInvalid[] = $sku;
+            if ($validated !== null) {
+                $would[$sku] = $validated;
+                $sourceBySku[$sku] = 'supplier';
                 if (count($sample) < 20) {
-                    $sample[] = [$sku, (string) $rawEan, 'skipped_invalid_ean'];
+                    $sample[] = [
+                        $sku,
+                        $validated,
+                        'supplier',
+                        $dryRun ? 'would_update_from_supplier' : 'updated_from_supplier',
+                    ];
                 }
 
                 continue;
             }
-            $would[$sku] = $validated;
+
+            // Supplier returned invalid EAN. Branch on fallback flag.
+            if (! $icecatFallback) {
+                $skippedInvalid[] = $sku;
+                if (count($sample) < 20) {
+                    $sample[] = [$sku, (string) $rawEan, '-', 'skipped_invalid_ean'];
+                }
+
+                continue;
+            }
+
+            // Icecat fallback path.
+            // Cost gate: each call costs 2 tenths-of-pence; reject when the
+            // NEXT call would push us past the cap. maxIcecatSpendPence=0
+            // means "no cap" (--max-icecat-spend-pence=0 explicitly).
+            if ($maxIcecatSpendTenthPence > 0 && ($icecatSpendTenthPence + 2) > $maxIcecatSpendTenthPence) {
+                $icecatBudgetExhausted[] = $sku;
+                if (count($sample) < 20) {
+                    $sample[] = [$sku, (string) $rawEan, 'icecat', 'icecat_budget_exhausted'];
+                }
+
+                continue;
+            }
+
+            $product = $productBySku[$sku] ?? null;
+            $brand = null;
+            $mpn = null;
+            if ($product !== null) {
+                $brandId = (int) ($product->brand_id ?? 0);
+                if ($brandId > 0 && isset($brandNameById[$brandId])) {
+                    $brand = $brandNameById[$brandId];
+                }
+                $mpn = (string) $product->sku;
+            } else {
+                // Product row vanished between candidate-pluck and detail load
+                // (rare — concurrent delete). Treat as no-match to be safe.
+                $icecatNoMatch[] = $sku;
+                if (count($sample) < 20) {
+                    $sample[] = [$sku, '(product row gone)', 'icecat', 'icecat_no_match'];
+                }
+
+                continue;
+            }
+
+            $icecatSpendTenthPence += 2;
+            $candidate = $this->icecat->lookupGtinByMpn($brand, $mpn);
+
+            if ($candidate === null) {
+                $icecatNoMatch[] = $sku;
+                if (count($sample) < 20) {
+                    $sample[] = [$sku, '(no Icecat match)', 'icecat', 'icecat_no_match'];
+                }
+
+                continue;
+            }
+
+            $validatedIcecat = $this->normaliseEan($candidate);
+            if ($validatedIcecat === null) {
+                $icecatInvalidEan[] = $sku;
+                if (count($sample) < 20) {
+                    $sample[] = [$sku, mb_substr((string) $candidate, 0, 32), 'icecat', 'icecat_invalid_ean'];
+                }
+
+                continue;
+            }
+
+            $would[$sku] = $validatedIcecat;
+            $sourceBySku[$sku] = 'icecat';
+            $recoveredFromIcecat[] = $sku;
             if (count($sample) < 20) {
-                $sample[] = [$sku, $validated, $dryRun ? 'would_update' : 'updated'];
+                $sample[] = [
+                    $sku,
+                    $validatedIcecat,
+                    'icecat',
+                    $dryRun ? 'would_update_from_icecat' : 'updated_from_icecat',
+                ];
             }
         }
 
         $this->newLine();
-        $this->table(
-            ['Outcome', 'Count'],
-            [
-                ['would_update', count($would)],
-                ['skipped_invalid_ean', count($skippedInvalid)],
-                ['skipped_no_supplier_match', count($skippedNoMatch)],
-                ['already_populated_excluded', count($alreadyPopulated)],
-            ],
-        );
+        if ($icecatFallback) {
+            // 7-row outcome table — fallback active. supplier-only count is
+            // the supplier-source slice of $would; recovered_from_icecat is
+            // its own row. $skippedInvalid is empty by construction here
+            // (every previously-invalid row went into one of the icecat_*
+            // buckets or into recoveredFromIcecat) but the row is kept at
+            // count 0 so the column ordering stays parallel to the
+            // fallback-off output.
+            $supplierWouldCount = count($would) - count($recoveredFromIcecat);
+            $this->table(
+                ['Outcome', 'Count'],
+                [
+                    ['would_update_from_supplier', $supplierWouldCount],
+                    ['recovered_from_icecat', count($recoveredFromIcecat)],
+                    ['skipped_invalid_ean', count($skippedInvalid)],
+                    ['icecat_no_match', count($icecatNoMatch)],
+                    ['icecat_invalid_ean', count($icecatInvalidEan)],
+                    ['icecat_budget_exhausted', count($icecatBudgetExhausted)],
+                    ['skipped_no_supplier_match', count($skippedNoMatch)],
+                    ['already_populated_excluded', count($alreadyPopulated)],
+                ],
+            );
+        } else {
+            // 4-row outcome table — 260607-cgd byte-identical parity.
+            $this->table(
+                ['Outcome', 'Count'],
+                [
+                    ['would_update', count($would)],
+                    ['skipped_invalid_ean', count($skippedInvalid)],
+                    ['skipped_no_supplier_match', count($skippedNoMatch)],
+                    ['already_populated_excluded', count($alreadyPopulated)],
+                ],
+            );
+        }
 
         $this->newLine();
         $this->info('Sample (first 20):');
-        $this->table(['SKU', 'Candidate EAN', 'Outcome'], $sample);
+        if ($icecatFallback) {
+            $this->table(['SKU', 'Candidate EAN', 'Source', 'Outcome'], $sample);
+        } else {
+            // Strip the Source column for parity output.
+            $sampleNoSource = array_map(
+                static fn (array $row): array => [$row[0], $row[1], $row[3] ?? $row[2]],
+                $sample,
+            );
+            // For fallback-off, the original (3-column) sample shape used
+            // outcome tokens 'would_update' / 'skipped_invalid_ean' / etc.
+            // Replace 'would_update_from_supplier' with 'would_update' so
+            // the parity output matches 260607-cgd exactly.
+            $sampleNoSource = array_map(static function (array $row): array {
+                $outcome = (string) $row[2];
+                $outcome = str_replace('would_update_from_supplier', 'would_update', $outcome);
+                $outcome = str_replace('updated_from_supplier', 'updated', $outcome);
+                $row[2] = $outcome;
+
+                return $row;
+            }, $sampleNoSource);
+            $this->table(['SKU', 'Candidate EAN', 'Outcome'], $sampleNoSource);
+        }
 
         if ($dryRun) {
             $this->newLine();
             $this->info('Dry-run — exiting EAN pass without writes.');
+            if ($icecatFallback) {
+                $queries = (int) ($icecatSpendTenthPence / 2);
+                $pence = number_format($icecatSpendTenthPence / 10, 1);
+                $this->info("Icecat spend this run: {$pence}p ({$queries} queries).");
+            }
 
             return;
         }
 
         // Live path: chunk into 500-row batches.
         $batches = array_chunk($would, 500, true);
-        $updated = 0;
+        $supplierUpdated = 0;
+        $icecatUpdated = 0;
         foreach ($batches as $batch) {
             foreach ($batch as $sku => $ean) {
                 $affected = DB::table('products')
@@ -260,11 +468,23 @@ class BackfillMerchantFeedCommand extends BaseCommand
                     ->update(['ean' => $ean, 'updated_at' => now()]);
                 if ($affected > 0) {
                     $updatedSkus[] = $sku;
-                    $updated++;
+                    if (($sourceBySku[$sku] ?? 'supplier') === 'icecat') {
+                        $icecatUpdated++;
+                    } else {
+                        $supplierUpdated++;
+                    }
                 }
             }
         }
-        $this->info("Updated {$updated} product(s) with EAN.");
+        $total = $supplierUpdated + $icecatUpdated;
+        if ($icecatFallback) {
+            $this->info("Updated {$total} product(s) with EAN: {$supplierUpdated} from supplier_db, {$icecatUpdated} recovered from Icecat.");
+            $queries = (int) ($icecatSpendTenthPence / 2);
+            $pence = number_format($icecatSpendTenthPence / 10, 1);
+            $this->info("Icecat spend this run: {$pence}p ({$queries} queries).");
+        } else {
+            $this->info("Updated {$total} product(s) with EAN.");
+        }
     }
 
     /**

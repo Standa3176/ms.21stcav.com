@@ -477,13 +477,14 @@ class BackfillMerchantFeedCommand extends BaseCommand
             }
         }
         $total = $supplierUpdated + $icecatUpdated;
+        // Operator UX (260607-g25 Task 4): consistent summary shape so log
+        // scrapers see the same fields regardless of fallback flag. When OFF,
+        // icecatCount is always 0 and the spend line is suppressed.
+        $this->info("Updated {$total} product(s) with EAN: {$supplierUpdated} from supplier_db, {$icecatUpdated} recovered from Icecat.");
         if ($icecatFallback) {
-            $this->info("Updated {$total} product(s) with EAN: {$supplierUpdated} from supplier_db, {$icecatUpdated} recovered from Icecat.");
             $queries = (int) ($icecatSpendTenthPence / 2);
             $pence = number_format($icecatSpendTenthPence / 10, 1);
             $this->info("Icecat spend this run: {$pence}p ({$queries} queries).");
-        } else {
-            $this->info("Updated {$total} product(s) with EAN.");
         }
     }
 

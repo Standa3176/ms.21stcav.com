@@ -130,6 +130,89 @@ it('--limit caps the candidate set', function (): void {
     expect($output)->toContain('2 candidate products');
 });
 
+// ── Brand path (Task 3) ──
+
+it('--field=brand live updates only resolved brands', function (): void {
+    Product::factory()->create(['sku' => 'SONY', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000001']);
+    Product::factory()->create(['sku' => 'LINSX', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000002']);
+    Product::factory()->create(['sku' => 'NONE', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000003']);
+
+    bindBrandStub(
+        mfrMap: [
+            'sony' => 'Sony',
+            'linsx' => 'Linsx',
+            // none missing → no supplier manufacturer
+        ],
+        resolveBrandMap: [
+            'Sony' => 42,
+            'Linsx' => null, // below threshold
+        ],
+        allBrands: [['id' => 42, 'name' => 'Sony']],
+    );
+
+    $exit = Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'brand',
+        '--no-confirm' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+    expect(Product::where('sku', 'SONY')->value('brand_id'))->toBe(42);
+    expect(Product::where('sku', 'LINSX')->value('brand_id'))->toBeNull();
+    expect(Product::where('sku', 'NONE')->value('brand_id'))->toBeNull();
+});
+
+it('--field=brand fuzzy below threshold does not write', function (): void {
+    Product::factory()->create(['sku' => 'LINSX', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000099']);
+
+    bindBrandStub(
+        mfrMap: ['linsx' => 'Linsx'],
+        resolveBrandMap: ['Linsx' => null],
+        allBrands: [['id' => 42, 'name' => 'Sony']],
+    );
+
+    Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'brand',
+        '--no-confirm' => true,
+    ]);
+
+    expect(Product::where('sku', 'LINSX')->value('brand_id'))->toBeNull();
+    $output = Artisan::output();
+    expect($output)->toContain('skipped_fuzzy_below_threshold');
+});
+
+it('--field=brand dry-run writes nothing', function (): void {
+    Product::factory()->create(['sku' => 'SONY', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000004']);
+    Product::factory()->create(['sku' => 'LINSX', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000005']);
+    Product::factory()->create(['sku' => 'NONE', 'status' => 'publish', 'brand_id' => null, 'ean' => '0000000000006']);
+
+    bindBrandStub(
+        mfrMap: [
+            'sony' => 'Sony',
+            'linsx' => 'Linsx',
+        ],
+        resolveBrandMap: [
+            'Sony' => 42,
+            'Linsx' => null,
+        ],
+        allBrands: [['id' => 42, 'name' => 'Sony']],
+    );
+
+    Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'brand',
+        '--dry-run' => true,
+        '--no-confirm' => true,
+    ]);
+
+    expect(Product::where('sku', 'SONY')->value('brand_id'))->toBeNull();
+    expect(Product::where('sku', 'LINSX')->value('brand_id'))->toBeNull();
+    expect(Product::where('sku', 'NONE')->value('brand_id'))->toBeNull();
+
+    $output = Artisan::output();
+    expect($output)->toContain('would_update');
+    expect($output)->toContain('skipped_fuzzy_below_threshold');
+    expect($output)->toContain('skipped_no_supplier_manufacturer');
+});
+
 // ── helpers ──
 
 /**
@@ -159,6 +242,71 @@ function bindEanStub(array $eanMap): void
             foreach ($candidateSkus as $sku) {
                 if (array_key_exists($sku, $this->eanMap)) {
                     $out[$sku] = $this->eanMap[$sku];
+                }
+            }
+
+            return $out;
+        }
+    };
+
+    app()->instance(BackfillMerchantFeedCommand::class, $stub);
+}
+
+/**
+ * Bind an anonymous subclass + TaxonomyResolver fake for brand-path testing.
+ *
+ * @param  array<string, string>  $mfrMap           sku_key => raw manufacturer string
+ * @param  array<string, ?int>    $resolveBrandMap  manufacturer => brand_id|null (below-threshold)
+ * @param  array<int, array{id:int, name:string}>  $allBrands  for sample display
+ */
+function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands): void
+{
+    // Swap a TaxonomyResolver fake into the container so the command's
+    // injected dependency uses the stub.
+    $taxonomyFake = new class($resolveBrandMap, $allBrands) extends TaxonomyResolver
+    {
+        public function __construct(
+            /** @var array<string, ?int> */
+            private array $resolveBrandMap,
+            /** @var array<int, array{id:int, name:string}> */
+            private array $brandsList,
+        ) {
+            // Skip parent constructor — no WooClient needed for the stub.
+        }
+
+        public function resolveBrand(?string $brandName): ?int
+        {
+            if ($brandName === null) {
+                return null;
+            }
+
+            return $this->resolveBrandMap[$brandName] ?? null;
+        }
+
+        public function allBrands(): array
+        {
+            return $this->brandsList;
+        }
+    };
+    app()->instance(TaxonomyResolver::class, $taxonomyFake);
+
+    $stub = new class(app(IntegrationCredentialResolver::class), $taxonomyFake, $mfrMap) extends BackfillMerchantFeedCommand
+    {
+        public function __construct(
+            IntegrationCredentialResolver $resolver,
+            TaxonomyResolver $taxonomy,
+            /** @var array<string, string> */
+            private array $mfrMap,
+        ) {
+            parent::__construct($resolver, $taxonomy);
+        }
+
+        protected function lookupSupplierManufacturers(array $candidateSkus): array
+        {
+            $out = [];
+            foreach ($candidateSkus as $sku) {
+                if (array_key_exists($sku, $this->mfrMap)) {
+                    $out[$sku] = $this->mfrMap[$sku];
                 }
             }
 

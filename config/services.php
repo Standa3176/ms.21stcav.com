@@ -65,6 +65,13 @@ return [
         // across hosting environments). Set WOO_USE_POST_FOR_UPDATES=false to
         // restore strict PUT.
         'use_post_for_updates' => env('WOO_USE_POST_FOR_UPDATES', true),
+
+        // 260607-pys — Storefront base URL for the "View on storefront"
+        // per-row action on /admin/ad-candidates. Defaults to the live
+        // meetingstore.co.uk storefront; overridable via WOO_STOREFRONT_URL.
+        // env() inside config is the only legal place per 260606-c4o
+        // EnvUsageTest guardrail — never read env() from the page directly.
+        'storefront_url' => env('WOO_STOREFRONT_URL', 'https://meetingstore.co.uk'),
     ],
 
     'woocommerce' => [

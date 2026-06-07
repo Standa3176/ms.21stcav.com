@@ -15,7 +15,8 @@ use Illuminate\Support\Str;
 
 /**
  * Icecat JSON Product Request client — product images by GTIN/EAN (then
- * Brand + ProductCode/MPN fallback).
+ * Brand + ProductCode/MPN fallback), and a GTIN lookup helper for the
+ * reverse direction (brand+MPN → GTIN, used by products:backfill-merchant-feed).
  *
  * Endpoint (live.icecat.biz/api, GET):
  *   ?lang=EN&shopname={username}&app_key={appKey}&GTIN={ean}
@@ -38,10 +39,15 @@ use Illuminate\Support\Str;
  * the bytes (links may be IP-restricted) — that is the source-images command's
  * job (it runs server-side, so whitelist the server IP in the Icecat account).
  *
- * Pure read client. Returns [] on miss / not-configured / API error so the
- * caller degrades to other candidate sources rather than failing the run.
+ * The same response body also carries GTIN candidates under three legacy/newer
+ * schema variants: data.GeneralInfo.GTIN (string), data.GeneralInfo.GTINs[].Value
+ * (array of objects), and data.EANCodes[] (array of strings). lookupGtinByMpn
+ * tolerates all three.
+ *
+ * Pure read client. Returns [] / null on miss / not-configured / API error so
+ * the caller degrades to other candidate sources rather than failing the run.
  */
-final class IcecatClient
+class IcecatClient
 {
     private const UUID_REGEX = '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i';
 
@@ -78,6 +84,109 @@ final class IcecatClient
         }
 
         return array_slice($urls, 0, max(1, $limit));
+    }
+
+    /**
+     * Lookup the first candidate GTIN/EAN for a brand+MPN pair.
+     *
+     * Returns the raw string from Icecat — the caller MUST pipe it through
+     * App\Console\Concerns\NormalisesEan::normaliseEan before persisting,
+     * because Icecat occasionally returns placeholder values ("N/A", "0",
+     * "—") that look like strings but aren't valid GTINs.
+     *
+     * Reads the three known schema shapes in priority order:
+     *   1. data.GeneralInfo.GTIN              (string)
+     *   2. data.GeneralInfo.GTINs[0].Value    (array of objects — newer)
+     *   3. data.EANCodes[0]                   (array of strings — older)
+     *
+     * Returns null when:
+     *   - Both brand AND mpn are blank (no HTTP call issued).
+     *   - Icecat is not configured (credentials() returns null).
+     *   - The HTTP call fails (already logged via IntegrationLogger).
+     *   - The product has no data sub-object (Icecat "not found").
+     *   - None of the three GTIN field shapes are present in the response.
+     *
+     * No exception is ever raised — failures degrade to null so the caller
+     * (BackfillMerchantFeedCommand::backfillEan) can move on to the next SKU.
+     */
+    public function lookupGtinByMpn(?string $brand, ?string $mpn): ?string
+    {
+        $brand = $brand !== null ? trim($brand) : '';
+        $mpn = $mpn !== null ? trim($mpn) : '';
+        if ($brand === '' && $mpn === '') {
+            return null;
+        }
+
+        $creds = $this->credentials();
+        if ($creds === null) {
+            return null;
+        }
+
+        $identifier = [];
+        if ($brand !== '') {
+            $identifier['Brand'] = $brand;
+        }
+        if ($mpn !== '') {
+            $identifier['ProductCode'] = $mpn;
+        }
+
+        $data = $this->requestRawData($creds, $identifier);
+        if ($data === null) {
+            return null;
+        }
+
+        return $this->extractGtin($data);
+    }
+
+    /**
+     * Pull the first GTIN candidate from the decoded `data` sub-object.
+     * Tolerates the three known Icecat schemas (see lookupGtinByMpn docblock).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function extractGtin(array $data): ?string
+    {
+        // 1) data.GeneralInfo.GTIN — flat string
+        $generalInfo = $data['GeneralInfo'] ?? null;
+        if (is_array($generalInfo)) {
+            $flat = $generalInfo['GTIN'] ?? null;
+            if (is_string($flat) && trim($flat) !== '') {
+                return trim($flat);
+            }
+
+            // 2) data.GeneralInfo.GTINs[0].Value — newer schema
+            $gtins = $generalInfo['GTINs'] ?? null;
+            if (is_array($gtins)) {
+                foreach ($gtins as $entry) {
+                    if (! is_array($entry)) {
+                        continue;
+                    }
+                    $value = $entry['Value'] ?? null;
+                    if (is_string($value) && trim($value) !== '') {
+                        return trim($value);
+                    }
+                }
+            }
+        }
+
+        // 3) data.EANCodes[] — older schema (array of strings OR array of objects)
+        $eanCodes = $data['EANCodes'] ?? null;
+        if (is_array($eanCodes)) {
+            foreach ($eanCodes as $entry) {
+                if (is_string($entry) && trim($entry) !== '') {
+                    return trim($entry);
+                }
+                // Tolerate the rare [{ "Value": "..." }] variant some feeds emit.
+                if (is_array($entry)) {
+                    $value = $entry['Value'] ?? ($entry['EAN'] ?? null);
+                    if (is_string($value) && trim($value) !== '') {
+                        return trim($value);
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -132,9 +241,14 @@ final class IcecatClient
     }
 
     /**
+     * `protected` (was `private`) so the IcecatClientLookupGtinByMpnTest can
+     * override via an anonymous subclass and skip the real resolver boundary
+     * (mirrors the runDumpCommand override pattern from 260607-9c6 / the
+     * BackfillMerchantFeedCommand test surface).
+     *
      * @return array{username:string, app_key:string, api_token:string, content_token:string}|null
      */
-    private function credentials(): ?array
+    protected function credentials(): ?array
     {
         try {
             $c = $this->resolver->for(IntegrationCredentialKind::Icecat);
@@ -202,18 +316,61 @@ final class IcecatClient
      */
     private function request(array $creds, array $identifier): array
     {
+        $data = $this->requestRawData($creds, $identifier);
+        if ($data === null) {
+            return [];
+        }
+
+        $urls = $this->extractUrls($data);
+        // Re-emit a count-of-images log line so the existing observability
+        // (integration_events.images_found) is preserved. Status + latency
+        // come from the most recent transport call.
+        $this->log($identifier, $this->lastStatus, 'success', ['images_found' => count($urls)], $this->lastLatencyMs);
+
+        return $urls;
+    }
+
+    /**
+     * Status + latency from the most recent requestRawData() transport call —
+     * exposed so callers (request()) can re-emit a per-payload log line that
+     * preserves real latency rather than reporting 0ms.
+     */
+    private int $lastStatus = 0;
+
+    private int $lastLatencyMs = 0;
+
+    /**
+     * Shared transport for fetchImageUrls + lookupGtinByMpn — issues the GET,
+     * logs failures via IntegrationLogger, and returns the decoded `data`
+     * sub-object (or null on any failure / no-data).
+     *
+     * Refactored out 2026-06-07 (quick task 260607-g25) so the new GTIN lookup
+     * shares auth/error/log paths with the image-URL path; fetchImageUrls
+     * behaviour stays byte-identical (`request()` still returns the URL list,
+     * still logs `images_found` with real status + latency).
+     *
+     * @param  array{username:string, app_key:string, api_token:string, content_token:string}  $creds
+     * @param  array<string, string>  $identifier  GTIN, or Brand+ProductCode
+     * @return array<string, mixed>|null  decoded `data` object, or null on miss / error
+     */
+    protected function requestRawData(array $creds, array $identifier): ?array
+    {
         $start = microtime(true);
         try {
             $resp = Http::timeout(20)
                 ->withHeaders($this->headers($creds))
                 ->get($this->baseUrl(), $this->query($creds, $identifier));
         } catch (\Throwable $e) {
+            $this->lastStatus = 0;
+            $this->lastLatencyMs = 0;
             $this->log($identifier, 0, 'failed', ['exception' => $e::class, 'message' => $e->getMessage()], 0);
 
-            return [];
+            return null;
         }
 
         $latency = (int) round((microtime(true) - $start) * 1000);
+        $this->lastStatus = $resp->status();
+        $this->lastLatencyMs = $latency;
 
         if (! $resp->successful()) {
             $body = $resp->json();
@@ -227,7 +384,7 @@ final class IcecatClient
                 'icecat_message' => Str::limit($message, 400, ''),
             ], $latency);
 
-            return [];
+            return null;
         }
 
         $json = $resp->json();
@@ -238,13 +395,10 @@ final class IcecatClient
                 'msg' => Str::limit($this->extractMessage(is_array($json) ? $json : []), 200, ''),
             ], $latency);
 
-            return [];
+            return null;
         }
 
-        $urls = $this->extractUrls($data);
-        $this->log($identifier, $resp->status(), 'success', ['images_found' => count($urls)], $latency);
-
-        return $urls;
+        return $data;
     }
 
     /**

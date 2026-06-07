@@ -42,12 +42,13 @@ beforeEach(function () {
     }
 });
 
-it('exposes 12 widgets in HomeDashboardPage::getWidgets()', function (): void {
+it('exposes 13 widgets in HomeDashboardPage::getWidgets()', function (): void {
     $page = new HomeDashboardPage();
     $widgets = $page->getWidgets();
 
-    // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) = 12.
-    expect($widgets)->toHaveCount(12);
+    // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) +
+    // 1 (260607-pys AdCandidatesReady) = 13.
+    expect($widgets)->toHaveCount(13);
     expect($widgets)->toBe([
         LastSyncRunWidget::class,
         CrmPushSuccessRateWidget::class,
@@ -55,6 +56,7 @@ it('exposes 12 widgets in HomeDashboardPage::getWidgets()', function (): void {
         PendingReviewsWidget::class,
         HighConfidenceSourceableWidget::class,
         SuggestionsQueueHealthWidget::class,
+        \App\Filament\Widgets\AdCandidatesReadyWidget::class,
         ImportIssuesWidget::class,
         HorizonFailedJobsWidget::class,
         SyncDiffsParityWidget::class,

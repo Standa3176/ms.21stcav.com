@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
 use App\Console\Commands\Cutover\DivergenceScanCommand;
@@ -118,7 +119,6 @@ use App\Domain\Quotes\Policies\QuotePolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
 use App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand;
 use App\Domain\Suggestions\Console\Commands\PruneOrphanSuggestionsCommand;
-use App\Domain\Webhooks\Console\Commands\PruneWebhookReceiptsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
@@ -138,6 +138,7 @@ use App\Domain\TradePricing\Models\CustomerGroup;
 use App\Domain\TradePricing\Policies\CustomerGroupPolicy;
 use App\Domain\TradePricing\Services\RoleToGroupMapper;
 use App\Domain\TradePricing\Services\TradeRuleResolver;
+use App\Domain\Webhooks\Console\Commands\PruneWebhookReceiptsCommand;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Automattic\WooCommerce\Client;
@@ -717,6 +718,13 @@ class AppServiceProvider extends ServiceProvider
                 // orphan new_product_opportunity Suggestions (off-supplier-DB +
                 // <2 competitors + >=30 days old). Mon 06:00 London cron.
                 PruneOrphanSuggestionsCommand::class,
+                // Quick task 260607-cgd — products:backfill-merchant-feed. Backfills
+                // EAN/brand/category from supplier_db onto live products to lift
+                // Google Merchant Center disapproval rate (89% → <10% target).
+                // Default --dry-run; --resync chains products:resync-to-woo on the
+                // SUCCESSFULLY UPDATED SKUs only. Reuses NormalisesEan trait so the
+                // EAN validator stays byte-identical to GenerateProductDraftsCommand.
+                BackfillMerchantFeedCommand::class,
                 // Quick task 260607-9c6 (SECURITY-REVIEW.md H-1) — daily 03:25
                 // London prune of webhook_receipts.raw_body. Per-topic GDPR
                 // retention (order=30d, customer=7d, other=90d). Closes the

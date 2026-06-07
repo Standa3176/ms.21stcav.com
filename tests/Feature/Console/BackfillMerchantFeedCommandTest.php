@@ -255,8 +255,8 @@ function bindEanStub(array $eanMap): void
 /**
  * Bind an anonymous subclass + TaxonomyResolver fake for brand-path testing.
  *
- * @param  array<string, string>  $mfrMap           sku_key => raw manufacturer string
- * @param  array<string, ?int>    $resolveBrandMap  manufacturer => brand_id|null (below-threshold)
+ * @param  array<string, string>  $mfrMap  sku_key => raw manufacturer string
+ * @param  array<string, ?int>  $resolveBrandMap  manufacturer => brand_id|null (below-threshold)
  * @param  array<int, array{id:int, name:string}>  $allBrands  for sample display
  */
 function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Services\EanSearchClient;
 use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
@@ -17,6 +18,7 @@ uses(RefreshDatabase::class);
 |--------------------------------------------------------------------------
 | Quick task 260607-cgd — products:backfill-merchant-feed
 | Extended 260607-g25 — Icecat EAN fallback for stuck SKUs (cases A-F)
+| Extended 260607-hxa — EAN-search.org default provider + bucket rename
 |--------------------------------------------------------------------------
 |
 | Tests the EAN + brand field paths. Category path is exercised by the
@@ -29,14 +31,16 @@ uses(RefreshDatabase::class);
 | an anonymous subclass that replaces `lookupSupplierEans` /
 | `lookupSupplierManufacturers` with stub maps. The subclass is bound to
 | the container via `app()->instance(BackfillMerchantFeedCommand::class, ...)`
-| so Artisan::call resolves the test double. Mirrors the 260607-9c6 H-2
-| `runDumpCommand` pattern.
+| so Artisan::call resolves the test double.
 |
-| Icecat boundary (260607-g25):
-| The IcecatClient is bound at the container via app()->instance(). The fake
-| exposes a public callCount so Case D + Case E can assert "Icecat was NOT
-| called" (supplier-first / opt-out semantics). The default helper signature
-| binds a throw-on-call fake so any accidental Icecat call fails loudly.
+| EAN-lookup boundary (260607-hxa):
+| Under the default 'ean_search' provider, the EanSearchClient is bound at
+| the container via app()->instance(). The fake exposes a public callCount
+| so Case D + Case E can assert "EanSearch was NOT called" (supplier-first
+| / opt-out semantics). An IcecatClient throw-on-call fake is ALSO bound so
+| any accidental Icecat call under the default provider fails loudly.
+| Case G flips EAN_FALLBACK_PROVIDER to 'icecat' via config() and asserts
+| that IcecatClient IS called and EanSearchClient is NOT.
 */
 
 it('dry-run reports 4 quadrants and writes zero rows', function (): void {
@@ -82,10 +86,10 @@ it('live updates only validated rows', function (): void {
             'abc' => '5033588057222',
             'def' => 'N/A',
         ],
-        // Icecat would no-match DEF / GHI; bind a fake that always returns null
-        // so the supplier-N/A row still ends up null (icecat_no_match), not
-        // recovered.
-        icecatGtinMap: [],
+        // EAN-search would no-match DEF / GHI; bind a fake that always returns
+        // null so the supplier-N/A row still ends up null (ean_lookup_no_match),
+        // not recovered.
+        eanLookupGtinMap: [],
     );
 
     $exit = Artisan::call('products:backfill-merchant-feed', [
@@ -232,10 +236,10 @@ it('--field=brand dry-run writes nothing', function (): void {
     expect($output)->toContain('skipped_no_supplier_manufacturer');
 });
 
-// ── Icecat fallback cases A-F (260607-g25) ──
+// ── EAN-lookup fallback cases A-F (260607-hxa rename of 260607-g25) ──
 
-it('Case A: Icecat fallback writes EAN when supplier returns N/A and Icecat returns a valid GTIN', function (): void {
-    // brand_id=42 (Sony) so Icecat gets brand="Sony"+mpn="FW-50EZ20L"
+it('Case A: EAN-lookup fallback writes EAN when supplier returns N/A and provider returns a valid GTIN', function (): void {
+    // brand_id=42 (Sony) so EanSearch gets brand="Sony"+mpn="FW-50EZ20L"
     Product::factory()->create([
         'sku' => 'FW-50EZ20L',
         'status' => 'publish',
@@ -243,10 +247,10 @@ it('Case A: Icecat fallback writes EAN when supplier returns N/A and Icecat retu
         'brand_id' => 42,
     ]);
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
     bindEanStub(
         eanMap: ['fw-50ez20l' => 'N/A'],
-        icecatGtinMap: ['FW-50EZ20L' => '4548736142680'],
+        eanLookupGtinMap: ['FW-50EZ20L' => '4548736142680'],
     );
 
     $exit = Artisan::call('products:backfill-merchant-feed', [
@@ -257,11 +261,11 @@ it('Case A: Icecat fallback writes EAN when supplier returns N/A and Icecat retu
     expect($exit)->toBe(0);
     expect(Product::where('sku', 'FW-50EZ20L')->value('ean'))->toBe('4548736142680');
     $output = Artisan::output();
-    expect($output)->toContain('recovered_from_icecat');
-    expect($output)->toContain('Icecat fallback ENABLED');
+    expect($output)->toContain('recovered_from_ean_lookup');
+    expect($output)->toContain('EAN lookup fallback ENABLED via ean_search');
 });
 
-it('Case B: icecat_no_match — supplier empty, Icecat returns null, product stays null', function (): void {
+it('Case B: ean_lookup_no_match — supplier empty, provider returns null, product stays null', function (): void {
     Product::factory()->create([
         'sku' => 'UNK-1',
         'status' => 'publish',
@@ -269,10 +273,10 @@ it('Case B: icecat_no_match — supplier empty, Icecat returns null, product sta
         'brand_id' => 42,
     ]);
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
     bindEanStub(
-        eanMap: ['unk-1' => 'N/A'],  // supplier sees row, invalid
-        icecatGtinMap: [],            // Icecat → null
+        eanMap: ['unk-1' => 'N/A'],   // supplier sees row, invalid
+        eanLookupGtinMap: [],          // EanSearch → null
     );
 
     Artisan::call('products:backfill-merchant-feed', [
@@ -282,10 +286,10 @@ it('Case B: icecat_no_match — supplier empty, Icecat returns null, product sta
 
     expect(Product::where('sku', 'UNK-1')->value('ean'))->toBeNull();
     $output = Artisan::output();
-    expect($output)->toContain('icecat_no_match');
+    expect($output)->toContain('ean_lookup_no_match');
 });
 
-it('Case C: icecat_invalid_ean — Icecat returns a placeholder that fails NormalisesEan', function (): void {
+it('Case C: ean_lookup_invalid_ean — provider returns a placeholder that fails NormalisesEan', function (): void {
     Product::factory()->create([
         'sku' => 'BAD-1',
         'status' => 'publish',
@@ -293,10 +297,10 @@ it('Case C: icecat_invalid_ean — Icecat returns a placeholder that fails Norma
         'brand_id' => 42,
     ]);
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
     bindEanStub(
         eanMap: ['bad-1' => 'N/A'],
-        icecatGtinMap: ['BAD-1' => 'N/A'],  // Icecat returns junk that fails normaliseEan
+        eanLookupGtinMap: ['BAD-1' => 'N/A'],  // junk that fails normaliseEan
     );
 
     Artisan::call('products:backfill-merchant-feed', [
@@ -306,10 +310,10 @@ it('Case C: icecat_invalid_ean — Icecat returns a placeholder that fails Norma
 
     expect(Product::where('sku', 'BAD-1')->value('ean'))->toBeNull();
     $output = Artisan::output();
-    expect($output)->toContain('icecat_invalid_ean');
+    expect($output)->toContain('ean_lookup_invalid_ean');
 });
 
-it('Case D: supplier-first wins — valid supplier EAN means Icecat is NEVER called', function (): void {
+it('Case D: supplier-first wins — valid supplier EAN means EanSearch is NEVER called', function (): void {
     Product::factory()->create([
         'sku' => 'WIN-1',
         'status' => 'publish',
@@ -317,11 +321,11 @@ it('Case D: supplier-first wins — valid supplier EAN means Icecat is NEVER cal
         'brand_id' => 42,
     ]);
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
-    // icecatGtinMap=null → throw-on-call fake.
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
+    // eanLookupGtinMap=null → throw-on-call fake.
     bindEanStub(
         eanMap: ['win-1' => '5033588057222'],
-        icecatGtinMap: null,
+        eanLookupGtinMap: null,
     );
 
     Artisan::call('products:backfill-merchant-feed', [
@@ -331,12 +335,16 @@ it('Case D: supplier-first wins — valid supplier EAN means Icecat is NEVER cal
 
     expect(Product::where('sku', 'WIN-1')->value('ean'))->toBe('5033588057222');
 
+    /** @var object{callCount:int} $eanSearch */
+    $eanSearch = app(EanSearchClient::class);
+    expect($eanSearch->callCount)->toBe(0);
+
     /** @var object{callCount:int} $icecat */
     $icecat = app(IcecatClient::class);
     expect($icecat->callCount)->toBe(0);
 });
 
-it('Case E: --no-icecat-fallback restores 260607-cgd behaviour (Icecat NOT called)', function (): void {
+it('Case E: --no-icecat-fallback restores 260607-cgd behaviour (no provider called)', function (): void {
     Product::factory()->create([
         'sku' => 'OPTOUT-1',
         'status' => 'publish',
@@ -344,10 +352,10 @@ it('Case E: --no-icecat-fallback restores 260607-cgd behaviour (Icecat NOT calle
         'brand_id' => 42,
     ]);
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
     bindEanStub(
         eanMap: ['optout-1' => 'N/A'],
-        icecatGtinMap: null,  // throw on call
+        eanLookupGtinMap: null,  // throw on call
     );
 
     Artisan::call('products:backfill-merchant-feed', [
@@ -358,20 +366,29 @@ it('Case E: --no-icecat-fallback restores 260607-cgd behaviour (Icecat NOT calle
 
     expect(Product::where('sku', 'OPTOUT-1')->value('ean'))->toBeNull();
 
+    /** @var object{callCount:int} $eanSearch */
+    $eanSearch = app(EanSearchClient::class);
+    expect($eanSearch->callCount)->toBe(0);
+
     /** @var object{callCount:int} $icecat */
     $icecat = app(IcecatClient::class);
     expect($icecat->callCount)->toBe(0);
 
     $output = Artisan::output();
     expect($output)->toContain('skipped_invalid_ean');
-    expect($output)->not->toContain('recovered_from_icecat');
-    expect($output)->toContain('Icecat fallback DISABLED');
+    expect($output)->not->toContain('recovered_from_ean_lookup');
+    expect($output)->toContain('EAN lookup fallback DISABLED');
 });
 
-it('Case F: budget cap hit — first N succeed, last is icecat_budget_exhausted', function (): void {
-    // 6 products, all supplier N/A, all Icecat valid → cap at 1p limits to 5
-    // queries (5 × 0.2p = 1.0p; 6th query would push to 1.2p, gated).
-    foreach (['BUD1', 'BUD2', 'BUD3', 'BUD4', 'BUD5', 'BUD6'] as $sku) {
+it('Case F: budget cap hit — first N succeed, last is ean_lookup_budget_exhausted', function (): void {
+    // ean_search costs 3 hundredths-of-pence/query. With
+    // --max-icecat-spend-pence=1 the cap is 100 hundredths; 33 queries fit
+    // (33 × 3 = 99 ≤ 100; 34th would push to 102 > 100). Provision 40 products
+    // → expect ≥ 30 writes and ≥ 1 budget-exhausted (tolerance for boundary).
+    $skus = [];
+    for ($i = 1; $i <= 40; $i++) {
+        $sku = 'BUD' . str_pad((string) $i, 2, '0', STR_PAD_LEFT);
+        $skus[] = $sku;
         Product::factory()->create([
             'sku' => $sku,
             'status' => 'publish',
@@ -380,24 +397,17 @@ it('Case F: budget cap hit — first N succeed, last is icecat_budget_exhausted'
         ]);
     }
 
-    bindBrandTermsForIcecat([['id' => 42, 'name' => 'Sony']]);
+    $eanMap = [];
+    $eanLookupMap = [];
+    foreach ($skus as $sku) {
+        $eanMap[strtolower($sku)] = 'N/A';
+        $eanLookupMap[$sku] = '5033588057222';
+    }
+
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
     bindEanStub(
-        eanMap: [
-            'bud1' => 'N/A',
-            'bud2' => 'N/A',
-            'bud3' => 'N/A',
-            'bud4' => 'N/A',
-            'bud5' => 'N/A',
-            'bud6' => 'N/A',
-        ],
-        icecatGtinMap: [
-            'BUD1' => '5033588057222',
-            'BUD2' => '5033588057222',
-            'BUD3' => '5033588057222',
-            'BUD4' => '5033588057222',
-            'BUD5' => '5033588057222',
-            'BUD6' => '5033588057222',
-        ],
+        eanMap: $eanMap,
+        eanLookupGtinMap: $eanLookupMap,
     );
 
     Artisan::call('products:backfill-merchant-feed', [
@@ -406,35 +416,109 @@ it('Case F: budget cap hit — first N succeed, last is icecat_budget_exhausted'
         '--max-icecat-spend-pence' => 1,
     ]);
 
-    // Boundary tolerance: 4 or 5 writes acceptable, ≥1 budget-exhausted.
-    $written = Product::whereIn('sku', ['BUD1', 'BUD2', 'BUD3', 'BUD4', 'BUD5', 'BUD6'])
+    $written = Product::whereIn('sku', $skus)
         ->whereNotNull('ean')
         ->count();
-    expect($written)->toBeGreaterThanOrEqual(4);
-    expect($written)->toBeLessThanOrEqual(5);
+    expect($written)->toBeGreaterThanOrEqual(30);
+    expect($written)->toBeLessThanOrEqual(35);
 
-    $exhausted = 6 - $written;
+    $exhausted = 40 - $written;
     expect($exhausted)->toBeGreaterThanOrEqual(1);
 
     $output = Artisan::output();
-    expect($output)->toContain('icecat_budget_exhausted');
+    expect($output)->toContain('ean_lookup_budget_exhausted');
+});
+
+it('Case G: EAN_FALLBACK_PROVIDER=icecat routes to IcecatClient instead', function (): void {
+    config(['integrations.ean_fallback_provider' => 'icecat']);
+
+    Product::factory()->create([
+        'sku' => 'ROUTE-1',
+        'status' => 'publish',
+        'ean' => null,
+        'brand_id' => 42,
+    ]);
+
+    bindBrandTermsForEanLookup([['id' => 42, 'name' => 'Sony']]);
+    // Icecat fake returns a match; EanSearch fake throws on any call.
+    bindEanStub(
+        eanMap: ['route-1' => 'N/A'],
+        eanLookupGtinMap: null,                       // EanSearch must NOT be called
+        icecatGtinMap: ['ROUTE-1' => '4548736142680'], // Icecat IS the active provider
+    );
+
+    Artisan::call('products:backfill-merchant-feed', [
+        '--field' => 'ean',
+        '--no-confirm' => true,
+    ]);
+
+    expect(Product::where('sku', 'ROUTE-1')->value('ean'))->toBe('4548736142680');
+
+    /** @var object{callCount:int} $eanSearch */
+    $eanSearch = app(EanSearchClient::class);
+    expect($eanSearch->callCount)->toBe(0);
+
+    /** @var object{callCount:int} $icecat */
+    $icecat = app(IcecatClient::class);
+    expect($icecat->callCount)->toBeGreaterThanOrEqual(1);
+
+    $output = Artisan::output();
+    expect($output)->toContain('EAN lookup fallback ENABLED via icecat');
 });
 
 // ── helpers ──
 
 /**
  * Bind an anonymous subclass that overrides `lookupSupplierEans` to return
- * the provided stub map, and an IcecatClient fake at the container.
- *
- * Mirrors the 260607-9c6 `runDumpCommand` pattern.
+ * the provided stub map, AND bind both an EanSearchClient fake (the default
+ * provider) + an IcecatClient fake at the container.
  *
  * @param  array<string, string>  $eanMap  sku_key => raw EAN string
+ * @param  array<string, string>|null  $eanLookupGtinMap  sku => EanSearch-returned GTIN string.
+ *                                                       null = "must not be called" (throws on call).
+ *                                                       [] = "called, returns null for any SKU".
  * @param  array<string, string>|null  $icecatGtinMap  sku => Icecat-returned GTIN string.
- *                                                     null = "must not be called" (throws on call).
- *                                                     [] = "called, returns null for any SKU".
+ *                                                    Defaults to null = throw-on-call sentinel so
+ *                                                    accidental Icecat use under the default provider
+ *                                                    fails loudly. Case G passes a populated map to
+ *                                                    exercise the EAN_FALLBACK_PROVIDER=icecat path.
  */
-function bindEanStub(array $eanMap, ?array $icecatGtinMap = null): void
+function bindEanStub(array $eanMap, ?array $eanLookupGtinMap = null, ?array $icecatGtinMap = null): void
 {
+    // EanSearch fake — primary provider under default config.
+    $eanSearchFake = new class(
+        app(IntegrationCredentialResolver::class),
+        app(IntegrationLogger::class),
+        $eanLookupGtinMap,
+    ) extends EanSearchClient
+    {
+        public int $callCount = 0;
+
+        public function __construct(
+            IntegrationCredentialResolver $resolver,
+            IntegrationLogger $logger,
+            /** @var array<string, string>|null */
+            private readonly ?array $eanLookupGtinMap,
+        ) {
+            parent::__construct($resolver, $logger);
+        }
+
+        public function lookupGtinByMpn(?string $brand, ?string $mpn): ?string
+        {
+            $this->callCount++;
+            if ($this->eanLookupGtinMap === null) {
+                throw new \RuntimeException('EanSearch called but test did not opt in');
+            }
+
+            return $this->eanLookupGtinMap[$mpn ?? ''] ?? null;
+        }
+    };
+    app()->instance(EanSearchClient::class, $eanSearchFake);
+
+    // Icecat fake — throw-on-call sentinel by default so accidental Icecat
+    // use under the default 'ean_search' provider fails loudly. Case G
+    // (EAN_FALLBACK_PROVIDER=icecat) passes a populated map to exercise
+    // the alternative provider path.
     $icecatFake = new class(
         app(IntegrationCredentialResolver::class),
         app(IntegrationLogger::class),
@@ -468,6 +552,7 @@ function bindEanStub(array $eanMap, ?array $icecatGtinMap = null): void
         app(IntegrationCredentialResolver::class),
         app(TaxonomyResolver::class),
         app(IcecatClient::class),
+        app(EanSearchClient::class),
         $eanMap,
     ) extends BackfillMerchantFeedCommand
     {
@@ -475,10 +560,11 @@ function bindEanStub(array $eanMap, ?array $icecatGtinMap = null): void
             IntegrationCredentialResolver $resolver,
             TaxonomyResolver $taxonomy,
             IcecatClient $icecat,
+            EanSearchClient $eanSearch,
             /** @var array<string, string> */
             private array $eanMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch);
         }
 
         protected function lookupSupplierEans(array $candidateSkus): array
@@ -502,9 +588,8 @@ function bindEanStub(array $eanMap, ?array $icecatGtinMap = null): void
 /**
  * Bind an anonymous subclass + TaxonomyResolver fake for brand-path testing.
  *
- * Also binds a throw-on-call IcecatClient fake (brand-path tests don't use
- * Icecat, but the constructor needs a third arg — any accidental call fails
- * loudly).
+ * Also binds throw-on-call IcecatClient + EanSearchClient fakes so any
+ * accidental call from a brand-path test fails loudly.
  *
  * @param  array<string, string>  $mfrMap  sku_key => raw manufacturer string
  * @param  array<string, ?int>  $resolveBrandMap  manufacturer => brand_id|null (below-threshold)
@@ -512,8 +597,7 @@ function bindEanStub(array $eanMap, ?array $icecatGtinMap = null): void
  */
 function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands): void
 {
-    // Swap a TaxonomyResolver fake into the container so the command's
-    // injected dependency uses the stub.
+    // Swap a TaxonomyResolver fake into the container.
     $taxonomyFake = new class($resolveBrandMap, $allBrands) extends TaxonomyResolver
     {
         public function __construct(
@@ -541,7 +625,8 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
     };
     app()->instance(TaxonomyResolver::class, $taxonomyFake);
 
-    // Brand-path tests don't exercise Icecat; bind a throw-on-call fake.
+    // Brand-path tests don't exercise either EAN-lookup provider; bind
+    // throw-on-call fakes for both so a regression fails loudly.
     $icecatFake = new class(
         app(IntegrationCredentialResolver::class),
         app(IntegrationLogger::class),
@@ -557,16 +642,38 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
     };
     app()->instance(IcecatClient::class, $icecatFake);
 
-    $stub = new class(app(IntegrationCredentialResolver::class), $taxonomyFake, $icecatFake, $mfrMap) extends BackfillMerchantFeedCommand
+    $eanSearchFake = new class(
+        app(IntegrationCredentialResolver::class),
+        app(IntegrationLogger::class),
+    ) extends EanSearchClient
+    {
+        public int $callCount = 0;
+
+        public function lookupGtinByMpn(?string $brand, ?string $mpn): ?string
+        {
+            $this->callCount++;
+            throw new \RuntimeException('EanSearch called from brand-path test — should not happen');
+        }
+    };
+    app()->instance(EanSearchClient::class, $eanSearchFake);
+
+    $stub = new class(
+        app(IntegrationCredentialResolver::class),
+        $taxonomyFake,
+        $icecatFake,
+        $eanSearchFake,
+        $mfrMap,
+    ) extends BackfillMerchantFeedCommand
     {
         public function __construct(
             IntegrationCredentialResolver $resolver,
             TaxonomyResolver $taxonomy,
             IcecatClient $icecat,
+            EanSearchClient $eanSearch,
             /** @var array<string, string> */
             private array $mfrMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch);
         }
 
         protected function lookupSupplierManufacturers(array $candidateSkus): array
@@ -586,13 +693,13 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
 }
 
 /**
- * Bind a TaxonomyResolver fake exposing only `allBrands()` for the Icecat
+ * Bind a TaxonomyResolver fake exposing only `allBrands()` for the EAN-lookup
  * fallback path (which reads brand_id → brand-name via the taxonomy). Used by
- * the EAN-path cases A-F that don't otherwise touch brand resolution.
+ * the EAN-path cases A-G that don't otherwise touch brand resolution.
  *
  * @param  array<int, array{id:int, name:string}>  $allBrands
  */
-function bindBrandTermsForIcecat(array $allBrands): void
+function bindBrandTermsForEanLookup(array $allBrands): void
 {
     $taxonomyFake = new class($allBrands) extends TaxonomyResolver
     {

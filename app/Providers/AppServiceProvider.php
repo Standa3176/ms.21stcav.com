@@ -118,6 +118,7 @@ use App\Domain\Quotes\Policies\QuotePolicy;
 use App\Domain\Suggestions\Appliers\StubApplier;
 use App\Domain\Suggestions\Console\Commands\AutoApplyMarginSuggestionsCommand;
 use App\Domain\Suggestions\Console\Commands\PruneOrphanSuggestionsCommand;
+use App\Domain\Webhooks\Console\Commands\PruneWebhookReceiptsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
@@ -716,6 +717,11 @@ class AppServiceProvider extends ServiceProvider
                 // orphan new_product_opportunity Suggestions (off-supplier-DB +
                 // <2 competitors + >=30 days old). Mon 06:00 London cron.
                 PruneOrphanSuggestionsCommand::class,
+                // Quick task 260607-9c6 (SECURITY-REVIEW.md H-1) — daily 03:25
+                // London prune of webhook_receipts.raw_body. Per-topic GDPR
+                // retention (order=30d, customer=7d, other=90d). Closes the
+                // GDPR Art. 5(1)(e) storage-limitation gap on Woo PII webhooks.
+                PruneWebhookReceiptsCommand::class,
                 // Stock-updater parity glue — flip published Products with
                 // NULL/zero buy_price to status=pending (legacy plugin's
                 // logProductChanges() / handle_pending_product() behaviour).

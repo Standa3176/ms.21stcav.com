@@ -6,6 +6,7 @@ namespace App\Domain\Pricing\Services;
 
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use stdClass;
@@ -46,6 +47,13 @@ use stdClass;
  * Brand-name decoration uses TaxonomyResolver; Pricing → ProductAutoCreate
  * is already in the deptrac allow-list (260606-rld). All filter values are
  * parameter-bound in DB::select — never interpolated (T-pys-01 mitigation).
+ *
+ * Quick task 260608-g8x — Stale-supplier exclusion: in-stock rows from
+ * suppliers whose `MAX(recorded_at) < threshold` are filtered at the SQL
+ * level via SupplierFreshnessResolver. Centralised classification; flip
+ * the policy in ONE file. Disable via
+ * `new AdCandidateScanner(..., excludeStaleSupplierStock: false)` for
+ * back-compat / debugging.
  */
 // Not `final` so Pest test fakes can subclass the scanner with a no-op
 // constructor (skipping the WooClient → TaxonomyResolver real construction
@@ -60,7 +68,11 @@ class AdCandidateScanner
     /** Default 7-day window for "supplier currently in stock". */
     private const SUPPLIER_STOCK_WINDOW_DAYS = 7;
 
-    public function __construct(private readonly TaxonomyResolver $taxonomy) {}
+    public function __construct(
+        private readonly TaxonomyResolver $taxonomy,
+        private readonly SupplierFreshnessResolver $freshness,
+        private readonly bool $excludeStaleSupplierStock = true,
+    ) {}
 
     /**
      * Compute the golden-ad-target candidate set.
@@ -243,15 +255,36 @@ class AdCandidateScanner
     {
         $cutoffDate = today()->subDays(self::SUPPLIER_STOCK_WINDOW_DAYS)->toDateString();
 
-        $rows = DB::select(
-            'SELECT product_id, stock, supplier_name FROM ('
+        // Quick task 260608-g8x — stale-supplier exclusion (default ON). NULL
+        // sentinel means "no exclusion" (operator override via constructor).
+        $freshIds = $this->excludeStaleSupplierStock
+            ? $this->freshness->freshSupplierIds()->all()
+            : null;
+
+        // No fresh suppliers at all → short-circuit. Avoids issuing a query
+        // we know will return zero rows AND avoids the WHERE supplier_id IN ()
+        // syntax error on MySQL.
+        if ($freshIds !== null && $freshIds === []) {
+            return [];
+        }
+
+        $sql = 'SELECT product_id, stock, supplier_name FROM ('
             .'SELECT product_id, stock, supplier_name, '
             .'ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC, stock DESC) AS rn '
             .'FROM supplier_offer_snapshots '
-            .'WHERE recorded_at >= ? AND product_id IS NOT NULL'
-            .') t WHERE t.rn = 1',
-            [$cutoffDate],
-        );
+            .'WHERE recorded_at >= ? AND product_id IS NOT NULL';
+        $bindings = [$cutoffDate];
+
+        if ($freshIds !== null) {
+            // Bindings always parameterised — never interpolate (T-pys-01).
+            $placeholders = implode(',', array_fill(0, count($freshIds), '?'));
+            $sql .= ' AND supplier_id IN ('.$placeholders.')';
+            $bindings = array_merge($bindings, $freshIds);
+        }
+
+        $sql .= ') t WHERE t.rn = 1';
+
+        $rows = DB::select($sql, $bindings);
 
         /** @var array<int, array{stock:int, supplier_name:?string}> $out */
         $out = [];

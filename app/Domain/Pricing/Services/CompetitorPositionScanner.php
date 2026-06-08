@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Pricing\Services;
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,9 +46,21 @@ use Illuminate\Support\Facades\DB;
  * row per (competitor, sku) within the window; the rest is in-memory. Cheap
  * enough to run on page load behind a short cache (the page wraps it in
  * Cache::remember). Lists are full + sorted worst-margin first.
+ *
+ * Quick task 260608-g8x — stale-supplier exclusion on the popup's "Our cost
+ * (ex)" sub-line. The cheapest-supplier-name resolver skips suppliers
+ * classified stale by SupplierFreshnessResolver; falls through to the next
+ * cheapest fresh supplier. Disable via
+ * `new CompetitorPositionScanner(..., excludeStaleSuppliers: false)`.
  */
 final class CompetitorPositionScanner
 {
+    public function __construct(
+        private readonly SupplierFreshnessResolver $freshness,
+        private readonly bool $excludeStaleSuppliers = true,
+    ) {}
+
+
     /**
      * Lists are FULL (uncapped) so the dashboard modals + CSV export can show
      * every row; the page slices for the inline preview. competitor_prices is
@@ -318,16 +331,32 @@ final class CompetitorPositionScanner
         $cutoffDate = today()->subDays($maxAgeDays)->toDateString();
         $placeholders = implode(',', array_fill(0, count($productIds), '?'));
 
-        $rows = DB::select(
-            'SELECT product_id, supplier_name FROM ('
+        // Quick task 260608-g8x — when the flag is ON and we have a resolver
+        // available, drop stale-supplier rows from the cheapest-supplier
+        // selection. If the stale set is empty we OMIT the NOT IN clause
+        // entirely (`AND supplier_id NOT IN ()` is invalid on MySQL — same
+        // empty-whereIn pitfall the freshOnly scope sidesteps).
+        $staleIds = $this->excludeStaleSuppliers
+            ? $this->freshness->staleSupplierIds()->all()
+            : [];
+
+        $sql = 'SELECT product_id, supplier_name FROM ('
             .'SELECT product_id, supplier_name, '
             .'ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY recorded_at DESC, price ASC) AS rn '
             .'FROM supplier_offer_snapshots '
             .'WHERE recorded_at >= ? AND price IS NOT NULL '
-            .'AND product_id IN ('.$placeholders.')'
-            .') t WHERE t.rn = 1',
-            array_merge([$cutoffDate], array_values($productIds)),
-        );
+            .'AND product_id IN ('.$placeholders.')';
+        $bindings = array_merge([$cutoffDate], array_values($productIds));
+
+        if ($staleIds !== []) {
+            $staleHolders = implode(',', array_fill(0, count($staleIds), '?'));
+            $sql .= ' AND supplier_id NOT IN ('.$staleHolders.')';
+            $bindings = array_merge($bindings, $staleIds);
+        }
+
+        $sql .= ') t WHERE t.rn = 1';
+
+        $rows = DB::select($sql, $bindings);
 
         /** @var array<int, string> $names */
         $names = [];

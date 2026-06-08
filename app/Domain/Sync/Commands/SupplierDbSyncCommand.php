@@ -10,6 +10,7 @@ use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
+use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -39,6 +40,14 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * SKU); supplier_products is the remote's own deduped winner table, whose
  * dedup rule is NOT cheapest-in-stock, so we bypass it.
  *
+ * 260608-g8x extension: buildBestOfferMap also drops offers from STALE
+ * suppliers (no upload for ≥ threshold_days) BEFORE the cheapest-in-stock
+ * reduction. Same cheapest-in-stock rule for the remaining FRESH offers.
+ * Centralised classification in SupplierFreshnessResolver — flip the policy
+ * in ONE file. Disable via constructor flag `excludeStaleSuppliersFromBuyPrice
+ * = false` (back-compat). Safe to default ON: on the very first run after
+ * deployment, every supplier with a today() snapshot classifies as fresh.
+ *
  * Always filters product_excluded=0. mysqli is used directly (NOT a registered
  * Laravel connection) so this command does not pollute config/database.php for
  * what is a per-run external query.
@@ -62,6 +71,8 @@ final class SupplierDbSyncCommand extends BaseCommand
 
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
+        private readonly SupplierFreshnessResolver $freshness,
+        private readonly bool $excludeStaleSuppliersFromBuyPrice = true,
     ) {
         parent::__construct();
     }
@@ -498,6 +509,25 @@ final class SupplierDbSyncCommand extends BaseCommand
      */
     public function buildBestOfferMap(array $rows): array
     {
+        // Quick task 260608-g8x — drop offers belonging to stale suppliers
+        // BEFORE the cheapest-in-stock reduction runs. Resolver is per-request
+        // cached (singleton) so this is one classify() call per command run.
+        // Filter happens in PHP after rows came back from the remote MySQL VPS.
+        if ($this->excludeStaleSuppliersFromBuyPrice) {
+            $staleIds = $this->freshness->staleSupplierIds()->all();
+            if ($staleIds !== []) {
+                $staleSet = array_flip(array_map('strval', $staleIds));
+                $rows = array_values(array_filter(
+                    $rows,
+                    static function (array $row) use ($staleSet): bool {
+                        $sid = isset($row['supplierid']) ? (string) $row['supplierid'] : '';
+
+                        return $sid === '' || ! isset($staleSet[$sid]);
+                    },
+                ));
+            }
+        }
+
         /** @var array<string, array<string, mixed>> $acc */
         $acc = [];
 

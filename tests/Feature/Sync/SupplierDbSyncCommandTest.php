@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
+use App\Domain\Sync\Services\SupplierFreshnessResolver;
 
 /**
  * Quick task 260504-m5w Tests.
@@ -13,10 +14,19 @@ use App\Domain\Sync\Commands\SupplierDbSyncCommand;
  * live verification step (see 260504-m5w-SUMMARY.md) — fragile to mock and the
  * runtime contract is the same one TestIntegrationAction::testSupplierDb
  * already proves end-to-end on every operator-triggered "Test connection".
+ *
+ * Quick task 260608-g8x — factory now passes the SupplierFreshnessResolver
+ * (newly-required constructor arg). Helper-method tests do NOT seed any
+ * supplier_offer_snapshots → resolver classifies every supplier_id as
+ * 'unknown' → stale list is empty → the new pre-filter in buildBestOfferMap
+ * is a no-op, preserving the existing tests' golden output byte-for-byte.
  */
 function makeSupplierDbSyncCommand(): SupplierDbSyncCommand
 {
-    return new SupplierDbSyncCommand(app(IntegrationCredentialResolver::class));
+    return new SupplierDbSyncCommand(
+        app(IntegrationCredentialResolver::class),
+        app(SupplierFreshnessResolver::class),
+    );
 }
 
 it('parsePrice handles null, empty, plain numeric, currency-prefixed, and comma-separated input', function (): void {

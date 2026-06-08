@@ -289,6 +289,12 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(BudgetGuard::class);
         $this->app->singleton(ToolBus::class);
         $this->app->singleton(GuardrailEngine::class);
+
+        // Quick task 260608-g8x — per-request memoised fresh/amber/stale classifier.
+        // Singleton so the 3 downstream consumers (AdCandidateScanner,
+        // CompetitorPositionScanner, SupplierDbSyncCommand) share the same
+        // cache and trigger AT MOST one query pair per request (T-g8x cache hit).
+        $this->app->singleton(\App\Domain\Sync\Services\SupplierFreshnessResolver::class);
     }
 
     /**

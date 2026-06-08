@@ -17,6 +17,7 @@ use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
 use App\Filament\Widgets\SuggestionsQueueHealthWidget;
+use App\Filament\Widgets\SupplierFreshnessWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
 use Carbon\Carbon;
@@ -122,6 +123,8 @@ class HomeDashboardPage extends Dashboard
             LastSyncRunWidget::class,
             CrmPushSuccessRateWidget::class,
             CompetitorFreshnessWidget::class,
+            // Quick task 260608-g8x — per-supplier freshness tile.
+            SupplierFreshnessWidget::class,
             // Row 2 — Actions (what ops should look at)
             PendingReviewsWidget::class,
             // Quick task 260606-lhp — two decision-grade Suggestions tiles
@@ -201,6 +204,8 @@ class HomeDashboardPage extends Dashboard
                     LastSyncRunWidget::class,
                     CrmPushSuccessRateWidget::class,
                     CompetitorFreshnessWidget::class,
+                    // Quick task 260608-g8x — per-supplier freshness tile.
+                    SupplierFreshnessWidget::class,
                 ]),
             ],
             [

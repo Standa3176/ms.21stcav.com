@@ -24,6 +24,7 @@ use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
 use App\Filament\Widgets\SuggestionsQueueHealthWidget;
+use App\Filament\Widgets\SupplierFreshnessWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
 use App\Filament\Widgets\WeeklyReportStatusWidget;
 use BezhanSalleh\FilamentShield\FilamentShieldPlugin;
@@ -146,6 +147,9 @@ class AdminPanelProvider extends PanelProvider
                 LastSyncRunWidget::class,
                 CrmPushSuccessRateWidget::class,
                 CompetitorFreshnessWidget::class,
+                // Quick task 260608-g8x — per-supplier freshness tile sits
+                // next to the competitor-freshness tile in the freshness row.
+                SupplierFreshnessWidget::class,
                 PendingReviewsWidget::class,
                 // Quick task 260606-lhp — decision-grade Suggestions tiles.
                 HighConfidenceSourceableWidget::class,

@@ -78,7 +78,91 @@ final class SnapshotAggregator
             'ad_candidates_health' => $this->computeAdCandidatesHealth(),
             // Quick task 260607-t6w — CategoryAuditWidget reads this.
             'category_audit_health' => $this->computeCategoryAuditHealth(),
+            // Quick task 260608-g8x — SupplierFreshnessWidget reads this.
+            'supplier_freshness' => $this->computeSupplierFreshness(),
         ];
+    }
+
+    /**
+     * Quick task 260608-g8x — Per-supplier freshness payload.
+     *
+     * Reads from `supplier_freshness_snapshots` (the snapshot table the
+     * `suppliers:check-stale` command TRUNCATEs and re-INSERTs every run)
+     * NOT the resolver — the snapshot is the canonical dashboard source so
+     * widgets stay sub-ms per D-02 truth ("never live aggregation").
+     *
+     * Resilient: missing table OR empty snapshot returns the zero payload
+     * (snapshot won't exist until `suppliers:check-stale` has run at least
+     * once). Same defensive shape as computeCategoryAuditHealth from 260607-t6w.
+     *
+     * @return array{
+     *     fresh:int,
+     *     amber:int,
+     *     stale:int,
+     *     unknown:int,
+     *     threshold_default_days:int,
+     *     stale_suppliers:array<int, array{supplier_id:string,name:?string,days_since:?int,threshold_days:int}>
+     * }
+     */
+    public function computeSupplierFreshness(): array
+    {
+        $zero = [
+            'fresh' => 0,
+            'amber' => 0,
+            'stale' => 0,
+            'unknown' => 0,
+            'threshold_default_days' => (int) config('supplier.default_stale_after_days', 7),
+            'stale_suppliers' => [],
+        ];
+
+        try {
+            if (! Schema::hasTable('supplier_freshness_snapshots')) {
+                return $zero;
+            }
+
+            $latestRunId = DB::table('supplier_freshness_snapshots')
+                ->orderByDesc('created_at')
+                ->value('run_id');
+
+            if ($latestRunId === null) {
+                return $zero;
+            }
+
+            $counts = DB::table('supplier_freshness_snapshots')
+                ->where('run_id', $latestRunId)
+                ->selectRaw("
+                    SUM(CASE WHEN status = 'fresh' THEN 1 ELSE 0 END) AS fresh,
+                    SUM(CASE WHEN status = 'amber' THEN 1 ELSE 0 END) AS amber,
+                    SUM(CASE WHEN status = 'stale' THEN 1 ELSE 0 END) AS stale,
+                    SUM(CASE WHEN status = 'unknown' THEN 1 ELSE 0 END) AS unknown
+                ")
+                ->first();
+
+            $staleRows = DB::table('supplier_freshness_snapshots')
+                ->where('run_id', $latestRunId)
+                ->where('status', 'stale')
+                ->orderByDesc('days_since')
+                ->limit(20)
+                ->get(['supplier_id', 'supplier_name', 'days_since', 'threshold_days']);
+
+            return [
+                'fresh' => (int) ($counts->fresh ?? 0),
+                'amber' => (int) ($counts->amber ?? 0),
+                'stale' => (int) ($counts->stale ?? 0),
+                'unknown' => (int) ($counts->unknown ?? 0),
+                'threshold_default_days' => (int) config('supplier.default_stale_after_days', 7),
+                'stale_suppliers' => $staleRows->map(static fn ($r): array => [
+                    'supplier_id' => (string) $r->supplier_id,
+                    'name' => $r->supplier_name !== null ? (string) $r->supplier_name : null,
+                    'days_since' => $r->days_since !== null ? (int) $r->days_since : null,
+                    'threshold_days' => (int) $r->threshold_days,
+                ])->all(),
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $zero;
+        }
     }
 
     /**

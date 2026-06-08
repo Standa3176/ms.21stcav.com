@@ -42,17 +42,21 @@ beforeEach(function () {
     }
 });
 
-it('exposes 14 widgets in HomeDashboardPage::getWidgets()', function (): void {
+it('exposes 15 widgets in HomeDashboardPage::getWidgets()', function (): void {
     $page = new HomeDashboardPage();
     $widgets = $page->getWidgets();
 
     // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) +
-    // 1 (260607-pys AdCandidatesReady) + 1 (260607-t6w CategoryAudit) = 14.
-    expect($widgets)->toHaveCount(14);
+    // 1 (260607-pys AdCandidatesReady) + 1 (260607-t6w CategoryAudit) +
+    // 1 (260608-g8x SupplierFreshness) = 15.
+    expect($widgets)->toHaveCount(15);
     expect($widgets)->toBe([
         LastSyncRunWidget::class,
         CrmPushSuccessRateWidget::class,
         CompetitorFreshnessWidget::class,
+        // Quick task 260608-g8x — supplier freshness tile sits alongside
+        // CompetitorFreshness in the Row-1 freshness lineup.
+        \App\Filament\Widgets\SupplierFreshnessWidget::class,
         PendingReviewsWidget::class,
         HighConfidenceSourceableWidget::class,
         SuggestionsQueueHealthWidget::class,

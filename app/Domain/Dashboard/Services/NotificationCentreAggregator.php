@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
  *   staleFeeds()        — ['competitor_id','name','hours_since','last_at','is_stale']
  *   pendingSuggestions — ['kind','count','oldest','newest']
  *   webhookDlq()        — ['id','channel','operation','correlation_id','failed_at','error']
+ *   staleSuppliers()    — ['supplier_id','name','days_since','threshold_days','latest_recorded_at']
  *
  * All four methods have LIMITs applied where the source table can grow
  * unbounded — failed_jobs + webhookDlq cap at 200 rows to defeat T-07-04-05
@@ -113,6 +114,38 @@ final class NotificationCentreAggregator
                 'count' => (int) $row->count,
                 'oldest' => $row->oldest,
                 'newest' => $row->newest,
+            ]);
+    }
+
+    /**
+     * Quick task 260608-g8x — Stale suppliers (the latest `suppliers:check-stale`
+     * run classified status='stale'). Reads from supplier_freshness_snapshots
+     * (the same snapshot the dashboard tile reads — never live aggregates).
+     *
+     * Returns empty collection when the table does not yet exist (fresh test
+     * env / pre-migration deploy) — matches the resilient pattern of
+     * `webhookDlq()` and the other aggregator methods.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function staleSuppliers(): Collection
+    {
+        if (! Schema::hasTable('supplier_freshness_snapshots')) {
+            return collect();
+        }
+
+        return \App\Domain\Sync\Models\SupplierFreshnessSnapshot::query()
+            ->current()
+            ->where('status', 'stale')
+            ->orderByDesc('days_since')
+            ->limit(10)
+            ->get()
+            ->map(fn ($s) => [
+                'supplier_id' => $s->supplier_id,
+                'name' => $s->supplier_name,
+                'days_since' => $s->days_since,
+                'threshold_days' => $s->threshold_days,
+                'latest_recorded_at' => $s->latest_recorded_at?->toIso8601String(),
             ]);
     }
 

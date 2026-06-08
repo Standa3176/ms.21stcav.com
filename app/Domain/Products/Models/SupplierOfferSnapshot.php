@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Products\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -43,5 +44,34 @@ final class SupplierOfferSnapshot extends Model
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
+    }
+
+    /**
+     * Quick task 260608-g8x — canonical "exclude stale-supplier rows" filter.
+     *
+     * Filters down to rows whose `supplier_id` is in the resolver's
+     * fresh-supplier set. Three downstream consumers (AdCandidateScanner,
+     * CompetitorPositionScanner.cheapestSupplierName, SupplierDbSyncCommand
+     * buy-price selector) BYPASS this scope when their constructor flag is
+     * false (back-compat with operator override).
+     *
+     * Cached per-request via the singleton resolver — calling `freshOnly()`
+     * 1000 times in a request triggers AT MOST one classification rebuild.
+     *
+     * Empty-whereIn safety: when zero suppliers are fresh, we render a
+     * string sentinel ('__NO_FRESH_SUPPLIERS__') rather than letting
+     * Eloquent silently drop the constraint. The 16-char string never
+     * matches a real supplier_id (which is numeric in the supplier feed).
+     */
+    public function scopeFreshOnly(Builder $q): Builder
+    {
+        $freshIds = app(\App\Domain\Sync\Services\SupplierFreshnessResolver::class)
+            ->freshSupplierIds()
+            ->all();
+
+        return $q->whereIn(
+            'supplier_id',
+            $freshIds === [] ? ['__NO_FRESH_SUPPLIERS__'] : $freshIds,
+        );
     }
 }

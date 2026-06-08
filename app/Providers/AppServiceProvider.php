@@ -819,6 +819,15 @@ class AppServiceProvider extends ServiceProvider
                 // registration is required (mirror pattern: SnapshotsPruneCommand,
                 // FlagProductsMissingBuyPriceCommand above).
                 AuditProductCategoriesCommand::class,
+                // Quick task 260608-g8x — suppliers:check-stale. Snapshots
+                // every supplier's fresh/amber/stale state from
+                // supplier_offer_snapshots into supplier_freshness_snapshots.
+                // TRUNCATE-and-replace semantics; Mon-Fri 07:45 London cron
+                // in routes/console.php (45 min after supplier:db-sync so
+                // today's sync had a chance to write fresh rows). Lives
+                // under app/Domain/Sync/Console/Commands/ so explicit
+                // registration is required.
+                \App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand::class,
             ]);
         }
     }

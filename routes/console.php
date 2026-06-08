@@ -129,6 +129,21 @@ Schedule::command('suggestions:auto-apply')
     ->timezone('Europe/London')
     ->description('Auto-apply margin_change Suggestions above threshold (post-supplier-sync)');
 
+// Quick task 260608-g8x — Mon-Fri 07:45 London snapshot of every supplier's
+// fresh/amber/stale state. Slots BETWEEN suggestions:auto-apply (07:30) and
+// reports:supplier-sync-digest (08:00). 45 min after supplier:db-sync (07:00)
+// so today's sync had a chance to write fresh recorded_at rows — running
+// BEFORE supplier:db-sync would inflate "stale" by 1 day.
+//
+// DO NOT move to 06:30 or 07:30 — both contended (07:30 = suggestions:auto-apply;
+// 06:30 would run before today's supplier sync).
+Schedule::command('suppliers:check-stale')
+    ->cron('45 7 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Snapshot per-supplier freshness (260608-g8x); Mon-Fri 07:45 London');
+
 // Stock-updater parity glue — daily post-supplier-sync digest email to
 // AlertRecipients with receives_sync_reports=true. Replaces the legacy
 // plugin's send_results_and_cleanup() 4-CSV email. Mon-Fri 08:00 London.

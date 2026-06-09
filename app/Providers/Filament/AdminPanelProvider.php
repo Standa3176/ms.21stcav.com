@@ -23,6 +23,7 @@ use App\Filament\Widgets\ImportIssuesWidget;
 use App\Filament\Widgets\LastSyncRunWidget;
 use App\Filament\Widgets\PendingReviewsWidget;
 use App\Filament\Widgets\ProductCatalogueHealthWidget;
+use App\Filament\Widgets\StockDivergenceWidget;
 use App\Filament\Widgets\SuggestionsQueueHealthWidget;
 use App\Filament\Widgets\SupplierFreshnessWidget;
 use App\Filament\Widgets\SyncDiffsParityWidget;
@@ -150,6 +151,8 @@ class AdminPanelProvider extends PanelProvider
                 // Quick task 260608-g8x — per-supplier freshness tile sits
                 // next to the competitor-freshness tile in the freshness row.
                 SupplierFreshnessWidget::class,
+                // Quick task 260609-nku — phantom-stock divergence tile.
+                StockDivergenceWidget::class,
                 PendingReviewsWidget::class,
                 // Quick task 260606-lhp — decision-grade Suggestions tiles.
                 HighConfidenceSourceableWidget::class,

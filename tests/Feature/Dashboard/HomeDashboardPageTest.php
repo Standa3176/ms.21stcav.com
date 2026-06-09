@@ -42,14 +42,14 @@ beforeEach(function () {
     }
 });
 
-it('exposes 15 widgets in HomeDashboardPage::getWidgets()', function (): void {
+it('exposes 16 widgets in HomeDashboardPage::getWidgets()', function (): void {
     $page = new HomeDashboardPage();
     $widgets = $page->getWidgets();
 
     // 9 (Phase 7) + 1 (Phase 09.1 IntegrationHealth) + 2 (260606-lhp tiles) +
     // 1 (260607-pys AdCandidatesReady) + 1 (260607-t6w CategoryAudit) +
-    // 1 (260608-g8x SupplierFreshness) = 15.
-    expect($widgets)->toHaveCount(15);
+    // 1 (260608-g8x SupplierFreshness) + 1 (260609-nku StockDivergence) = 16.
+    expect($widgets)->toHaveCount(16);
     expect($widgets)->toBe([
         LastSyncRunWidget::class,
         CrmPushSuccessRateWidget::class,
@@ -57,6 +57,9 @@ it('exposes 15 widgets in HomeDashboardPage::getWidgets()', function (): void {
         // Quick task 260608-g8x — supplier freshness tile sits alongside
         // CompetitorFreshness in the Row-1 freshness lineup.
         \App\Filament\Widgets\SupplierFreshnessWidget::class,
+        // Quick task 260609-nku — phantom-stock divergence tile sits in
+        // the Row-1 freshness lineup ("is our stock claim trustworthy?").
+        \App\Filament\Widgets\StockDivergenceWidget::class,
         PendingReviewsWidget::class,
         HighConfidenceSourceableWidget::class,
         SuggestionsQueueHealthWidget::class,

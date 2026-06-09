@@ -150,6 +150,52 @@ final class NotificationCentreAggregator
     }
 
     /**
+     * Quick task 260609-nku — Phantom stock SKUs (the latest
+     * `products:audit-stock-divergence` run). Reads directly from
+     * stock_divergence_findings (TRUNCATE-and-replace semantics — the table
+     * already contains only the latest run's rows).
+     *
+     * Returns empty collection when the table does not yet exist (fresh test
+     * env / pre-migration deploy) — matches the resilient pattern of
+     * `staleSuppliers()` and the other aggregator methods.
+     *
+     * Single summary row (not per-SKU) keyed to the `stale_data` bucket in
+     * the notification centre. Operator click-through goes to
+     * /admin/stock-divergence for full per-SKU triage + bulk-resync.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function stockDivergence(): Collection
+    {
+        if (! Schema::hasTable('stock_divergence_findings')) {
+            return collect();
+        }
+
+        $row = DB::table('stock_divergence_findings')
+            ->selectRaw('
+                COUNT(*) AS count,
+                COALESCE(SUM(phantom_units), 0) AS total_phantom_units,
+                MAX(audited_at) AS last_audited_at
+            ')
+            ->first();
+
+        $count = (int) ($row->count ?? 0);
+        if ($count === 0) {
+            return collect();
+        }
+
+        return collect([
+            [
+                'count' => $count,
+                'total_phantom_units' => (int) ($row->total_phantom_units ?? 0),
+                'last_audited_at' => $row->last_audited_at,
+                'link' => '/admin/stock-divergence',
+                'label' => 'Phantom stock SKUs',
+            ],
+        ]);
+    }
+
+    /**
      * Inbound failed webhook events (channel=woo|bitrix, status=failed) in
      * the last 7 days. 200-row LIMIT per threat T-07-04-05.
      *

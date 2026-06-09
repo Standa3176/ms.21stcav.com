@@ -80,7 +80,63 @@ final class SnapshotAggregator
             'category_audit_health' => $this->computeCategoryAuditHealth(),
             // Quick task 260608-g8x — SupplierFreshnessWidget reads this.
             'supplier_freshness' => $this->computeSupplierFreshness(),
+            // Quick task 260609-nku — StockDivergenceWidget reads this.
+            'stock_divergence' => $this->computeStockDivergence(),
         ];
+    }
+
+    /**
+     * Quick task 260609-nku — Weekly stock-divergence findings payload.
+     *
+     * Single SQL round-trip over stock_divergence_findings (COUNT + SUM +
+     * MAX). Reflects whatever the latest Mon 09:15 London cron run produced
+     * — the snapshot semantics make "latest run" and "table contents"
+     * synonymous (TRUNCATE-and-replace every run).
+     *
+     * Defensive try/catch mirrors computeCategoryAuditHealth — if the table
+     * doesn't exist yet (fresh test env that hasn't run the migration) or
+     * any other DB-shape mismatch fires, the widget gets a zero payload
+     * instead of 500ing the dashboard refresh.
+     *
+     * @return array{
+     *     count:int,
+     *     total_phantom_units:int,
+     *     last_run_at:?string
+     * }
+     */
+    public function computeStockDivergence(): array
+    {
+        $zero = [
+            'count' => 0,
+            'total_phantom_units' => 0,
+            'last_run_at' => null,
+        ];
+
+        try {
+            if (! Schema::hasTable('stock_divergence_findings')) {
+                return $zero;
+            }
+
+            $row = DB::table('stock_divergence_findings')
+                ->selectRaw('
+                    COUNT(*) AS count,
+                    COALESCE(SUM(phantom_units), 0) AS total_phantom_units,
+                    MAX(audited_at) AS last_run_at
+                ')
+                ->first();
+
+            return [
+                'count' => (int) ($row->count ?? 0),
+                'total_phantom_units' => (int) ($row->total_phantom_units ?? 0),
+                'last_run_at' => $row->last_run_at !== null
+                    ? \Carbon\Carbon::parse($row->last_run_at)->toIso8601String()
+                    : null,
+            ];
+        } catch (\Throwable $e) {
+            report($e);
+
+            return $zero;
+        }
     }
 
     /**

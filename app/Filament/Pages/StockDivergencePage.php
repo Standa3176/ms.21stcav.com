@@ -129,12 +129,16 @@ final class StockDivergencePage extends Page implements HasTable
                     ->form([
                         Forms\Components\TextInput::make('phantom_min')
                             ->numeric()
-                            ->default(0)
                             ->label('Min phantom units'),
                     ])
-                    ->query(fn (Builder $q, array $data): Builder => filled($data['phantom_min'] ?? null)
-                        ? $q->where('phantom_units', '>=', (int) $data['phantom_min'])
-                        : $q),
+                    ->query(function (Builder $q, array $data): Builder {
+                        $min = $data['phantom_min'] ?? null;
+                        if ($min === null || $min === '') {
+                            return $q;
+                        }
+
+                        return $q->where('phantom_units', '>=', (int) $min);
+                    }),
             ])
             ->actions([
                 Action::make('view_on_storefront')

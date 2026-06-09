@@ -8,6 +8,7 @@ use App\Console\Commands\BaseCommand;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Concerns\JoinsStockSeparate;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 /**
@@ -25,6 +26,8 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  */
 final class ExplainSupplierCostCommand extends BaseCommand
 {
+    use JoinsStockSeparate;
+
     protected $signature = 'supplier:explain-cost {sku : Local product SKU (or mpn/suppliersku) to trace}';
 
     protected $description = 'Show every supplier offer for a SKU + which one sets buy_price (read-only).';
@@ -69,12 +72,14 @@ final class ExplainSupplierCostCommand extends BaseCommand
             return SymfonyCommand::FAILURE;
         }
 
-        $sql = 'SELECT fp.supplierid, f.name AS supplier_name, fp.mpn, fp.suppliersku,
-                       fp.price, fp.stock, fp.rrp, fp.product_excluded, fp.updated_at
+        $stockSelect = $this->stockColumnSelect();
+        $stockJoin = $this->stockSeparateJoinClause();
+        $sql = "SELECT fp.supplierid, f.name AS supplier_name, fp.mpn, fp.suppliersku,
+                       fp.price, {$stockSelect}, fp.rrp, fp.product_excluded, fp.updated_at
                 FROM feeds_products fp
-                LEFT JOIN feeds f ON fp.supplierid = f.id
+                {$stockJoin}
                 WHERE LOWER(TRIM(fp.mpn)) = ? OR LOWER(TRIM(fp.suppliersku)) = ?
-                ORDER BY CAST(fp.price AS DECIMAL(12,4)) ASC';
+                ORDER BY CAST(fp.price AS DECIMAL(12,4)) ASC";
         $stmt = $db->prepare($sql);
         if ($stmt === false) {
             $this->error("Prepare failed: {$db->error}");

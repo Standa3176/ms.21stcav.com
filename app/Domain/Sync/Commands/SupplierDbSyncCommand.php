@@ -10,6 +10,7 @@ use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
+use App\Domain\Sync\Concerns\JoinsStockSeparate;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -62,6 +63,8 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  */
 final class SupplierDbSyncCommand extends BaseCommand
 {
+    use JoinsStockSeparate;
+
     protected $signature = 'supplier:db-sync
         {--dry-run : Report what would change without writing}
         {--limit=0 : Stop after N matches (0 = no limit)}
@@ -136,9 +139,11 @@ final class SupplierDbSyncCommand extends BaseCommand
             $placeholders = implode(',', array_fill(0, count($chunk), '?'));
             // Pull EVERY supplier's offer (feeds_products) so buildBestOfferMap
             // can pick the cheapest in-stock — not the remote's deduped winner.
-            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, fp.stock, f.name AS supplier_name
+            $stockSelect = $this->stockColumnSelect();
+            $stockJoin = $this->stockSeparateJoinClause();
+            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, {$stockSelect}, f.name AS supplier_name
                     FROM feeds_products fp
-                    LEFT JOIN feeds f ON fp.supplierid = f.id
+                    {$stockJoin}
                     WHERE fp.product_excluded = 0
                       AND (LOWER(TRIM(fp.mpn)) IN ({$placeholders})
                            OR LOWER(TRIM(fp.suppliersku)) IN ({$placeholders}))";
@@ -389,9 +394,11 @@ final class SupplierDbSyncCommand extends BaseCommand
             // view here, so query feeds_products + LEFT JOIN feeds for the
             // human-readable supplier name (Rule 1 fix — initial code targeted
             // the wrong table).
-            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, fp.stock, fp.rrp, f.name AS supplier_name
+            $stockSelect = $this->stockColumnSelect();
+            $stockJoin = $this->stockSeparateJoinClause();
+            $sql = "SELECT fp.mpn, fp.suppliersku, fp.supplierid, fp.price, {$stockSelect}, fp.rrp, f.name AS supplier_name
                     FROM feeds_products fp
-                    LEFT JOIN feeds f ON fp.supplierid = f.id
+                    {$stockJoin}
                     WHERE fp.product_excluded = 0
                       AND (LOWER(TRIM(fp.mpn)) IN ({$placeholders})
                            OR LOWER(TRIM(fp.suppliersku)) IN ({$placeholders}))

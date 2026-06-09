@@ -27,6 +27,8 @@
         <code>Resync selected to Woo</code> bulk-action (cap 100 SKUs) pushes MS's 0 over Woo's phantom number
         via <code>products:resync-to-woo</code>.
         Quick task <code>260609-nku</code>.
+        <br>
+        See also <a href="/admin/category-audit" class="underline">/admin/category-audit</a> (260607-t6w) for taxonomy issues.
     </div>
 
     {{ $this->table }}

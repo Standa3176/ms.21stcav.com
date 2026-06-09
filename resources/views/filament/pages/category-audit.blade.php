@@ -30,6 +30,8 @@
         <code>php artisan products:backfill-category-from-woo --dry-run</code> first (preview),
         then re-run without <code>--dry-run</code> to apply. Pulls Woo's own category taxonomy back into MS.
         Quick task <code>260607-v5g</code>.
+        <br>
+        See also <a href="/admin/stock-divergence" class="underline">/admin/stock-divergence</a> (260609-nku) for SKUs where Woo claims stock but no fresh supplier carries any.
     </div>
 
     {{ $this->table }}

@@ -246,8 +246,11 @@ class AuditStockDivergenceCommand extends BaseCommand
 
         $wooResponsesReceived += count($response);
 
-        // Build lookup map keyed by Woo's `id` (not woo_product_id).
+        // Build lookup map keyed by Woo's `id`. Woo SDK returns stdClass for
+        // list endpoints (single-product GET decodes assoc); normalise both
+        // shapes via json round-trip so downstream array-access is uniform.
         $byId = collect($response)
+            ->map(static fn ($row) => is_array($row) ? $row : json_decode(json_encode($row), true))
             ->filter(static fn ($row): bool => is_array($row) && isset($row['id']))
             ->keyBy(static fn (array $row): int => (int) $row['id']);
 

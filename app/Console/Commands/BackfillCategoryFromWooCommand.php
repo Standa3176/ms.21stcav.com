@@ -178,10 +178,15 @@ class BackfillCategoryFromWooCommand extends BaseCommand
                 continue;
             }
 
-            // Build lookup [woo_id => product_row]. WooClient::get normalises
-            // stdClass → array via json round-trip, so each row is assoc.
+            // Build lookup [woo_id => product_row]. Woo SDK returns stdClass for
+            // list endpoints — normalise via json round-trip so array access
+            // works uniformly. (Prior comment claimed WooClient does this; it
+            // doesn't — confirmed live 260609 by audit-stock-divergence dry-run.)
             $lookup = [];
             foreach ($response as $product) {
+                if (! is_array($product)) {
+                    $product = json_decode(json_encode($product), true);
+                }
                 if (! is_array($product)) {
                     continue;
                 }

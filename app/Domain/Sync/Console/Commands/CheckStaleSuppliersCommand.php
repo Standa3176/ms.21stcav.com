@@ -98,6 +98,7 @@ final class CheckStaleSuppliersCommand extends BaseCommand
             $staleList = []; // for the bottom-of-terminal explicit list
 
             foreach ($knownIds as $sid) {
+                $sid = (string) $sid;
                 $status = $this->resolver->classify($sid);
                 $threshold = $this->resolver->thresholdDaysFor($sid);
                 $latest = $this->resolver->latestRecordedAtFor($sid);

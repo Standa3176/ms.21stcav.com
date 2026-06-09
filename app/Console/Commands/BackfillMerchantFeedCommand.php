@@ -843,6 +843,13 @@ class BackfillMerchantFeedCommand extends BaseCommand
      * skip the real mysqli boundary (matches the 260607-9c6 H-2 runDumpCommand
      * test pattern).
      *
+     * stock-separate-not-applicable: both SQL sites inside this method select
+     * suppliersku/mpn + ean only — they do not read .stock. The 260609-rie
+     * dual-file fix only matters for reads of feeds_products.stock. Buy-price
+     * decisions in this command are fixed transitively via products.buy_price
+     * (already written by the now-corrected SupplierDbSyncCommand). See PLAN
+     * scope decision in .planning/quick/260609-rie-... directory.
+     *
      * @param  array<int, string>  $candidateSkus  lowercase, trimmed
      * @return array<string, string>
      */
@@ -928,6 +935,11 @@ class BackfillMerchantFeedCommand extends BaseCommand
      *
      * `protected` so the Pest test can override via an anonymous subclass and
      * skip the real mysqli boundary.
+     *
+     * stock-separate-not-applicable: both SQL sites inside this method select
+     * suppliersku/mpn + manufacturer only — they do not read .stock. The
+     * 260609-rie dual-file fix only matters for reads of feeds_products.stock.
+     * See PLAN scope decision in the .planning/quick/260609-rie-... directory.
      *
      * @param  array<int, string>  $candidateSkus  lowercase, trimmed
      * @return array<string, string>

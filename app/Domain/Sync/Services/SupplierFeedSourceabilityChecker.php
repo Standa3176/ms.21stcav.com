@@ -65,6 +65,12 @@ class SupplierFeedSourceabilityChecker
 
         // Unbuffered stream: the feed is large, but we only ever hold the matched
         // subset (bounded by $wanted) in memory, not the whole feed client-side.
+        //
+        // stock-separate-not-applicable: this query selects mpn_key + ssku_key
+        // only (existence/sourceability check) — does not read .stock. The
+        // 260609-rie dual-file fix only matters for reads of
+        // feeds_products.stock. See PLAN scope decision in the
+        // .planning/quick/260609-rie-... directory.
         $result = $db->query(
             'SELECT LOWER(TRIM(mpn)) AS mpn_key, LOWER(TRIM(suppliersku)) AS ssku_key '
             .'FROM feeds_products WHERE product_excluded = 0',

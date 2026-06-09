@@ -53,6 +53,11 @@ final class SupplierAddCandidateScanner
         // Per-mpn aggregation on the remote: ≥N distinct suppliers, with a
         // representative brand/title + the set of supplierskus for exclusion.
         @$db->query('SET SESSION group_concat_max_len = 100000');
+        // stock-separate-not-applicable: this query selects mpn / supplier_count
+        // / brand / title / supplierskus only (add-candidate aggregation) —
+        // does not read .stock. The 260609-rie dual-file fix only matters for
+        // reads of feeds_products.stock. See PLAN scope decision in the
+        // .planning/quick/260609-rie-... directory.
         $sql = 'SELECT TRIM(mpn) AS mpn,
                        COUNT(DISTINCT supplierid) AS supplier_count,
                        MAX(manufacturer) AS brand,

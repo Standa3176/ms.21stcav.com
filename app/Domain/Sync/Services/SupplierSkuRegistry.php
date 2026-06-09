@@ -47,6 +47,10 @@ class SupplierSkuRegistry
             throw new \RuntimeException("Supplier DB connect failed (errno={$db->connect_errno}): {$db->connect_error}");
         }
 
+        // stock-separate-not-applicable: this query selects mpn_key + ssku_key
+        // only (registry build) — does not read .stock. The 260609-rie dual-file
+        // fix only matters for reads of feeds_products.stock. See PLAN scope
+        // decision in the .planning/quick/260609-rie-... directory.
         $result = $db->query(
             'SELECT DISTINCT LOWER(TRIM(mpn)) AS mpn_key, LOWER(TRIM(suppliersku)) AS ssku_key '
             .'FROM feeds_products WHERE product_excluded = 0',

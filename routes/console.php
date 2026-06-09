@@ -336,6 +336,23 @@ Schedule::command('products:audit-categories')
     ->timezone('Europe/London')
     ->description('Weekly category audit (Fri 22:00 London) for ecom manager review');
 
+// Quick task 260609-nku — Weekly stock-divergence audit Mon 09:15 London.
+//
+// Mon 09:00 is taken by woo:import-products safety-net retry (line 161-166)
+// and Mon 09:05 by supplier:db-sync safety-net retry (line 168-173). 09:15
+// sits AFTER both safety-net retries so today's woo stock_quantity values
+// are guaranteed fresh in the local products table before the audit's
+// NOT EXISTS subquery runs. timezone('Europe/London') resolves GMT/BST.
+//
+// TRUNCATE-and-replaces stock_divergence_findings — snapshot semantics
+// identical to 260607-t6w category_audit_findings.
+Schedule::command('products:audit-stock-divergence')
+    ->cron('15 9 * * 1') // Mon at 09:15 (cron DOW: 1=Mon)
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Weekly stock-divergence audit (Mon 09:15 London) — phantom-stock detection (260609-nku)');
+
 // Phase 12 Plan 05 SEOAGT-05 — nightly SEO agent batch at 04:30 Europe/London.
 // Slots between competitor:ftp-pull (Sun+Wed 02:00) and supplier:db-sync
 // (Mon-Fri 07:00). Single nightly cadence per SEOAGT-05 success criterion 1.

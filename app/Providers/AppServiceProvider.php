@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
@@ -740,6 +741,15 @@ class AppServiceProvider extends ServiceProvider
                 // rare once the initial backfill lands). Reuses WooClient::get() — no new
                 // client method needed.
                 BackfillCategoryFromWooCommand::class,
+                // Quick task 260609-nku — products:audit-stock-divergence. Detects
+                // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
+                // fresh supplier reports qty=0. TRUNCATE-and-replaces
+                // stock_divergence_findings every run; weekly Mon 09:15 London
+                // cron in routes/console.php (after the 09:00 woo:import-products
+                // and 09:05 supplier:db-sync safety-net retries so products.stock_quantity
+                // reflects today's freshest Woo pull). Reuses SupplierFreshnessResolver
+                // for the fresh-supplier predicate (260608-g8x single-source-of-truth).
+                AuditStockDivergenceCommand::class,
                 // Quick task 260607-9c6 (SECURITY-REVIEW.md H-1) — daily 03:25
                 // London prune of webhook_receipts.raw_body. Per-topic GDPR
                 // retention (order=30d, customer=7d, other=90d). Closes the

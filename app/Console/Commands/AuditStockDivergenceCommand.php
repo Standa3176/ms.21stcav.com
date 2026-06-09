@@ -197,14 +197,15 @@ class AuditStockDivergenceCommand extends BaseCommand
             return SymfonyCommand::SUCCESS;
         }
 
-        // Live path: TRUNCATE-and-replace inside a transaction so the table
-        // never sits in a half-old half-new state. Mirrors 260607-t6w semantics.
-        DB::transaction(function () use ($findings): void {
-            DB::table('stock_divergence_findings')->truncate();
-            foreach ($findings->chunk(self::INSERT_CHUNK_SIZE) as $batch) {
-                DB::table('stock_divergence_findings')->insert($batch->all());
-            }
-        });
+        // Live path: TRUNCATE-and-replace. NO outer transaction wrapper —
+        // MySQL TRUNCATE is DDL and implicitly COMMITs the active txn, so
+        // wrapping in DB::transaction() throws "no active transaction" at
+        // outer commit time. Matches 260607-t6w category-audit pattern
+        // (truncate then insert, accept brief half-old/half-new window).
+        DB::table('stock_divergence_findings')->truncate();
+        foreach ($findings->chunk(self::INSERT_CHUNK_SIZE) as $batch) {
+            DB::table('stock_divergence_findings')->insert($batch->all());
+        }
 
         $this->newLine();
         $this->info("Stock divergence audit complete. run_id: {$runId}");

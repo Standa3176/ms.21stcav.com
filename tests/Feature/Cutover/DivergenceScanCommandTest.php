@@ -92,6 +92,12 @@ it('skips products whose Laravel and Woo values match (no divergence row)', func
         'sell_price' => 10.00,
         'image_url' => null,
     ]);
+    // 260610-qc4 — fixture extended with stock_status to match real Woo REST
+    // shape now that WooFieldComparator covers 13 fields. ProductFactory
+    // defaults stock_status='instock'; Woo always returns this top-level
+    // column too. Real production Woo never omits it, so the original
+    // minimal fixture was an artificial gap. category_id/brand_id/ean/
+    // buy_price/stock_quantity stay null on both sides → silent (no diff).
     $this->mockWoo->responses['IDENT-1'] = [[
         'sku' => 'IDENT-1',
         'name' => 'Same',
@@ -100,6 +106,7 @@ it('skips products whose Laravel and Woo values match (no divergence row)', func
         'description' => '',
         'price' => '10.00',
         'images' => [],
+        'stock_status' => 'instock',
     ]];
 
     Artisan::call('cutover:divergence-scan', ['--live' => true]);
@@ -178,9 +185,11 @@ it('writes a single correlation_id for every diff row in one scan', function ():
 
 it('--live writes dashboard_snapshots.sync_diffs_parity with source=cutover:divergence-scan', function (): void {
     Product::factory()->create(['sku' => 'PAR-1', 'name' => 'Same', 'slug' => 's', 'sell_price' => 1.00]);
+    // 260610-qc4 — fixture extended with stock_status (see IDENT-1 comment above).
     $this->mockWoo->responses['PAR-1'] = [[
         'sku' => 'PAR-1', 'name' => 'Same', 'slug' => 's', 'price' => '1.00',
         'short_description' => '', 'description' => '', 'images' => [],
+        'stock_status' => 'instock',
     ]];
 
     Artisan::call('cutover:divergence-scan', ['--live' => true]);

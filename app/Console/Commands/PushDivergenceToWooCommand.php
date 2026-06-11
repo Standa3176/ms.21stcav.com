@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Cutover\Services\DivergenceScanner;
-use App\Domain\Cutover\Services\WooFieldComparator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Models\SyncDiff;
-use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Services\WooProductWriter;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 /**
@@ -23,18 +22,19 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * (SUPPORTED_FIELDS). If WooFieldComparator adds a 14th comparable field
  * (e.g. tags, ean), the next dev must (a) decide whether the new field is
  * pushable MS→Woo here, (b) if yes — add it to SUPPORTED_FIELDS AND extend
- * the PUT-payload builder. The DivergenceComparatorCoverageTest (260610-qc4)
- * will fail when the comparator changes; this command bails on unknown
- * `--field=` values until extended. Pre-GET is non-negotiable for buy_price
- * diffs — Algoritmika WC COG meta lives in meta_data[] alongside Yoast/EAN/
- * brand entries; a blind PUT wipes them all.
+ * WooProductWriter's payload builder. The DivergenceComparatorCoverageTest
+ * (260610-qc4) will fail when the comparator changes; this command bails on
+ * unknown `--field=` values until extended. Pre-GET is non-negotiable for
+ * buy_price diffs — Algoritmika WC COG meta lives in meta_data[] alongside
+ * Yoast/EAN/brand entries; a blind PUT wipes them all (260611-s2d — the
+ * pre-GET + meta-merge logic now lives in WooProductWriter).
  *
  *   php artisan products:push-divergence-to-woo --dry-run
  *   php artisan products:push-divergence-to-woo --field=stock_quantity --no-confirm
  *   php artisan products:push-divergence-to-woo --correlation-id=<uuid>
  *   php artisan products:push-divergence-to-woo --no-confirm
  */
-// Not `final` so the Pest feature test can swap WooClient through the
+// Not `final` so the Pest feature test can swap WooProductWriter through the
 // container without subclassing the command itself (mirrors PushVisibilityToWooCommand).
 class PushDivergenceToWooCommand extends BaseCommand
 {
@@ -42,8 +42,9 @@ class PushDivergenceToWooCommand extends BaseCommand
      * Pushable subset of WooFieldComparator's comparable fields.
      *
      * Grep-discoverable. If a new field becomes pushable (e.g. brand_id once
-     * the pa_brand→id resolver lands), extend this list AND the payload
-     * builder. Unknown `--field=` values bail with a clear error.
+     * the pa_brand→id resolver lands), extend this list AND
+     * WooProductWriter::putProductFields(). Unknown `--field=` values bail
+     * with a clear error.
      */
     private const SUPPORTED_FIELDS = ['stock_quantity', 'buy_price', 'category_id'];
 
@@ -57,7 +58,7 @@ class PushDivergenceToWooCommand extends BaseCommand
 
     protected $description = 'Push MS-side truth to Woo for stock_quantity / buy_price / category_id divergences surfaced by cutover:divergence-scan (260611-g4q).';
 
-    public function __construct(private readonly WooClient $woo)
+    public function __construct(private readonly WooProductWriter $writer)
     {
         parent::__construct();
     }
@@ -201,82 +202,77 @@ class PushDivergenceToWooCommand extends BaseCommand
                 continue;
             }
 
-            // ── Pre-GET (non-negotiable for buy_price meta merge) ──────────
-            try {
-                $wooDict = $this->woo->get("products/{$wooId}");
-            } catch (\Throwable $e) {
-                if ($this->looksLike404($e)) {
+            $fieldsInScope = array_keys($diffsByField);
+
+            // ── Dry-run branch ─────────────────────────────────────────────
+            // Call writer with an EMPTY fields list to exercise pre-GET only:
+            //   - status='woo_not_found' / 'error' bubbles through normally so
+            //     dry-run plan accurately surfaces those outcomes.
+            //   - empty $fields ⇒ writer builds empty payload ⇒ NO PUT call.
+            // This preserves the 260611-g4q Case H invariant (dry-run = 1 GET,
+            // 0 PUTs per product) without smuggling a probe API into the writer.
+            if ($dryRun) {
+                $probe = $this->writer->putProductFields($product, [], $correlationId);
+
+                if ($probe['status'] === 'woo_not_found') {
                     $wooNotFound++;
                     $this->warn("  woo_not_found woo={$wooId} sku={$sku} — marking sync_diff status=woo_not_found");
-                    if (! $dryRun) {
-                        $this->markStatus($diffRows, 'woo_not_found');
-                    }
 
                     continue;
                 }
-                $errors++;
-                $this->warn("  error (GET) woo={$wooId} sku={$sku}: {$e->getMessage()}");
+
+                if ($probe['status'] === 'error') {
+                    $errors++;
+                    $this->warn("  error (GET) woo={$wooId} sku={$sku}: {$probe['reason']}");
+
+                    continue;
+                }
+
+                $woulds++;
+                $this->line('  would_push woo='.$wooId.' sku='.$sku.' fields='.implode(',', $fieldsInScope));
+
+                foreach ($fieldsInScope as $f) {
+                    if (isset($fieldTally[$f])) {
+                        $fieldTally[$f]++;
+                    }
+                }
 
                 continue;
             }
 
-            // ── Build PUT payload (single PUT, all eligible fields) ─────────
-            $putPayload = [];
-            $fieldsBeingPushed = [];
+            // ── Live: delegate to writer ─────────────────────────────────────
+            $result = $this->writer->putProductFields($product, $fieldsInScope, $correlationId);
 
-            if (isset($diffsByField['stock_quantity'])) {
-                $putPayload['stock_quantity'] = (int) ($product->stock_quantity ?? 0);
-                // manage_stock=true is non-negotiable — without it Woo treats
-                // the quantity as a manual override, not a storefront source-of-truth.
-                $putPayload['manage_stock'] = true;
-                $fieldTally['stock_quantity']++;
-                $fieldsBeingPushed[] = 'stock_quantity';
+            if ($result['status'] === 'woo_not_found') {
+                $wooNotFound++;
+                $this->warn("  woo_not_found woo={$wooId} sku={$sku} — marking sync_diff status=woo_not_found");
+                $this->markStatus($diffRows, 'woo_not_found');
+
+                continue;
             }
 
-            if (isset($diffsByField['category_id'])) {
-                $categories = $this->buildCategoriesPayload($product);
-                if ($categories !== []) {
-                    $putPayload['categories'] = $categories;
-                    $fieldTally['category_id']++;
-                    $fieldsBeingPushed[] = 'category_id';
-                }
+            if ($result['status'] === 'error') {
+                $errors++;
+                $this->warn("  error woo={$wooId} sku={$sku}: {$result['reason']}");
+
+                continue;
             }
 
-            if (isset($diffsByField['buy_price'])) {
-                $putPayload['meta_data'] = $this->mergeBuyPriceMeta(
-                    is_array($wooDict['meta_data'] ?? null) ? $wooDict['meta_data'] : [],
-                    (float) ($product->buy_price ?? 0),
-                );
-                $fieldTally['buy_price']++;
-                $fieldsBeingPushed[] = 'buy_price';
-            }
-
-            if ($putPayload === []) {
+            $fieldsBeingPushed = $result['fields_pushed'];
+            if ($fieldsBeingPushed === []) {
                 // Nothing to push for this product (e.g. category_id-only diff
                 // but Product has neither category_id nor category_ids set).
                 continue;
             }
 
-            // ── Dry-run branch ─────────────────────────────────────────────
-            if ($dryRun) {
-                $woulds++;
-                $this->line('  would_push woo='.$wooId.' sku='.$sku.' fields='.implode(',', $fieldsBeingPushed));
-
-                continue;
-            }
-
-            // ── Live PUT ────────────────────────────────────────────────────
-            try {
-                $this->woo->put("products/{$wooId}", $putPayload);
-            } catch (\Throwable $e) {
-                $errors++;
-                $this->warn("  error (PUT) woo={$wooId} sku={$sku}: {$e->getMessage()}");
-
-                continue;
-            }
-
             $pushed++;
             $this->line('  pushed woo='.$wooId.' sku='.$sku.' fields='.implode(',', $fieldsBeingPushed));
+
+            foreach ($fieldsBeingPushed as $f) {
+                if (isset($fieldTally[$f])) {
+                    $fieldTally[$f]++;
+                }
+            }
 
             // Flip ONLY the rows we actually pushed (respects --field subset
             // re-run safety: rows outside the subset stay 'pending').
@@ -314,68 +310,6 @@ class PushDivergenceToWooCommand extends BaseCommand
     }
 
     /**
-     * Build the Woo `categories` payload entry from local Product taxonomy.
-     *
-     * Prefers `category_ids` (multi-cat) when populated; falls back to single
-     * `category_id`. Empty result (both null/empty) means caller should skip
-     * the categories key entirely.
-     *
-     * @return array<int, array{id:int}>
-     */
-    private function buildCategoriesPayload(Product $product): array
-    {
-        $multi = $product->category_ids;
-        if (is_array($multi) && $multi !== []) {
-            return array_values(array_map(
-                static fn ($id): array => ['id' => (int) $id],
-                $multi,
-            ));
-        }
-
-        if ($product->category_id !== null) {
-            return [['id' => (int) $product->category_id]];
-        }
-
-        return [];
-    }
-
-    /**
-     * Merge the local buy_price into Woo's existing meta_data array.
-     *
-     * Drops any existing `_alg_wc_cog_cost` entry, then appends a single fresh
-     * entry with the local value (4 dp number_format matches Woo COG storage).
-     * Every OTHER meta entry — Yoast SEO, EAN, brand_id, etc — survives
-     * UNCHANGED. This contract is non-negotiable: a blind PUT with
-     * meta_data=[{key:_alg_wc_cog_cost,...}] WIPES the rest.
-     *
-     * @param  array<int, mixed>  $wooMetaData
-     * @return array<int, array{key:string,value:string}|array<string, mixed>>
-     */
-    private function mergeBuyPriceMeta(array $wooMetaData, float $localBuyPrice): array
-    {
-        $merged = [];
-        foreach ($wooMetaData as $entry) {
-            if (! is_array($entry)) {
-                $merged[] = $entry;
-
-                continue;
-            }
-            if ((string) ($entry['key'] ?? '') === WooFieldComparator::BUY_PRICE_META_KEY) {
-                // Drop the existing cost-of-goods entry; we'll re-append fresh.
-                continue;
-            }
-            $merged[] = $entry;
-        }
-
-        $merged[] = [
-            'key' => WooFieldComparator::BUY_PRICE_META_KEY,
-            'value' => number_format($localBuyPrice, 4, '.', ''),
-        ];
-
-        return $merged;
-    }
-
-    /**
      * Mark a batch of sync_diff rows as applied + applied_at=now().
      *
      * @param  array<int, SyncDiff>  $rows
@@ -409,28 +343,5 @@ class PushDivergenceToWooCommand extends BaseCommand
             $row->applied_at = now();
             $row->save();
         }
-    }
-
-    /**
-     * Best-effort 404 detection for Woo GET failures.
-     *
-     * The Automattic Woo SDK throws HttpClientException with a 404 status code
-     * on Woo product-deleted responses; we treat string-match "404" in message
-     * as the portable fallback (stubs can throw RuntimeException with "404"
-     * in the message to exercise the woo_not_found branch).
-     */
-    private function looksLike404(\Throwable $e): bool
-    {
-        if (str_contains($e->getMessage(), '404')) {
-            return true;
-        }
-        if (method_exists($e, 'getResponse')) {
-            $response = $e->getResponse();
-            if (is_object($response) && method_exists($response, 'getCode')) {
-                return (int) $response->getCode() === 404;
-            }
-        }
-
-        return false;
     }
 }

@@ -417,6 +417,28 @@ if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
         ->description('CUT-01 parallel-run divergence scan (opt-in; ops env-enabled during cutover window)');
 }
 
+// Quick task 260611-rl4 — cutover:auto-sync daily 23:00 London.
+// Nightly chain that closes MS↔Woo drift overnight: divergence-scan → push
+// divergences → re-scan → parity-regression detector. Re-scan parity-after
+// LESS THAN parity-before exits 1 (cron logs / Horizon alarm) — a push that
+// broadens divergence usually means the comparator predicate is wrong, Woo
+// cache hasn't invalidated, or a different writer is touching Woo behind us.
+//
+// 23:00 London uncontended: 22:00 Fri-only audit-categories + 00:30 daily
+// quotes:expire are the closest neighbours. Slots after business close, before
+// 07:00 supplier:db-sync writes tomorrow's snapshot.
+//
+// withoutOverlapping(120) — defensive: if a run drags past 2hrs (capped by
+// --max-products=500), the next firing skips. Prevents two concurrent push
+// runs racing on the same sync_diffs.
+Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price,category_id --max-products=500')
+    ->cron('0 23 * * *')
+    ->timezone('Europe/London')
+    ->onOneServer()
+    ->withoutOverlapping(120)
+    ->name('cutover:auto-sync')
+    ->description('Quick task 260611-rl4 — nightly MS↔Woo drift self-heal (23:00 Europe/London)');
+
 // Phase 11 Plan 05 (QUOT-08) — quotes:expire daily 00:30 Europe/London.
 // Flips status=sent → status=expired for quotes whose expires_at has passed.
 // --live opt-in is REQUIRED here (the command itself defaults to dry-run per

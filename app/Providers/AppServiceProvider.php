@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
+use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
@@ -758,6 +759,16 @@ class AppServiceProvider extends ServiceProvider
                 // needed — no regular_price involved). Pre-GET merges existing meta_data
                 // so Yoast/EAN/brand entries survive the buy_price write.
                 PushDivergenceToWooCommand::class,
+                // Quick task 260611-qcq — products:hydrate-stock-from-offers. Closes
+                // the missing supplier_offer_snapshots → products.stock_quantity step
+                // proved by HA310-2EP on prod 2026-06-11 (snapshot had Ingram stock=5,659;
+                // products had stock_quantity=0). Mon-Fri 07:20 London cron in
+                // routes/console.php — wedges between flag-missing-buy-price (07:15)
+                // and suggestions:auto-apply (07:30). MS-side only — NO Woo writes;
+                // the 260611-g4q push command handles storefront sync. Reuses
+                // SupplierFreshnessResolver (260608-g8x) for the cheapest-fresh-in-stock
+                // pick — same rule as SupplierDbSyncCommand::buildBestOfferMap.
+                HydrateProductStockFromOffersCommand::class,
                 // Quick task 260609-nku — products:audit-stock-divergence. Detects
                 // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
                 // fresh supplier reports qty=0. TRUNCATE-and-replaces

@@ -35,8 +35,12 @@ use App\Domain\Products\Models\Product;
  * No sync_diffs writes — that bookkeeping is command-level concern.
  * No usleep — per-PUT pacing is a COMMAND-loop concern (batched pushes);
  * the listener fires once per event and needs no pacing.
+ *
+ * Not `final` so listener Pest tests can swap a stub through the container
+ * via anonymous-subclass binding (mirrors the WooClient pattern used by
+ * PushDivergenceToWooCommandTest).
  */
-final class WooProductWriter
+class WooProductWriter
 {
     public function __construct(private readonly WooClient $woo) {}
 

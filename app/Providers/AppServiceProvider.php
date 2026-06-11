@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
+use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
 use App\Console\Commands\Cutover\DivergenceScanCommand;
@@ -741,6 +742,13 @@ class AppServiceProvider extends ServiceProvider
                 // rare once the initial backfill lands). Reuses WooClient::get() — no new
                 // client method needed.
                 BackfillCategoryFromWooCommand::class,
+                // Quick task 260611-f1y — products:push-visibility-to-woo. Pushes
+                // catalog_visibility=hidden for is_internal_only products. Operator-
+                // triggered (Filament toggle on ProductResource Details tab OR direct
+                // CLI). NOT scheduled — the seed migration flags 3 known internals at
+                // deploy time and the Filament toggle handles future ones. Idempotent
+                // pre-GET check skips PUT when Woo already reports hidden.
+                PushVisibilityToWooCommand::class,
                 // Quick task 260609-nku — products:audit-stock-divergence. Detects
                 // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
                 // fresh supplier reports qty=0. TRUNCATE-and-replaces

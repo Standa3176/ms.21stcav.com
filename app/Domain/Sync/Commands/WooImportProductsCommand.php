@@ -170,9 +170,17 @@ final class WooImportProductsCommand extends BaseCommand
                 }
 
                 try {
-                    $product = Product::updateOrCreate(
-                        ['woo_product_id' => $wooProductId],
-                        $payload,
+                    // 260611-s2d — withoutEvents prevents the new ProductObserver
+                    // from dispatching ProductFieldsChangedEvent for every imported
+                    // SKU. A 5,000-SKU Woo import would otherwise flood the
+                    // sync-woo-push queue with reflexive PUTs back to Woo (echo
+                    // loop + Horizon flood). This command IS the Woo→MS bulk
+                    // import — it should never push back.
+                    $product = Product::withoutEvents(
+                        static fn () => Product::updateOrCreate(
+                            ['woo_product_id' => $wooProductId],
+                            $payload,
+                        ),
                     );
                     if ($product->wasRecentlyCreated) {
                         $created++;
@@ -222,6 +230,10 @@ final class WooImportProductsCommand extends BaseCommand
         $productSnapshotsWritten = 0;
         if (! $dryRun && $touchedWooProductIds !== []) {
             foreach (array_chunk(array_unique($touchedWooProductIds), 500) as $idChunk) {
+                // 260611-s2d-safe: read-only get() — no Eloquent events to fire.
+                // ProductPriceSnapshot::updateOrCreate below targets a DIFFERENT
+                // model (snapshots, not products) so the 260611-s2d observer
+                // never sees these writes.
                 Product::whereIn('woo_product_id', $idChunk)
                     ->get(['id', 'sku', 'status', 'sell_price', 'buy_price', 'stock_quantity'])
                     ->each(function (Product $p) use (&$productSnapshotsWritten): void {

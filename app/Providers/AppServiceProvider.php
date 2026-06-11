@@ -113,6 +113,7 @@ use App\Domain\Products\Console\Commands\SnapshotsPruneCommand;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductException;
 use App\Domain\Products\Models\ProductVariant;
+use App\Domain\Products\Observers\ProductObserver;
 use App\Domain\Products\Policies\ProductExceptionPolicy;
 use App\Domain\Products\Policies\ProductPolicy;
 use App\Domain\Products\Policies\ProductVariantPolicy;
@@ -610,6 +611,18 @@ class AppServiceProvider extends ServiceProvider
             QuoteLineImmutabilityObserver::class,
             QuoteTotalRecomputeObserver::class,
         ]);
+
+        // ── Quick task 260611-s2d: event-driven MS→Woo push ───────────────
+        // Eloquent observer on Product. Fires ProductFieldsChangedEvent on
+        // ->save() (incl. updateOrCreate, fill+save) when stock_quantity /
+        // buy_price / sell_price / category_id is in the getChanges() map.
+        //
+        // Flag-gated via cutover.event_driven_push_enabled (default false);
+        // see ProductObserver docblock for the bulk-path safety contract
+        // (mass updates via Product::where(...)->update fire NO events;
+        // only WooImportProductsCommand::updateOrCreate is wrapped in
+        // Product::withoutEvents() — see 260611-s2d Task 5).
+        Product::observe(ProductObserver::class);
 
         // ── Phase 2 Plan 03: register SyncSupplierCommand ────────────────
         // Laravel 12 auto-discovers artisan commands from app/Console/Commands/.

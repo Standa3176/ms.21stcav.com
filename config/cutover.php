@@ -120,4 +120,10 @@ return [
     // cached-config rationale as the woo_db block above.
     'woo_write_enabled' => env('WOO_WRITE_ENABLED'),
 
+    // Quick task 260611-s2d — feature flag for event-driven MS→Woo
+    // propagation of stock_quantity / buy_price / sell_price / category_id.
+    // Defaults OFF so the observer is a no-op until operator flips the env
+    // var. Read via config() per 2026-05-31 cached-config lesson (d7d0e39).
+    'event_driven_push_enabled' => env('CUTOVER_EVENT_DRIVEN_PUSH_ENABLED', false),
+
 ];

@@ -114,8 +114,15 @@ class HydrateProductStockFromOffersCommand extends BaseCommand
             ->whereNotNull('woo_product_id');
 
         if (is_string($skusRaw) && $skusRaw !== '') {
+            // Products.sku stores the canonical Woo case (mixed-case in places —
+            // e.g. HA310-2EP). The supplier_offer_snapshots.sku is the
+            // lowercase-trimmed matchKey form. Apply trim() but NOT strtolower()
+            // here so we match the Product table as-stored. The snapshot lookup
+            // inside the per-product loop applies strtolower() before keying
+            // into supplier_offer_snapshots — keeping the two case rules
+            // independent.
             $skuList = array_values(array_unique(array_filter(array_map(
-                static fn (string $s): string => strtolower(trim($s)),
+                static fn (string $s): string => trim($s),
                 explode(',', $skusRaw),
             ), static fn (string $s): bool => $s !== '')));
 

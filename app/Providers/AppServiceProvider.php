@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
+use App\Console\Commands\BackfillProductBrandFromNameCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
@@ -751,6 +752,15 @@ class AppServiceProvider extends ServiceProvider
                 // SUCCESSFULLY UPDATED SKUs only. Reuses NormalisesEan trait so the
                 // EAN validator stays byte-identical to GenerateProductDraftsCommand.
                 BackfillMerchantFeedCommand::class,
+                // Quick task 260611-sr7 — products:backfill-brand-from-name. Closes the
+                // M-1 Phase 7 gap row (3,231 / 3,922 live products NULL brand_id) by
+                // resolving the FIRST WORD of Product.name through TaxonomyResolver
+                // (single-arg signature — fuzzy threshold owned by the resolver, NOT
+                // plumbed through here). SKU-shaped first tokens trigger a fallback to
+                // the SECOND word ("AV1E3AA#AC3 Poly collaboration device"). NO Woo
+                // writes — pure MS-side data quality; WooFieldComparator silent-skips
+                // brand_id meta so this work doesn't appear in the divergence scan.
+                BackfillProductBrandFromNameCommand::class,
                 // Quick task 260607-v5g — products:backfill-category-from-woo. Backfills
                 // local category_id + category_ids from Woo REST for the 3,244 NULL-category
                 // live products surfaced by the 260607-t6w audit. Free + deterministic +

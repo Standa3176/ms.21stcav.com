@@ -118,6 +118,21 @@ Schedule::command('products:flag-missing-buy-price')
     ->timezone('Europe/London')
     ->description('Flip products with missing buy_price to pending (post-supplier-sync)');
 
+// Quick task 260611-qcq — products:hydrate-stock-from-offers Mon-Fri 07:20 London.
+// Closes the supplier_offer_snapshots → products.stock_quantity gap (proved on
+// prod 2026-06-11 with HA310-2EP: snapshot had Ingram stock=5659, products
+// had stock_quantity=0). Slots BETWEEN flag-missing-buy-price (07:15) and
+// suggestions:auto-apply (07:30) so a freshly-pending product doesn't get
+// its stock_status hydrated the same minute it was demoted to pending.
+// --only-stale=24 keeps the daily cron incremental — first manual full-catalogue
+// rehydrate is `--only-stale=0` (run by hand post-deploy).
+Schedule::command('products:hydrate-stock-from-offers --only-stale=24')
+    ->cron('20 7 * * 1-5') // Mon-Fri at 07:20 (cron DOW: 1=Mon ... 5=Fri)
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Hydrate products.stock_quantity from supplier_offer_snapshots (260611-qcq); Mon-Fri 07:20 London');
+
 // Stock-updater parity glue — auto-apply margin_change Suggestions whose delta
 // crosses pricing.auto_apply_threshold_bps (default 800bps = 8pp). Port of
 // the legacy plugin's setPer() rule. Mon-Fri 07:30 London — after the

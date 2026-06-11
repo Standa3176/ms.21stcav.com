@@ -18,6 +18,8 @@ use App\Domain\CRM\Listeners\PushQuoteToBitrix;
 use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Listeners\PushPriceChangeToWoo;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
+use App\Domain\Products\Events\ProductFieldsChangedEvent;
+use App\Domain\Products\Listeners\PushProductFieldsToWoo;
 use App\Domain\Quotes\Events\QuoteApproved;
 use App\Domain\ProductAutoCreate\Listeners\ApplyPinsDuringSync;
 use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
@@ -88,6 +90,18 @@ class EventServiceProvider extends ServiceProvider
         ProductPriceChanged::class => [
             PushPriceChangeToWoo::class,
         ],
+
+        // Quick task 260611-s2d — event-driven MS→Woo for direct Product saves
+        // covering stock_quantity / buy_price / sell_price / category_id.
+        // Flag-gated at ProductObserver level (cutover.event_driven_push_enabled
+        // defaults false). Listener runs on sync-woo-push queue alongside
+        // PushPriceChangeToWoo. Echo-loop note: WooWebhookController has no
+        // Product writes today (260611-s2d Task 1 probe); if that changes,
+        // gate dispatch on Context::get('source') !== 'woo-webhook'.
+        ProductFieldsChangedEvent::class => [
+            PushProductFieldsToWoo::class,
+        ],
+
         SupplierStockChanged::class => [
             RecomputeCompletenessOnSupplierChange::class.'@handleStockChanged',
             ApplyPinsDuringSync::class.'@handleStockChanged',

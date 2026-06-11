@@ -67,13 +67,14 @@ class BackfillProductBrandFromNameCommand extends BaseCommand
      * matches this pattern AND its length >= MIN_SKU_LIKE_LENGTH (>5 per
      * brief), the SECOND word is used as the brand candidate instead.
      *
-     * Pattern intentionally case-insensitive; restricted to A-Z/0-9 plus
-     * hyphen and '#' (the two non-alphanumeric chars HP SKUs use). Tighten
-     * here — never duplicate the regex elsewhere — if future false-positives
-     * surface (e.g. legitimate brand names that happen to be 6+ chars of
-     * uppercase + digits).
+     * Per brief: "uppercase + digits + hyphen/#, length > 5". The token MUST
+     * contain at least one digit, hyphen, or '#' — otherwise a long brand
+     * name like "Logitech" or "Microsoft" would false-positive as SKU-shaped.
+     * Implemented as a positive lookahead so the test is single-pass.
+     * Tighten here — never duplicate the regex elsewhere — if future false-
+     * positives surface.
      */
-    private const SKU_LIKE_PATTERN = '/^[A-Z0-9][A-Z0-9\-#]+$/i';
+    private const SKU_LIKE_PATTERN = '/^(?=.*[0-9\-#])[A-Z0-9][A-Z0-9\-#]+$/i';
 
     /**
      * Minimum length for the SKU_LIKE_PATTERN trigger. Brief specified

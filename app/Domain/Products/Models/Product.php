@@ -35,7 +35,7 @@ final class Product extends Model
         'woo_product_id', 'sku', 'ean', 'name', 'type', 'status', 'stock_status', 'stock_quantity',
         'brand_id', 'category_id', 'category_ids',
         'buy_price', 'sell_price', 'cost_price',
-        'is_custom_ms', 'exclude_from_auto_update', 'tags',
+        'is_custom_ms', 'exclude_from_auto_update', 'is_internal_only', 'tags',
         'last_synced_at', 'last_sync_run_id',
         'last_sales_count_90d', 'last_sales_count_computed_at',
         // Phase 6 Plan 01 — auto-create + SEO + completeness columns.
@@ -58,6 +58,11 @@ final class Product extends Model
     protected $casts = [
         'is_custom_ms' => 'bool',
         'exclude_from_auto_update' => 'bool',
+        // 260611-f1y — flags products curated as "internal-use" (Credit / Offer /
+        // Quote Payment style). Drives products:push-visibility-to-woo +
+        // Filament toggle. Intentionally NOT in getActivitylogOptions()->logOnly()
+        // — operator UX flag, not auditable product data per planner decision.
+        'is_internal_only' => 'bool',
         'tags' => 'array',
         'last_synced_at' => 'datetime',
         'buy_price' => 'decimal:4',

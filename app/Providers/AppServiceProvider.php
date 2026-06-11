@@ -10,6 +10,7 @@ use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
+use App\Console\Commands\Cutover\AutoSyncDivergenceCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
 use App\Console\Commands\Cutover\DivergenceScanCommand;
@@ -804,6 +805,12 @@ class AppServiceProvider extends ServiceProvider
                 // --live gates on CUTOVER_DRILL_ALLOWED / CUTOVER_DISABLE_LIVE_ALLOWED
                 // env vars (config keys store NAMES, not values — two-step safety).
                 DivergenceScanCommand::class,
+                // Quick task 260611-rl4 — cutover:auto-sync. Nightly 23:00 London
+                // chain: scan → push → re-scan with parity-regression detection.
+                // Orchestrates DivergenceScanCommand + PushDivergenceToWooCommand
+                // via Artisan::call (CHAINED_COMMANDS const). Schedule entry lives
+                // in routes/console.php; defensive withoutOverlapping(120).
+                AutoSyncDivergenceCommand::class,
                 PopulateOverridesCommand::class,
                 SnapshotWooDbCommand::class,
                 DrillRollbackCommand::class,

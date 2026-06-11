@@ -7,6 +7,7 @@ namespace App\Providers;
 use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
+use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
@@ -749,6 +750,14 @@ class AppServiceProvider extends ServiceProvider
                 // deploy time and the Filament toggle handles future ones. Idempotent
                 // pre-GET check skips PUT when Woo already reports hidden.
                 PushVisibilityToWooCommand::class,
+                // Quick task 260611-g4q — products:push-divergence-to-woo. Consumes
+                // sync_diffs from 260610-qc4 divergence-scan and pushes MS-side truth
+                // to Woo for stock_quantity / buy_price / category_id (3,078 of 4,235
+                // cutover-parity gaps). Operator-triggered, NOT scheduled. Single PUT
+                // per product carries all eligible fields (no split-PUT WAF workaround
+                // needed — no regular_price involved). Pre-GET merges existing meta_data
+                // so Yoast/EAN/brand entries survive the buy_price write.
+                PushDivergenceToWooCommand::class,
                 // Quick task 260609-nku — products:audit-stock-divergence. Detects
                 // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
                 // fresh supplier reports qty=0. TRUNCATE-and-replaces

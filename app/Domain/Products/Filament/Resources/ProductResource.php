@@ -109,6 +109,16 @@ class ProductResource extends Resource
                             TextInput::make('cost_price')->numeric()->step('0.0001'),
                             Toggle::make('is_custom_ms')->label('Custom-MS')->disabled(),
                             Toggle::make('exclude_from_auto_update')->label('Exclude from auto-update'),
+                            // Quick task 260611-f1y — operator-curated "internal-use"
+                            // flag. On save, EditProduct::afterSave() invokes
+                            // products:push-visibility-to-woo for the single SKU/woo_id
+                            // so Woo's catalog_visibility tracks the toggle synchronously.
+                            // ToggleColumn on the table is intentionally NOT used per
+                            // T-f1y-03 risk mitigation (table-render Woo I/O risk).
+                            Toggle::make('is_internal_only')
+                                ->label('Internal-only (hide from storefront)')
+                                ->helperText('When enabled, the next save pushes catalog_visibility=hidden to Woo. Product remains orderable via direct URL + custom-quote attach. Toggling OFF does NOT auto-restore Woo visibility — operator must manually re-enable in Woo admin.')
+                                ->visible(fn () => auth()->user()?->hasAnyRole(['admin', 'pricing_manager']) ?? false),
                         ]),
 
                     // ── Field Pins tab (Phase 6 Plan 04 — AUTO-10, AUTO-11) ─────────

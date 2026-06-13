@@ -8,6 +8,7 @@ use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\BackfillProductBrandFromNameCommand;
+use App\Console\Commands\DedupeBrandsCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
@@ -761,6 +762,20 @@ class AppServiceProvider extends ServiceProvider
                 // writes — pure MS-side data quality; WooFieldComparator silent-skips
                 // brand_id meta so this work doesn't appear in the divergence scan.
                 BackfillProductBrandFromNameCommand::class,
+                // Quick task 260613-dir — brands:dedupe. Finds case-insensitive duplicate
+                // Woo product_brand terms (legacy WC import residue: "Poly" vs "poly",
+                // " Logitech " vs "Logitech") and merges MS products.brand_id from
+                // non-canonical → canonical. Canonical = highest count DESC, tie-break
+                // lowest id ASC. Default mode: MS-side reassignment only (SAFE — other
+                // plugins reference TERM ids, not product→brand mapping). Gated
+                // --delete-empty-woo-terms flag opts into Phase B: WooClient::delete
+                // on the now-empty source terms (RISKY — other plugins may reference;
+                // operator runs Phase A first, spot-checks, then opts in). Idempotent:
+                // re-run = no-op (groups_found=0); 404 on --delete = already_deleted++
+                // not errors. 5 audit namespaces (brands.dedupe_reassigned /
+                // _reassign_failed / _woo_term_deleted / _woo_term_already_deleted /
+                // _woo_term_error). All Woo writes via WooClient — no direct Http::.
+                DedupeBrandsCommand::class,
                 // Quick task 260607-v5g — products:backfill-category-from-woo. Backfills
                 // local category_id + category_ids from Woo REST for the 3,244 NULL-category
                 // live products surfaced by the 260607-t6w audit. Free + deterministic +

@@ -66,6 +66,20 @@ return [
         // restore strict PUT.
         'use_post_for_updates' => env('WOO_USE_POST_FOR_UPDATES', true),
 
+        // 260613-plo — sibling of use_post_for_updates above for HTTP DELETE.
+        // Same WAF families (CWP / Imunify360 / generic mod_security) that block
+        // PUT to /wp-json/* also block DELETE — and they return HTML 403 pages
+        // that the Automattic SDK then mis-parses as "JSON ERROR: Syntax error".
+        // Operator-visible incident 2026-06-13: `brands:dedupe --delete-empty-woo-terms`
+        // returned 11 phantom failures because every Woo DELETE was 403'd at
+        // nginx before reaching PHP. WP-REST treats POST with `?_method=DELETE`
+        // as a destructive operation identically to a true DELETE (it's the
+        // method-override convention WP itself documents for client-tunnelled
+        // verbs), so we route DELETE through POST + `?_method=DELETE` query
+        // tunnel when this flag is true (default). Set WOO_USE_POST_FOR_DELETES=false
+        // to restore strict DELETE for hosts that don't block the verb.
+        'use_post_for_deletes' => env('WOO_USE_POST_FOR_DELETES', true),
+
         // 260607-pys — Storefront base URL for the "View on storefront"
         // per-row action on /admin/ad-candidates. Defaults to the live
         // meetingstore.co.uk storefront; overridable via WOO_STOREFRONT_URL.

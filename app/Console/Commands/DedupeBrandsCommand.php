@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Sync\Services\BrandDuplicateFinder;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Audit\Services\Auditor;
 use Illuminate\Support\Facades\DB;
@@ -68,11 +69,6 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 class DedupeBrandsCommand extends BaseCommand
 {
     /**
-     * Woo REST per-page cap. Grep-discoverable for future tuning.
-     */
-    private const BRANDS_PER_PAGE = 100;
-
-    /**
      * 200ms pacing between live Woo DELETEs. Mirrors PushVisibilityToWooCommand
      * line 167 + BackfillCategoryFromWooCommand cadence. WooClient's built-in
      * 429 backoff is the backstop; this throttle keeps bursty bulk operations
@@ -86,9 +82,15 @@ class DedupeBrandsCommand extends BaseCommand
 
     protected $description = 'Find case-insensitive duplicate Woo product_brand terms and merge MS products.brand_id non-canonical → canonical (260613-dir).';
 
+    // 260613-f2r — pagination + grouping + canonical-pick moved to
+    // BrandDuplicateFinder so the new RetagProductsOnWooCommand can share
+    // discovery without duplicating the loop. Auditor stays here (only this
+    // command writes audit rows during dedupe); $woo stays here for the
+    // Phase-B DELETE call.
     public function __construct(
         private readonly WooClient $woo,
         private readonly Auditor $auditor,
+        private readonly BrandDuplicateFinder $finder,
     ) {
         parent::__construct();
     }
@@ -110,100 +112,42 @@ class DedupeBrandsCommand extends BaseCommand
             .($deleteEmpty ? 'true' : 'false')
         );
 
-        // ── 2. Page through Woo brands ───────────────────────────────────────
-        /** @var array<int, array{id:int,name:string,count:int}> $brands */
-        $brands = [];
-        $page = 1;
-        while (true) {
-            try {
-                $response = $this->woo->get('products/brands', [
-                    'per_page' => self::BRANDS_PER_PAGE,
-                    'page' => $page,
-                ]);
-            } catch (\Throwable $e) {
-                $this->warn("  ! brands GET page={$page} failed: {$e->getMessage()}");
-                $this->auditor->record('brands.dedupe_pagination_failed', [
-                    'page' => $page,
-                    'error' => $e->getMessage(),
-                ]);
+        // ── 2. Discover duplicates via BrandDuplicateFinder (260613-f2r) ─────
+        // Pagination + grouping + canonical-pick lifted to the service so
+        // 260613-f2r's RetagProductsOnWooCommand can share the same logic.
+        // Pagination failures bubble here and are audited verbatim (same
+        // shape as before the extract — `brands.dedupe_pagination_failed`).
+        try {
+            $rawPlan = $this->finder->discover();
+        } catch (\Throwable $e) {
+            $this->warn("  ! brands discovery failed: {$e->getMessage()}");
+            $this->auditor->record('brands.dedupe_pagination_failed', [
+                'page' => 0, // service doesn't expose the failing page number; 0 is the sentinel
+                'error' => $e->getMessage(),
+            ]);
 
-                return SymfonyCommand::FAILURE;
-            }
-
-            if (! is_array($response) || $response === []) {
-                break;
-            }
-
-            foreach ($response as $row) {
-                // WooClient returns stdClass for list endpoints — normalise to
-                // assoc array so the foreach below uses uniform array access.
-                // Same fix pattern as 260609-nku (commit 9581de8 for
-                // BackfillCategoryFromWooCommand) and PushDivergenceToWooCommand.
-                if (! is_array($row)) {
-                    $row = json_decode((string) json_encode($row), true);
-                }
-                if (! is_array($row)) {
-                    continue;
-                }
-                $id = (int) ($row['id'] ?? 0);
-                $name = (string) ($row['name'] ?? '');
-                if ($id <= 0 || $name === '') {
-                    continue;
-                }
-                $brands[] = [
-                    'id' => $id,
-                    'name' => $name,
-                    'count' => (int) ($row['count'] ?? 0),
-                ];
-            }
-
-            // Defensive — if Woo returned less than per_page, no more pages.
-            if (count($response) < self::BRANDS_PER_PAGE) {
-                break;
-            }
-
-            $page++;
+            return SymfonyCommand::FAILURE;
         }
 
-        // ── 3. Group by lowercased + trimmed name ────────────────────────────
-        /** @var array<string, array<int, array{id:int,name:string,count:int}>> $allGroups */
-        $allGroups = [];
-        foreach ($brands as $brand) {
-            $key = strtolower(trim($brand['name']));
-            $allGroups[$key][] = $brand;
-        }
+        $groupsFound = count($rawPlan);
 
-        /** @var array<string, array<int, array{id:int,name:string,count:int}>> $groups */
-        $groups = array_filter($allGroups, static fn (array $g): bool => count($g) > 1);
-        $groupsFound = count($groups);
-
-        // ── 4. Determine canonical + merge sources per group ─────────────────
+        // ── 3. Annotate plan with planned_affected per source (DB count) ─────
+        // planned_affected stays in this command — the per-source product
+        // count is DedupeBrands-specific (RetagProducts doesn't need it).
         /** @var array<string, array{canonical:array{id:int,name:string,count:int}, sources:array<int,array{id:int,name:string,count:int}>, planned_affected:array<int,int>}> $plan */
         $plan = [];
         $wouldReassignProducts = 0;
-        foreach ($groups as $key => $group) {
-            // Sort by count DESC, id ASC (inline closure — visible at the call site).
-            usort($group, static function (array $a, array $b): int {
-                if ($a['count'] !== $b['count']) {
-                    return $b['count'] <=> $a['count'];
-                }
-
-                return $a['id'] <=> $b['id'];
-            });
-            $canonical = $group[0];
-            $sources = array_slice($group, 1);
-
-            // Pre-count affected products per source — used for dry-run display + live counter.
+        foreach ($rawPlan as $key => $entry) {
             $plannedAffected = [];
-            foreach ($sources as $src) {
+            foreach ($entry['sources'] as $src) {
                 $cnt = (int) DB::table('products')->where('brand_id', $src['id'])->count();
                 $plannedAffected[$src['id']] = $cnt;
                 $wouldReassignProducts += $cnt;
             }
 
             $plan[$key] = [
-                'canonical' => $canonical,
-                'sources' => $sources,
+                'canonical' => $entry['canonical'],
+                'sources' => $entry['sources'],
                 'planned_affected' => $plannedAffected,
             ];
         }

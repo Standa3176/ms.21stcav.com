@@ -10,6 +10,7 @@ use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\BackfillProductBrandFromNameCommand;
 use App\Console\Commands\DedupeBrandsCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
+use App\Console\Commands\RetagProductsOnWooCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Cutover\AutoSyncDivergenceCommand;
@@ -776,6 +777,28 @@ class AppServiceProvider extends ServiceProvider
                 // _reassign_failed / _woo_term_deleted / _woo_term_already_deleted /
                 // _woo_term_error). All Woo writes via WooClient — no direct Http::.
                 DedupeBrandsCommand::class,
+                // Quick task 260613-f2r — brands:retag-products-on-woo. Closes the
+                // Woo-side gap left by 260613-dir's brands:dedupe. After 260613-dir,
+                // MS products consolidated onto canonical brand_ids, but Woo still
+                // has products tagged with the duplicate (source) brand terms.
+                // Running brands:dedupe --delete-empty-woo-terms WITHOUT this command
+                // first would strip the brand association from those products via
+                // Woo's ?force=true cascade. This command re-tags each affected Woo
+                // product source → canonical FIRST so the source brands legitimately
+                // have count=0 on Woo and the delete operation is safe.
+                //
+                // Operator workflow:
+                //   1. brands:dedupe                            — MS-side merge
+                //   2. brands:retag-products-on-woo             — Woo-side re-tag
+                //   3. brands:dedupe --delete-empty-woo-terms   — safely delete
+                //
+                // Drift-prevention contract: brand-duplicate discovery flows through
+                // BrandDuplicateFinder (260613-f2r). Do NOT re-implement pagination
+                // + grouping + canonical-pick here — the service is the single seam
+                // shared with DedupeBrandsCommand. Per-product re-tag PRESERVES
+                // non-source brand tags via (current MINUS source) UNION canonical.
+                // ALL Woo writes via WooClient — no direct Http:: / Guzzle.
+                RetagProductsOnWooCommand::class,
                 // Quick task 260607-v5g — products:backfill-category-from-woo. Backfills
                 // local category_id + category_ids from Woo REST for the 3,244 NULL-category
                 // live products surfaced by the 260607-t6w audit. Free + deterministic +

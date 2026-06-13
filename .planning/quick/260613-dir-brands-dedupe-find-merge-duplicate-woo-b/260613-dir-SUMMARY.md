@@ -8,7 +8,7 @@ description: New `brands:dedupe` artisan that finds case-insensitive duplicate W
 commits:
   - 83230da feat(brands): brands:dedupe command + AppServiceProvider registration (260613-dir)
   - 23170a3 test(brands): brands:dedupe Pest cases A-J (260613-dir)
-  - <task5> docs(state): 260613-dir brands:dedupe shipped (260613-dir)
+  - 59870fb docs(state): 260613-dir brands:dedupe shipped (260613-dir)
 files_modified:
   - app/Console/Commands/DedupeBrandsCommand.php (new)
   - app/Providers/AppServiceProvider.php (use + commands array)
@@ -96,7 +96,7 @@ Touched-area equivalence: **+10 pass / 0 new fails / 0 new risky** vs 260611-sr7
 |------|------|---------|
 | 2 | `83230da` | feat(brands): brands:dedupe command + AppServiceProvider registration (260613-dir) |
 | 3 | `23170a3` | test(brands): brands:dedupe Pest cases A-J (260613-dir) |
-| 5 | (this commit) | docs(state): 260613-dir brands:dedupe shipped (260613-dir) |
+| 5 | `59870fb` | docs(state): 260613-dir brands:dedupe shipped (260613-dir) |
 
 ## Self-Check: PASSED
 

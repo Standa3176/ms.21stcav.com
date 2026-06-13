@@ -135,6 +135,13 @@ class DedupeBrandsCommand extends BaseCommand
             }
 
             foreach ($response as $row) {
+                // WooClient returns stdClass for list endpoints — normalise to
+                // assoc array so the foreach below uses uniform array access.
+                // Same fix pattern as 260609-nku (commit 9581de8 for
+                // BackfillCategoryFromWooCommand) and PushDivergenceToWooCommand.
+                if (! is_array($row)) {
+                    $row = json_decode((string) json_encode($row), true);
+                }
                 if (! is_array($row)) {
                     continue;
                 }

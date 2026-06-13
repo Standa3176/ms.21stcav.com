@@ -66,6 +66,42 @@ return [
         // restore strict PUT.
         'use_post_for_updates' => env('WOO_USE_POST_FOR_UPDATES', true),
 
+        // 260613-pzc — ProductBrandTermResolver slug-collision strategy.
+        //
+        // 2026-06-13 INCIDENT — the old `-brand` suffix fallback in createTerm()
+        // silently produced 11 duplicate product_brand pairs on prod
+        // ({brand} + {brand}-brand) over time. Root cause: every time WP refused
+        // a clean-slug product_brand create because a `product_tag` already owned
+        // that slug, the resolver blindly retried with `{slug}-brand` — which
+        // succeeded — and a later code path (operator or another tool) eventually
+        // also created the clean-slug brand. Two brand terms, same display name,
+        // forever-after divergent product attachments. Cleanup arc tracked in
+        // memory `meetingstore-brand-cleanup-followups`.
+        //
+        // This config drives the strategy createTerm() applies on slug collision:
+        //
+        //   - 'skip-creation'                  (default, SAFE)
+        //         Pre-flight checks `wp/v2/product_tag?slug={primary}` and, on
+        //         collision, logs a warning + returns null. NEVER creates the
+        //         `-brand` suffixed term. Operator must clean the colliding tag
+        //         (or flip strategy to auto-delete-empty-colliding-tag) before
+        //         the brand auto-creates on the next batch.
+        //
+        //   - 'auto-delete-empty-colliding-tag' (AGGRESSIVE, opt-in)
+        //         Pre-flight as above; if the colliding tag has `count=0` (no
+        //         products attached) it is deleted via the WAF-tunnelled DELETE
+        //         from 260613-plo (WpRestClient::delete → POST ?_method=DELETE)
+        //         and the clean-slug primary is retried. Tags with attached
+        //         products fall through to skip-creation behaviour.
+        //
+        //   - 'force-suffix'                   (DEPRECATED escape hatch)
+        //         Retained as emergency escape hatch ONLY — replicates the OLD
+        //         pre-260613-pzc behaviour (no pre-flight, blind `-brand`
+        //         suffix retry) and emits a warning surfacing the duplicate-
+        //         pair risk on every invocation. Do not set this in prod
+        //         unless you've already validated there's no colliding tag.
+        'brand_slug_collision_strategy' => env('WOO_BRAND_SLUG_COLLISION_STRATEGY', 'skip-creation'),
+
         // 260607-pys — Storefront base URL for the "View on storefront"
         // per-row action on /admin/ad-candidates. Defaults to the live
         // meetingstore.co.uk storefront; overridable via WOO_STOREFRONT_URL.

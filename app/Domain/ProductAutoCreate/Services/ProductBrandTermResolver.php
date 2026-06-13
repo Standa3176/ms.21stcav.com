@@ -24,12 +24,36 @@ use Illuminate\Support\Str;
  * different ids than product_brand). The brand NAME is the only shared
  * identity across taxonomies.
  *
- * Slug-collision handling: WordPress's wp_insert_term refuses to create
- * a term whose slug already exists in ANY taxonomy (e.g. trying to create
- * product_brand slug=yealink fails with term_exists=3001 because the
- * product_tag Yealink already owns that slug). Fallback: retry with
- * slug variant `{slug}-brand` (URL becomes /brand/yealink-brand/ —
- * functional, slightly uglier).
+ * 2026-06-13 INCIDENT (260613-pzc) — slug-collision handling rewrite.
+ * The previous unconditional `-brand` suffix fallback silently produced
+ * 11 duplicate brand pairs on prod ({brand} + {brand}-brand) over time:
+ * every time WP refused a clean-slug product_brand create because a
+ * `product_tag` already owned that slug, the resolver blindly retried
+ * with `{slug}-brand` which succeeded, then later code created the
+ * clean-slug brand → duplicate pair. Cleanup arc tracked in memory
+ * `meetingstore-brand-cleanup-followups`.
+ *
+ * Slug-collision handling is now strategy-driven via
+ * `config('services.woo.brand_slug_collision_strategy')`:
+ *
+ *   - 'skip-creation' (default, safe): pre-flight checks
+ *     `wp/v2/product_tag?slug={primary}`; on collision, logs warning +
+ *     returns null. The `-brand` suffix is NEVER created — operator
+ *     intervention required (delete the colliding tag, or flip strategy).
+ *   - 'auto-delete-empty-colliding-tag' (aggressive, opt-in): same
+ *     pre-flight; on collision with count=0, deletes the empty tag via
+ *     260613-plo's WAF-tunnelled DELETE (WpRestClient::delete) and
+ *     retries the clean slug. Tags with attached products fall through
+ *     to skip-creation behaviour.
+ *   - 'force-suffix' (DEPRECATED escape hatch): replicates old
+ *     pre-260613-pzc behaviour — bypasses pre-flight, creates the
+ *     `-brand` suffixed term with a warning surfacing the duplicate-
+ *     pair risk on every invocation.
+ *
+ * Pre-flight probe failure is defensive: a transient WP-REST error on
+ * the GET probe returns null from checkProductTagCollision (NOT an
+ * exception), so brand creation gracefully falls back to the legacy
+ * 2-attempt behaviour rather than blocking forever on a probe blip.
  *
  * Brand-term list cached for 1h to avoid hammering the WP REST API on
  * bulk runs. Cache is busted by the resolver itself on successful term
@@ -168,36 +192,159 @@ class ProductBrandTermResolver
     }
 
     /**
-     * Create a product_brand term, with slug-collision fallback. Returns
-     * the new term id, or null on hard failure (logged).
+     * Create a product_brand term with pre-flight slug-collision detection.
+     *
+     * 2026-06-13 INCIDENT — the old `-brand` suffix fallback (without pre-
+     * flight) silently created 11 duplicate brand pairs on prod
+     * ({brand} + {brand}-brand). Root cause: tryCreate(primary) fails
+     * because WP refuses cross-taxonomy slug collisions; the unconditional
+     * retry with `{slug}-brand` succeeded → operator (or later code path)
+     * created the clean-slug brand later → duplicate pair. See memory
+     * `meetingstore-brand-cleanup-followups` for the cleanup arc.
+     *
+     * Strategy (config: services.woo.brand_slug_collision_strategy):
+     *   - 'skip-creation'                   (default, safe)  log + return null
+     *   - 'auto-delete-empty-colliding-tag' (aggressive)     delete empty tag, retry
+     *   - 'force-suffix'                    (DEPRECATED)     old behaviour, last resort
      */
     private function createTerm(string $brandName): ?int
     {
         $primarySlug = Str::slug($brandName);
 
-        // Attempt 1: plain slug. Succeeds for brands without a name-
-        // colliding product_tag (e.g. brand-new brands like "DTEN" if no
-        // dten product_tag exists). Common case at scale once tags
-        // and brands diverge.
+        // Attempt 1: clean primary slug (always tried first regardless of
+        // strategy). Succeeds for brands without a name-colliding
+        // product_tag (e.g. brand-new brands like "DTEN" if no dten
+        // product_tag exists). Common case at scale once tags and brands
+        // diverge.
         $id = $this->tryCreate($brandName, $primarySlug);
         if ($id !== null) {
             return $id;
         }
 
-        // Attempt 2: slug variant. WordPress refuses cross-taxonomy slug
-        // collisions via REST — even though distinct taxonomies CAN share
-        // slugs in the underlying DB. The "-brand" suffix sidesteps it.
-        $id = $this->tryCreate($brandName, $primarySlug.'-brand');
-        if ($id !== null) {
-            return $id;
+        $strategy = (string) config('services.woo.brand_slug_collision_strategy', 'skip-creation');
+
+        // force-suffix branch: bypass pre-flight entirely, preserve OLD
+        // behaviour with an explicit warning that surfaces the duplicate-
+        // pair risk to operators on every invocation.
+        if ($strategy === 'force-suffix') {
+            Log::warning('product_brand.force_suffix_strategy_in_use', [
+                'brand' => $brandName,
+                'risk' => 'duplicate brand pair if clean-slug term created later',
+            ]);
+            $id = $this->tryCreate($brandName, $primarySlug.'-brand');
+            if ($id !== null) {
+                return $id;
+            }
+            Log::warning('product_brand.create_failed_force_suffix', [
+                'brand' => $brandName,
+                'tried_slugs' => [$primarySlug, $primarySlug.'-brand'],
+            ]);
+
+            return null;
         }
 
-        Log::warning('product_brand.create_failed_all_slugs', [
+        // skip-creation + auto-delete-empty-colliding-tag share the
+        // pre-flight probe against product_tag.
+        $collision = $this->checkProductTagCollision($primarySlug);
+
+        if ($collision === null) {
+            // No collision detected (OR pre-flight errored — defensive).
+            // Fall back to the OLD 2-attempt pattern: something OTHER than
+            // a known slug collision caused the primary failure (5xx, auth
+            // blip). The `-brand` suffix is a reasonable last resort here
+            // because there's no IDENTIFIED colliding tag, so we cannot
+            // create the duplicate-pair pathology by name. This path also
+            // covers the "probe failed" sanity case (260613-pzc Case F).
+            $id = $this->tryCreate($brandName, $primarySlug.'-brand');
+            if ($id !== null) {
+                return $id;
+            }
+            Log::warning('product_brand.create_failed_all_slugs', [
+                'brand' => $brandName,
+                'tried_slugs' => [$primarySlug, $primarySlug.'-brand'],
+            ]);
+
+            return null;
+        }
+
+        // Collision detected. Auto-delete branch fires ONLY when strategy
+        // opts in AND the colliding tag has zero products attached.
+        if ($strategy === 'auto-delete-empty-colliding-tag' && ($collision['count'] ?? 1) === 0) {
+            try {
+                $this->wp->delete('wp/v2/product_tag/'.$collision['id'].'?force=true');
+                Log::info('product_brand.auto_deleted_empty_colliding_tag', [
+                    'brand' => $brandName,
+                    'tag_id' => $collision['id'],
+                ]);
+
+                // Retry primary slug — now unblocked.
+                $id = $this->tryCreate($brandName, $primarySlug);
+                if ($id !== null) {
+                    return $id;
+                }
+            } catch (\Throwable $e) {
+                Log::warning('product_brand.auto_delete_failed', [
+                    'brand' => $brandName,
+                    'tag_id' => $collision['id'],
+                    'error' => $e->getMessage(),
+                ]);
+                // Fall through to the skip-creation warning + null return.
+            }
+        }
+
+        // skip-creation (default) OR auto-delete with non-empty tag OR
+        // auto-delete failure path. NEVER create the suffixed duplicate.
+        Log::warning('product_brand.tag_slug_collision', [
             'brand' => $brandName,
-            'tried_slugs' => [$primarySlug, $primarySlug.'-brand'],
+            'colliding_tag_id' => $collision['id'],
+            'colliding_tag_count' => $collision['count'] ?? null,
+            'strategy' => $strategy,
+            'reason' => ($strategy === 'auto-delete-empty-colliding-tag' && ($collision['count'] ?? 1) > 0)
+                ? 'tag not empty'
+                : 'strategy=skip-creation',
+            'operator_action' => 'Delete the empty colliding product_tag in wp-admin, OR set WOO_BRAND_SLUG_COLLISION_STRATEGY=auto-delete-empty-colliding-tag',
         ]);
 
         return null;
+    }
+
+    /**
+     * Pre-flight check: does a product_tag with this slug already exist?
+     * Returns ['id' => N, 'count' => M] on collision, null otherwise (no
+     * collision OR transient WP-REST error — defensive null so brand
+     * creation doesn't block forever on a probe blip).
+     *
+     * @return array{id:int,count:int}|null
+     */
+    private function checkProductTagCollision(string $slug): ?array
+    {
+        try {
+            $result = $this->wp->get('wp/v2/product_tag', ['slug' => $slug]);
+            if ($result === []) {
+                return null;
+            }
+            $first = $result[0] ?? null;
+            if (! is_array($first)) {
+                return null;
+            }
+            $id = $first['id'] ?? null;
+            $count = $first['count'] ?? 0;
+            if (! is_numeric($id) || (int) $id <= 0) {
+                return null;
+            }
+
+            return [
+                'id' => (int) $id,
+                'count' => (int) $count,
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('product_brand.tag_collision_probe_failed', [
+                'slug' => $slug,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function tryCreate(string $name, string $slug): ?int

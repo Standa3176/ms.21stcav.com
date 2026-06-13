@@ -167,6 +167,29 @@ class WooClient
 
     public function delete(string $endpoint, array $payload = []): array
     {
+        // Mirrors the 260530-clv `use_post_for_updates` PUT precedent (see put() above).
+        //
+        // 2026-06-13 incident — without this, `brands:dedupe --delete-empty-woo-terms`
+        // returns 403 from nginx for every term and the operator must hand-delete
+        // every duplicate brand via wp-admin. CWP / Imunify360 / generic mod_security
+        // default rules block HTTP DELETE to /wp-json/* at the Apache layer; the
+        // SDK then surfaces the HTML 403 body as "JSON ERROR: Syntax error" which
+        // is invisible to the operator running brands:dedupe.
+        //
+        // WP-REST honours the `_method=DELETE` query-string method override
+        // identically to a real DELETE (it's the documented client-tunnel
+        // convention), so routing through POST + `?_method=DELETE` is
+        // semantically equivalent for the server while bypassing the WAF.
+        //
+        // Drift-prevention contract: the literal `_method=DELETE` must appear in
+        // EXACTLY ONE file under app/Domain/ (this one). A grep test in
+        // tests/Feature/WooClientDeleteTest.php enforces the invariant.
+        if (config('services.woo.use_post_for_deletes', true)) {
+            $separator = str_contains($endpoint, '?') ? '&' : '?';
+
+            return $this->writeOrShadow('POST', $endpoint.$separator.'_method=DELETE', $payload);
+        }
+
         return $this->writeOrShadow('DELETE', $endpoint, $payload);
     }
 

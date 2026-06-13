@@ -295,42 +295,79 @@ it('Case H: --source-ids=3102,12822 → 3102 processed, 12822 → source_not_a_d
     expect($output)->toContain('source_not_a_duplicate source=12822');
 });
 
-it('Case I: pagination across 2 pages → both pages processed', function (): void {
-    // page 1: 100 products, page 2: 1 product (forces 2nd page).
-    $page1Products = [];
+it('Case I: drain-queue pagination (always page=1) → 101 PUTs across 3 sequential drains', function (): void {
+    // 260613-ogv: always-page-1 draining contract. The WooClient stub returns
+    // the first 100 products on the first [source=11][page=1] read, the next
+    // 1 product on the second [source=11][page=1] read, and [] on the third —
+    // mirroring how real WC returns a SHRINKING filter set as products lose
+    // the source brand. Assertion intent unchanged: 101 PUTs, but the contract
+    // is now "all GETs against brand=11 use page=1 + status=any, total exactly 3".
+    $batch1 = [];
     for ($i = 1; $i <= 100; $i++) {
-        $page1Products[] = ['id' => 50000 + $i, 'sku' => "I-{$i}", 'brands' => [['id' => 11]]];
+        $batch1[] = ['id' => 50000 + $i, 'sku' => "I-{$i}", 'brands' => [['id' => 11]]];
     }
-    $stub = bindRetagWooStub(
-        brandsByPage: [
+    $batch2 = [
+        ['id' => 60001, 'sku' => 'I-page2', 'brands' => [['id' => 11]]],
+    ];
+    $page1Drain = [$batch1, $batch2, []]; // final drain → empty signals done
+
+    $stub = new class([
+        'brandsByPage' => [
             1 => [
                 ['id' => 10, 'name' => 'Poly', 'count' => 500],     // canonical (count wins)
                 ['id' => 11, 'name' => 'poly', 'count' => 101],     // source
             ],
         ],
-        productsByBrandByPage: [
-            11 => [
-                1 => $page1Products,
-                2 => [
-                    ['id' => 60001, 'sku' => 'I-page2', 'brands' => [['id' => 11]]],
-                ],
-            ],
-        ],
-    );
+        'productsBrand11Queue' => $page1Drain,
+    ]) extends WooClient {
+        public array $getCalls = [];
+        public array $putCalls = [];
+        public array $brandsByPage;
+        public array $productsBrand11Queue;
+
+        public function __construct(array $config)
+        {
+            $this->brandsByPage = $config['brandsByPage'];
+            $this->productsBrand11Queue = $config['productsBrand11Queue'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                return $this->brandsByPage[(int) ($query['page'] ?? 1)] ?? [];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                return array_shift($this->productsBrand11Queue) ?? [];
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
 
     $exit = Artisan::call('brands:retag-products-on-woo');
 
     expect($exit)->toBe(0);
     expect($stub->putCalls)->toHaveCount(101);
 
-    // Confirm both pages got hit.
-    $pages = array_filter(
+    // All GETs against brand=11 used page=1 AND status='any', exactly 3 of them.
+    $brand11Gets = array_values(array_filter(
         $stub->getCalls,
         static fn (array $c): bool => $c['endpoint'] === 'products' && ($c['query']['brand'] ?? null) === 11,
-    );
-    $pageNums = array_map(static fn (array $c): int => (int) ($c['query']['page'] ?? 0), $pages);
-    expect($pageNums)->toContain(1);
-    expect($pageNums)->toContain(2);
+    ));
+    expect(count($brand11Gets))->toBe(3); // drain → 100, drain → 1, drain → empty
+    foreach ($brand11Gets as $call) {
+        expect($call['query']['page'] ?? null)->toBe(1);    // ALWAYS page 1
+        expect($call['query']['status'] ?? null)->toBe('any');
+    }
 });
 
 it('Case J: idempotent re-run after retag → all products already_canonical, ZERO PUTs', function (): void {
@@ -387,6 +424,142 @@ it('Case J: idempotent re-run after retag → all products already_canonical, ZE
     // No NEW retagged rows from the idempotent re-run.
     // (The 5 from the first run still exist in the activity log.)
     expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(5);
+});
+
+it('Case K: status=any captures pending+draft products that publish-only would skip', function (): void {
+    // Stub returns all 3 products under status=any; returns just the 1 publish row under any other status.
+    $stub = new class([
+        'brandsByPage' => [
+            1 => [
+                ['id' => 20, 'name' => 'Crestron', 'count' => 80],
+                ['id' => 21, 'name' => 'crestron', 'count' => 3],
+            ],
+        ],
+        'allProducts' => [
+            ['id' => 7001, 'sku' => 'K-publish',  'status' => 'publish', 'brands' => [['id' => 21]]],
+            ['id' => 7002, 'sku' => 'K-pending1', 'status' => 'pending', 'brands' => [['id' => 21]]],
+            ['id' => 7003, 'sku' => 'K-pending2', 'status' => 'pending', 'brands' => [['id' => 21]]],
+        ],
+    ]) extends WooClient {
+        public array $getCalls = [];
+        public array $putCalls = [];
+        public array $brandsByPage;
+        public array $allProducts;
+        public int $drainCalls = 0;
+
+        public function __construct(array $config)
+        {
+            $this->brandsByPage = $config['brandsByPage'];
+            $this->allProducts = $config['allProducts'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                return $this->brandsByPage[(int) ($query['page'] ?? 1)] ?? [];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 21) {
+                $this->drainCalls++;
+                if ($this->drainCalls > 1) {
+                    return []; // drain after first call
+                }
+                // Under status=any → all 3; otherwise → just the publish row.
+                if (($query['status'] ?? null) === 'any') {
+                    return $this->allProducts;
+                }
+
+                return array_values(array_filter($this->allProducts, static fn (array $p): bool => ($p['status'] ?? null) === 'publish'));
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo');
+
+    expect($exit)->toBe(0);
+    expect($stub->putCalls)->toHaveCount(3); // all 3 — including the 2 pending — retagged
+    expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(3);
+
+    // Sanity: confirm at least one GET against brand=21 carried status=any.
+    $brand21Gets = array_filter(
+        $stub->getCalls,
+        static fn (array $c): bool => $c['endpoint'] === 'products' && ($c['query']['brand'] ?? null) === 21,
+    );
+    $statuses = array_map(static fn (array $c) => $c['query']['status'] ?? null, $brand21Gets);
+    expect($statuses)->toContain('any');
+});
+
+it('Case L: 200-product source drains across multiple page=1 reads, safety break NOT hit', function (): void {
+    // First page=1 read → 100 products, second → next 100, third → empty.
+    $batch1 = [];
+    for ($i = 1; $i <= 100; $i++) {
+        $batch1[] = ['id' => 80000 + $i, 'sku' => "L-{$i}", 'brands' => [['id' => 31]]];
+    }
+    $batch2 = [];
+    for ($i = 101; $i <= 200; $i++) {
+        $batch2[] = ['id' => 80000 + $i, 'sku' => "L-{$i}", 'brands' => [['id' => 31]]];
+    }
+
+    $stub = new class([
+        'brandsByPage' => [
+            1 => [
+                ['id' => 30, 'name' => 'LG', 'count' => 800],
+                ['id' => 31, 'name' => 'lg', 'count' => 200],
+            ],
+        ],
+        'drainQueue' => [$batch1, $batch2, []],
+    ]) extends WooClient {
+        public array $getCalls = [];
+        public array $putCalls = [];
+        public array $brandsByPage;
+        public array $drainQueue;
+
+        public function __construct(array $config)
+        {
+            $this->brandsByPage = $config['brandsByPage'];
+            $this->drainQueue = $config['drainQueue'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                return $this->brandsByPage[(int) ($query['page'] ?? 1)] ?? [];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 31) {
+                return array_shift($this->drainQueue) ?? [];
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo');
+
+    expect($exit)->toBe(0);
+    expect($stub->putCalls)->toHaveCount(200);
+
+    // No safety break fired — 200 / 100 = 2 drain iterations, well under the 50-iteration backstop.
+    expect(Activity::query()->where('description', 'brands.retag_safety_break')->count())->toBe(0);
+    expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(200);
 });
 
 /**
@@ -447,7 +620,16 @@ function bindRetagWooStub(
                     throw new RuntimeException('rest_term_invalid: Term does not exist', 404);
                 }
 
-                return $this->productsByBrandByPage[$brand][$page] ?? [];
+                // 260613-ogv: model the shrinking filter set — once a [brand][page]
+                // batch is consumed by the always-page-1 loop, subsequent GETs for
+                // the same (brand, page) drain to []. Without this, the always-page-1
+                // loop would re-process the same products until the safety break.
+                $batch = $this->productsByBrandByPage[$brand][$page] ?? [];
+                if ($batch !== []) {
+                    $this->productsByBrandByPage[$brand][$page] = [];
+                }
+
+                return $batch;
             }
 
             return [];

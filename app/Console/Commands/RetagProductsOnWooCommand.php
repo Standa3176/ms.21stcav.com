@@ -181,13 +181,21 @@ class RetagProductsOnWooCommand extends BaseCommand
                 'errors' => 0,
             ];
 
-            $page = 1;
+            // 2026-06-13 INCIDENT (260613-ogv) — pagination must ALWAYS query page=1 because the filter set
+            // (`?brand=N`) shrinks under us as products are retagged OFF the source brand. The previous
+            // page-increment-after-retag pattern (a paginating loop that bumped the page counter each
+            // iteration) silently lost the tail (LG: 148 products → page 1 returned 100, page 2 of the
+            // now-48-item set returned empty). Safety break at 50 iterations is a defensive backstop,
+            // NOT an expected exit path.
+            $pageGuard = 0;
+            $maxPageGuard = 50;
             while (true) {
                 try {
                     $response = $this->woo->get('products', [
                         'brand' => $sourceId,
                         'per_page' => self::PRODUCTS_PER_PAGE,
-                        'page' => $page,
+                        'page' => 1,             // ALWAYS page 1 — the filter set shrinks as we retag products off this brand
+                        'status' => 'any',       // 2026-06-13 (260613-ogv) — without this WC defaults to status=publish; pending/draft products are silently skipped
                     ]);
                 } catch (\Throwable $e) {
                     // 404 detection — term deleted between discovery and now.
@@ -206,11 +214,10 @@ class RetagProductsOnWooCommand extends BaseCommand
                     } else {
                         $errors++;
                         $perSource[$sourceId]['errors']++;
-                        $this->warn("  ! products GET source={$sourceId} page={$page} failed: {$e->getMessage()}");
+                        $this->warn("  ! products GET source={$sourceId} failed: {$e->getMessage()}");
                         $this->auditor->record('brands.retag_pagination_failed', [
                             'source_id' => $sourceId,
                             'canonical_id' => $canonicalId,
-                            'page' => $page,
                             'error' => $e->getMessage(),
                         ]);
                     }
@@ -354,11 +361,15 @@ class RetagProductsOnWooCommand extends BaseCommand
                     break;
                 }
 
-                // Per-page-short ⇒ no more pages for this source.
-                if (count($response) < self::PRODUCTS_PER_PAGE) {
+                $pageGuard++;
+                if ($pageGuard >= $maxPageGuard) {
+                    $this->warn("  ! safety_break source={$sourceId}: ran {$maxPageGuard} iterations of page=1, aborting source loop");
+                    $this->auditor->record('brands.retag_safety_break', [
+                        'source_brand_id' => $sourceId,
+                        'pages' => $pageGuard,
+                    ]);
                     break;
                 }
-                $page++;
             }
         }
 

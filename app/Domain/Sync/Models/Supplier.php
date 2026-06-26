@@ -31,10 +31,22 @@ final class Supplier extends Model
         'stale_after_days',
         'is_active',
         'notes',
+        // Quick task 260626-q2b — REAL feed metadata mirrored from the remote
+        // feeds table by suppliers:sync-feed-dates (metadata-only; never written
+        // by operators or by supplier:db-sync).
+        'feed_remote_date',
+        'feed_cron_run',
+        'feed_status',
     ];
 
     protected $casts = [
         'stale_after_days' => 'integer',
         'is_active' => 'boolean',
+        // 260626-q2b — feed_remote_date = the supplier's actual file date
+        // (feeds.remote_date); feed_cron_run = when the upstream puller last ran
+        // (feeds.cron_run); feed_status = feeds.status (0 = disabled upstream).
+        'feed_remote_date' => 'datetime',
+        'feed_cron_run' => 'datetime',
+        'feed_status' => 'integer',
     ];
 }

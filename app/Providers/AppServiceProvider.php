@@ -8,11 +8,6 @@ use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\BackfillProductBrandFromNameCommand;
-use App\Console\Commands\DedupeBrandsCommand;
-use App\Console\Commands\HydrateProductStockFromOffersCommand;
-use App\Console\Commands\RetagProductsOnWooCommand;
-use App\Console\Commands\PushDivergenceToWooCommand;
-use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Cutover\AutoSyncDivergenceCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
@@ -23,8 +18,13 @@ use App\Console\Commands\Cutover\PushProductStatusToWooCommand;
 use App\Console\Commands\Cutover\SnapshotWooDbCommand;
 use App\Console\Commands\Dashboard\DashboardRefreshCommand;
 use App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand;
+use App\Console\Commands\DedupeBrandsCommand;
+use App\Console\Commands\HydrateProductStockFromOffersCommand;
+use App\Console\Commands\PushDivergenceToWooCommand;
+use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\Reports\SupplierSyncDigestCommand;
 use App\Console\Commands\Reports\WeeklyDigestCommand;
+use App\Console\Commands\RetagProductsOnWooCommand;
 use App\Console\Commands\SupplierProbeSingleSkuCommand;
 use App\Domain\Agents\Agents\PricingAgent;
 use App\Domain\Agents\Agents\SeoAgent;
@@ -138,11 +138,14 @@ use App\Domain\Sync\Commands\ScanSupplierAddCandidatesCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
 use App\Domain\Sync\Commands\WooImportProductsCommand;
+use App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Models\SyncRun;
 use App\Domain\Sync\Policies\ImportIssuePolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
 use App\Domain\Sync\Services\SupplierClient;
+use App\Domain\Sync\Services\SupplierExclusionResolver;
+use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\Sync\Services\WpRestClient;
 use App\Domain\TradePricing\Models\CustomerGroup;
@@ -303,7 +306,13 @@ class AppServiceProvider extends ServiceProvider
         // Singleton so the 3 downstream consumers (AdCandidateScanner,
         // CompetitorPositionScanner, SupplierDbSyncCommand) share the same
         // cache and trigger AT MOST one query pair per request (T-g8x cache hit).
-        $this->app->singleton(\App\Domain\Sync\Services\SupplierFreshnessResolver::class);
+        $this->app->singleton(SupplierFreshnessResolver::class);
+
+        // Quick task 260626-oqr — per-request memoised operator-exclusion resolver.
+        // Reads suppliers.is_active=false (the dead flag from 260608-g8x). Singleton
+        // so SupplierDbSyncCommand::buildBestOfferMap shares one cache and triggers
+        // AT MOST one query per command run (mirrors SupplierFreshnessResolver).
+        $this->app->singleton(SupplierExclusionResolver::class);
     }
 
     /**
@@ -933,7 +942,7 @@ class AppServiceProvider extends ServiceProvider
                 // today's sync had a chance to write fresh rows). Lives
                 // under app/Domain/Sync/Console/Commands/ so explicit
                 // registration is required.
-                \App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand::class,
+                CheckStaleSuppliersCommand::class,
             ]);
         }
     }

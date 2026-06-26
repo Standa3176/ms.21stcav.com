@@ -224,6 +224,63 @@ it('Case F: --dry-run with 3 candidates — no DB writes, would_update printed',
     expect($output)->toContain('Dry-run');
 });
 
+it('Case G: numeric SKU binds as string and writes category_id (regression for prod 1292 crash)', function (): void {
+    // Quick task 260626-fjg — prod crash on `products:backfill-category-from-woo`.
+    //
+    // Root cause: PHP coerces all-digit string array keys to int. $candidates
+    // is keyed by SKU, so a numeric SKU like '41074' arrives in the write loop
+    // as int 41074 and binds as an INTEGER in the WHERE clause. `products.sku`
+    // is a varchar — MariaDB (strict) then numerically coerces the whole column
+    // and throws SQLSTATE 22007 / error 1292 'Truncated incorrect DECIMAL value'
+    // on the first non-numeric SKU it scans ('CQ68056'). SQLite is loosely typed
+    // so it never errored, which is why cases A-F stayed green while prod crashed.
+    //
+    // This guard catches the int binding on SQLite by asserting the captured
+    // UPDATE binding for sku is a PHP string, never the integer 41074.
+    Product::factory()->create([
+        'sku' => '41074',          // all-digit SKU — PHP coerces the array key to int
+        'woo_product_id' => 5001,
+        'status' => 'publish',
+        'category_id' => null,
+    ]);
+    Product::factory()->create([
+        'sku' => 'CQ68056',        // non-numeric SKU — the one prod choked on
+        'woo_product_id' => 5002,
+        'status' => 'publish',
+        'category_id' => null,
+    ]);
+
+    bindWooStub([
+        ['id' => 5001, 'categories' => [['id' => 777, 'name' => 'Numeric Cat']]],
+        ['id' => 5002, 'categories' => [['id' => 888, 'name' => 'Alpha Cat']]],
+    ]);
+
+    // Capture the bindings of every UPDATE touching `products`. DB::listen works
+    // on SQLite, so this guard is portable to the test DB.
+    $bindings = [];
+    DB::listen(function ($q) use (&$bindings): void {
+        if (str_starts_with(strtolower($q->sql), 'update') && str_contains($q->sql, 'products')) {
+            $bindings[] = $q->bindings;
+        }
+    });
+
+    Artisan::call('products:backfill-category-from-woo', [
+        '--skus' => '41074,CQ68056',
+        '--no-confirm' => true,
+    ]);
+
+    // 1 + 2: behavioural — both rows get their category_id written.
+    expect(DB::table('products')->where('sku', '41074')->value('category_id'))->toBe(777);
+    expect(DB::table('products')->where('sku', 'CQ68056')->value('category_id'))->toBe(888);
+
+    // 3: PORTABLE GUARD — the sku binding for the numeric row must be the STRING
+    // '41074', never the INTEGER 41074. This FAILS on the int-coerced code (where
+    // the WHERE binds int 41074) and PASSES after the (string) cast, on SQLite,
+    // without needing MariaDB strict mode to reproduce error 1292.
+    expect(collect($bindings)->flatten()->contains('41074'))->toBeTrue();
+    expect(collect($bindings)->flatten()->every(fn ($b) => $b !== 41074))->toBeTrue();
+});
+
 /**
  * Bind an anonymous-subclass WooClient stub into the container.
  *

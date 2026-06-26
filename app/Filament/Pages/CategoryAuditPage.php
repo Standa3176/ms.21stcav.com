@@ -6,6 +6,7 @@ namespace App\Filament\Pages;
 
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\CategoryAuditFinding;
+use Carbon\Carbon;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Tables\Actions\Action;
@@ -211,17 +212,30 @@ final class CategoryAuditPage extends Page implements HasTable
      * audited_at across all rows. Without this filter the page would surface
      * every historical row (the audit command's TRUNCATE keeps the table
      * small in practice, but the predicate is the contract).
+     *
+     * The latest run_id is resolved as a SCALAR first via value(), then applied
+     * as an equality predicate. We deliberately do NOT use an
+     * IN(subquery ORDER BY ... LIMIT 1) scope on run_id: MariaDB (prod) rejects
+     * IN(subquery + LIMIT) with SQLSTATE 42000 error 1235
+     * ("doesn't yet support 'LIMIT & IN/ALL/ANY/SOME subquery'"), which 500'd
+     * Filament's pagination count query on every render. SQLite permitted the
+     * old subquery form, which is why this was invisible to the test suite.
+     * whereRaw('1 = 0') guards the empty-table case so an empty table still
+     * renders zero rows without error.
      */
     private function buildQuery(): Builder
     {
+        $latestRunId = CategoryAuditFinding::query()
+            ->orderByDesc('audited_at')
+            ->value('run_id');
+
         return CategoryAuditFinding::query()
             ->with('product:id,name')
-            ->whereIn('run_id', function ($q): void {
-                $q->from('category_audit_findings')
-                    ->select('run_id')
-                    ->orderByDesc('audited_at')
-                    ->limit(1);
-            });
+            ->when(
+                $latestRunId !== null,
+                fn (Builder $q): Builder => $q->where('run_id', $latestRunId),
+                fn (Builder $q): Builder => $q->whereRaw('1 = 0'),
+            );
     }
 
     /**
@@ -272,7 +286,7 @@ final class CategoryAuditPage extends Page implements HasTable
             'uncategorized' => (int) $base->clone()->where('issue_type', 'uncategorized')->count(),
             'suspicious' => (int) $base->clone()->where('issue_type', 'suspicious')->count(),
             'last_run_at' => $lastRunAt !== null
-                ? \Carbon\Carbon::parse($lastRunAt)->toIso8601String()
+                ? Carbon::parse($lastRunAt)->toIso8601String()
                 : null,
             'next_run_hint' => 'Fri 22:00 London',
         ];

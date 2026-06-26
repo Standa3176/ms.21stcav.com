@@ -219,6 +219,11 @@ it('footer shows the "never" empty-state when no findings exist', function (): v
 */
 
 it('buildQuery does not use an IN-with-LIMIT subquery (MariaDB 1235 guard)', function (): void {
+    // Seed a finding so buildQuery() resolves a non-null latest run_id and
+    // exercises the equality-predicate branch (not the empty-table 1=0 guard,
+    // which is asserted separately below).
+    seedFinding('SHAPE-GUARD-SKU', 'missing', 1);
+
     $page = new CategoryAuditPage;
     $ref = new ReflectionMethod($page, 'buildQuery');
     $ref->setAccessible(true);

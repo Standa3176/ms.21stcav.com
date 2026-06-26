@@ -7,6 +7,7 @@ namespace App\Domain\Sync\Filament\Resources;
 use App\Domain\Sync\Filament\Resources\SupplierResource\Pages;
 use App\Domain\Sync\Models\Supplier;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
+use Carbon\Carbon;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -70,6 +71,54 @@ class SupplierResource extends Resource
     private static function canWrite(): bool
     {
         return auth()->user()?->hasAnyRole(['admin', 'pricing_manager']) ?? false;
+    }
+
+    /**
+     * Quick task 260626-phz — pure working-day age of a feed date.
+     *
+     * Weekdays between the feed date and now, weekends excluded. abs()+round()
+     * for Carbon v2/v3 sign robustness; start-of-day both ends so a partial-day
+     * time component never shifts the count. NULL feed date → NULL age.
+     * Public + static so the boundary logic is unit-tested without a panel.
+     */
+    public static function workingDaysSince(?Carbon $date): ?int
+    {
+        if ($date === null) {
+            return null;
+        }
+
+        return (int) round(abs(
+            $date->copy()->startOfDay()->diffInWeekdays(now()->startOfDay())
+        ));
+    }
+
+    /**
+     * Maps working-day age to a Filament badge colour on the 5-working-day
+     * contract: > 5 danger, 4–5 warning, ≤ 3 success, NULL (no data) gray.
+     */
+    public static function feedAgeColor(?int $workingDays): string
+    {
+        return match (true) {
+            $workingDays === null => 'gray',
+            $workingDays > 5 => 'danger',
+            $workingDays >= 4 => 'warning',
+            default => 'success',
+        };
+    }
+
+    /**
+     * Working-day age in words for the feed-date cell tooltip.
+     */
+    public static function feedAgeTooltip(?int $workingDays): ?string
+    {
+        if ($workingDays === null) {
+            return 'No feed data recorded yet';
+        }
+        if ($workingDays === 0) {
+            return 'Today';
+        }
+
+        return $workingDays.' working day'.($workingDays === 1 ? '' : 's').' ago';
     }
 
     public static function form(Form $form): Form

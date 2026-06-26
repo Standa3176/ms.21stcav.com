@@ -85,6 +85,18 @@ Schedule::command('suggestions:prune-orphans')
     ->timezone('Europe/London')
     ->description('Prune stale orphan suggestions (Mon 06:00, before supplier sync)');
 
+// Quick task 260626-q2b — Mon-Fri 06:55 London pull of the REAL supplier feed
+// dates (feeds.remote_date + cron_run + status) into suppliers.feed_remote_date.
+// Runs JUST BEFORE the 07:00 supplier:db-sync price sync so the Suppliers page
+// shows today's true feed dates. Metadata-only — writes NO prices/stock and
+// preserves operator-owned fields (is_active, stale_after_days, notes).
+Schedule::command('suppliers:sync-feed-dates')
+    ->cron('55 6 * * 1-5') // Mon-Fri at 06:55 (cron DOW: 1=Mon ... 5=Fri)
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Mon-Fri supplier feed-date metadata sync (06:55 London, before price sync; 260626-q2b)');
+
 // Quick task 260504-m5w + 260504-onx — Mon-Fri supplier DB pull at 07:00 London.
 // Re-pitched from daily 03:30 to Mon-Fri 07:00 per ops preference: aligns the
 // freshest supplier price + stock with start-of-day decisions and skips weekends

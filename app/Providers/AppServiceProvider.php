@@ -137,6 +137,7 @@ use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
 use App\Domain\Sync\Commands\ScanSupplierAddCandidatesCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
+use App\Domain\Sync\Commands\SyncSupplierFeedDatesCommand;
 use App\Domain\Sync\Commands\WooImportProductsCommand;
 use App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand;
 use App\Domain\Sync\Models\ImportIssue;
@@ -943,6 +944,14 @@ class AppServiceProvider extends ServiceProvider
                 // under app/Domain/Sync/Console/Commands/ so explicit
                 // registration is required.
                 CheckStaleSuppliersCommand::class,
+                // Quick task 260626-q2b — suppliers:sync-feed-dates. Pulls the
+                // REAL feed date (feeds.remote_date) + cron_run + status from
+                // the remote supplier MySQL and upserts them onto suppliers
+                // (metadata-only — no price/stock writes; preserves operator
+                // fields). Mon-Fri 06:55 London cron in routes/console.php, just
+                // before the 07:00 supplier:db-sync. Lives under
+                // app/Domain/Sync/Commands/ so explicit registration is required.
+                SyncSupplierFeedDatesCommand::class,
             ]);
         }
     }

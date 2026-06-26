@@ -202,3 +202,70 @@ it('footer shows the "never" empty-state when no findings exist', function (): v
     Livewire::test(CategoryAuditPage::class)
         ->assertSee('never');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Quick task 260626-d76 — MariaDB IN+LIMIT subquery regression guards
+|--------------------------------------------------------------------------
+|
+| Prod (MariaDB) 500'd on /admin/category-audit because buildQuery() scoped to
+| the latest run via whereIn('run_id', subquery ORDER BY ... LIMIT 1). MariaDB
+| rejects IN(subquery + LIMIT) with SQLSTATE 42000 error 1235; SQLite permits
+| it, so the suite was green while prod was broken. These cases lock the fix:
+|   (1) SQL-shape guard — buildQuery() must NOT compile an IN(select ... limit)
+|       construct (driver-portable, catchable on SQLite).
+|   (2) Behavioural contract — multi-run data shows only the latest run's rows.
+|   (3) Empty-table guard — buildQuery() returns zero rows (no error) when empty.
+*/
+
+it('buildQuery does not use an IN-with-LIMIT subquery (MariaDB 1235 guard)', function (): void {
+    $page = new CategoryAuditPage;
+    $ref = new ReflectionMethod($page, 'buildQuery');
+    $ref->setAccessible(true);
+    $query = $ref->invoke($page); // Illuminate\Database\Eloquent\Builder
+
+    $sql = strtolower($query->toSql());
+
+    // The exact construct MariaDB rejects (error 1235). SQLite allowed it,
+    // which is why prod 500'd while the suite stayed green.
+    expect(preg_match('/in \(select.*limit/is', $sql))->toBe(0);
+
+    // Positively assert the scope is now an equality predicate on run_id.
+    expect(str_contains($sql, 'run_id'))->toBeTrue();
+});
+
+it('shows only the latest run\'s findings when multiple runs exist', function (): void {
+    $this->actingAs(categoryAuditUser('admin'));
+
+    // Latest run (helper hard-codes run_id 01HX..., audited_at now()).
+    seedFinding('LATEST-RUN-SKU', 'missing', 1);
+
+    // Older run — inserted inline with an earlier run_id + audited_at so it is
+    // NOT the most-recent run. Mirrors seedFinding's column set.
+    $olderProduct = Product::factory()->create(['sku' => 'OLDER-RUN-SKU', 'status' => 'publish']);
+    CategoryAuditFinding::create([
+        'run_id' => '01HW0000000000000000000000',
+        'product_id' => $olderProduct->id,
+        'sku' => 'OLDER-RUN-SKU',
+        'brand_id' => null,
+        'brand_name' => '',
+        'category_id' => null,
+        'category_name' => '',
+        'issue_type' => 'missing',
+        'severity' => 1,
+        'audited_at' => now()->subDay(),
+    ]);
+
+    Livewire::test(CategoryAuditPage::class)
+        ->assertCanSeeTableRecords(CategoryAuditFinding::where('sku', 'LATEST-RUN-SKU')->get())
+        ->assertCanNotSeeTableRecords(CategoryAuditFinding::where('sku', 'OLDER-RUN-SKU')->get());
+});
+
+it('buildQuery returns zero rows when the table is empty (no error)', function (): void {
+    $page = new CategoryAuditPage;
+    $ref = new ReflectionMethod($page, 'buildQuery');
+    $ref->setAccessible(true);
+    $query = $ref->invoke($page);
+
+    expect($query->count())->toBe(0);
+});

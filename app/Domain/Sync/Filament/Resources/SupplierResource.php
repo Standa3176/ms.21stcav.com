@@ -38,10 +38,14 @@ use Filament\Tables\Table;
  * Quick task 260626-q2b — the 'Feed date' column now reads the REAL supplier
  * file date (suppliers.feed_remote_date, mirrored from the remote feeds.remote_date
  * by suppliers:sync-feed-dates) instead of the recorded_at MS-pull date, which was
- * always today() and so showed every supplier as fresh. The old recorded_at-based
- * 'Freshness' badge is replaced by a truthful 'Status' (Feed off / No data / Stale
- * / Fresh) derived from feed_remote_date + feed_status, and an 'Upstream pull'
+ * always today() and so showed every supplier as up to date. An 'Upstream pull'
  * column (feed_cron_run) shows when the upstream puller last ran.
+ *
+ * Quick task 260626-qyq — the status column is now 'Feed status' = Active
+ * (feed_status=1) / Inactive (feed_status=0) / Unknown (null), read straight from
+ * the upstream feeds.status flag to mirror the legacy dashboard. The old blended
+ * badge that folded in feed-date age was dropped — staleness lives solely on the
+ * Feed date column's red colour now.
  */
 class SupplierResource extends Resource
 {
@@ -179,30 +183,25 @@ class SupplierResource extends Resource
                     // Gate inline writes to admin + pricing_manager; read-only
                     // for sales/read_only (Warning 9 defence-in-depth at POST).
                     ->disabled(fn (): bool => ! self::canWrite()),
-                // 260626-q2b — truthful status derived from the REAL feed date
-                // (feed_remote_date) + upstream feed_status. Replaces the old
-                // recorded_at-based 'Freshness' badge, which was a no-op (always
-                // 'fresh' because recorded_at = the MS pull date stamped today on
-                // every sync). 'Feed off' when the supplier feed is disabled
-                // upstream (feeds.status=0); 'No data' when we have no real date;
-                // 'Stale' (red) when older than 5 working days; else 'Fresh'.
+                // 260626-qyq — 'Feed status' mirrors the legacy dashboard's
+                // Status column (feeds.status), read straight from the upstream
+                // feed_status flag: Active (feed_status=1) / Inactive (feed_status=0)
+                // / Unknown (null). Staleness is NOT folded in here — it is conveyed
+                // solely by the Feed date column's red colour (> 5 working days), so
+                // an Active-but-ancient feed shows 'Active' with a RED date. Kept
+                // distinct from the operator 'Active' toggle (is_active, the MS-side
+                // pricing-exclusion control), which is a different concept.
                 TextColumn::make('feed_status_label')
-                    ->label('Status')
+                    ->label('Feed status')
                     ->badge()
-                    ->getStateUsing(function (Supplier $record): string {
-                        if ($record->feed_status === 0) {
-                            return 'Feed off';
-                        }
-                        if ($record->feed_remote_date === null) {
-                            return 'No data';
-                        }
-
-                        return self::workingDaysSince($record->feed_remote_date) > 5 ? 'Stale' : 'Fresh';
+                    ->getStateUsing(fn (Supplier $record): string => match ($record->feed_status) {
+                        1 => 'Active',
+                        0 => 'Inactive',
+                        default => 'Unknown',
                     })
                     ->color(fn (string $state): string => match ($state) {
-                        'Fresh' => 'success',
-                        'Stale' => 'danger',
-                        'Feed off' => 'danger',
+                        'Active' => 'success',
+                        'Inactive' => 'danger',
                         default => 'gray',
                     }),
                 // 260626-q2b — the REAL supplier file date (feeds.remote_date,

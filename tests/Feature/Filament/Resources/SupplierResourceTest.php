@@ -145,12 +145,13 @@ it('has no create action (suppliers are auto-discovered)', function (): void {
     expect(SupplierResource::canCreate())->toBeFalse();
 });
 
-// 260626-q2b — the Feed date column now renders the REAL feed_remote_date
-// (feeds.remote_date mirrored locally), NOT the recorded_at MS-pull date. A
-// disabled-upstream supplier (feed_status=0) shows the 'Feed off' status with
-// its true (RED) file date. Carbon is pinned so the working-day colour is
-// deterministic.
-it('renders the real feed_remote_date and a Feed off status for a disabled feed', function (): void {
+// 260626-qyq — the 'Feed status' column reads straight from feed_status
+// (mirroring the legacy dash's feeds.status): Active (1) / Inactive (0) /
+// Unknown (null). Staleness is conveyed separately by the Feed date column's
+// red colour, so a disabled-upstream supplier (feed_status=0) shows 'Inactive'
+// alongside its true (RED) file date. Carbon is pinned so the working-day
+// colour is deterministic.
+it('renders the real feed_remote_date and an Inactive feed status for a disabled feed', function (): void {
     Carbon::setTestNow('2026-06-26'); // Friday
 
     $admin = supplierResourceUser('admin');
@@ -168,13 +169,14 @@ it('renders the real feed_remote_date and a Feed off status for a disabled feed'
     Livewire::test(ListSuppliers::class)
         ->assertSuccessful()
         ->assertSee('Thu 14 May 2026') // 'D j M Y' of the real feed_remote_date
-        ->assertSee('Feed off');       // truthful status (feed_status === 0)
+        ->assertSee('Inactive');       // feed status straight from feed_status === 0
 
     Carbon::setTestNow();
 });
 
-// 260626-q2b — a supplier whose feed refreshed TODAY (status=1) shows 'Fresh'.
-it('renders a Fresh status for a supplier with a recent feed date', function (): void {
+// 260626-qyq — a supplier with feed_status=1 shows an 'Active' feed status,
+// regardless of feed-date age (age lives on the Feed date colour now).
+it('renders an Active feed status for a supplier with feed_status=1', function (): void {
     Carbon::setTestNow('2026-06-26'); // Friday
 
     $admin = supplierResourceUser('admin');
@@ -191,7 +193,7 @@ it('renders a Fresh status for a supplier with a recent feed date', function ():
     Livewire::test(ListSuppliers::class)
         ->assertSuccessful()
         ->assertSee('Fri 26 Jun 2026')
-        ->assertSee('Fresh');
+        ->assertSee('Active');
 
     Carbon::setTestNow();
 });

@@ -6,7 +6,6 @@ namespace App\Domain\Sync\Filament\Resources;
 
 use App\Domain\Sync\Filament\Resources\SupplierResource\Pages;
 use App\Domain\Sync\Models\Supplier;
-use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Carbon\Carbon;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -32,12 +31,17 @@ use Filament\Tables\Table;
  * write (toggle + edit form), sales + read_only are view-only. Write surfaces
  * gate via hasAnyRole on BOTH ->disabled/->visible and ->authorize.
  *
- * Quick task 260626-phz — the table carries a 'Feed date' badge column showing
- * the ACTUAL date of the last feed data we received per supplier
- * (SupplierFreshnessResolver::latestRecordedAtFor = MAX(recorded_at)), coloured
+ * Quick task 260626-phz — the table carries a 'Feed date' badge column coloured
  * by WORKING-DAY age (weekends excluded): RED > 5 working days, AMBER 4–5,
  * GREEN ≤ 3, GRAY when never. It replaced the old relative 'Last seen' column.
- * The existing fresh/amber/stale freshness badge stays alongside it.
+ *
+ * Quick task 260626-q2b — the 'Feed date' column now reads the REAL supplier
+ * file date (suppliers.feed_remote_date, mirrored from the remote feeds.remote_date
+ * by suppliers:sync-feed-dates) instead of the recorded_at MS-pull date, which was
+ * always today() and so showed every supplier as fresh. The old recorded_at-based
+ * 'Freshness' badge is replaced by a truthful 'Status' (Feed off / No data / Stale
+ * / Fresh) derived from feed_remote_date + feed_status, and an 'Upstream pull'
+ * column (feed_cron_run) shows when the upstream puller last ran.
  */
 class SupplierResource extends Resource
 {
@@ -175,33 +179,55 @@ class SupplierResource extends Resource
                     // Gate inline writes to admin + pricing_manager; read-only
                     // for sales/read_only (Warning 9 defence-in-depth at POST).
                     ->disabled(fn (): bool => ! self::canWrite()),
-                TextColumn::make('freshness')
-                    ->label('Freshness')
+                // 260626-q2b — truthful status derived from the REAL feed date
+                // (feed_remote_date) + upstream feed_status. Replaces the old
+                // recorded_at-based 'Freshness' badge, which was a no-op (always
+                // 'fresh' because recorded_at = the MS pull date stamped today on
+                // every sync). 'Feed off' when the supplier feed is disabled
+                // upstream (feeds.status=0); 'No data' when we have no real date;
+                // 'Stale' (red) when older than 5 working days; else 'Fresh'.
+                TextColumn::make('feed_status_label')
+                    ->label('Status')
                     ->badge()
-                    ->getStateUsing(fn (Supplier $record): string => app(SupplierFreshnessResolver::class)
-                        ->classify((string) $record->supplier_id))
+                    ->getStateUsing(function (Supplier $record): string {
+                        if ($record->feed_status === 0) {
+                            return 'Feed off';
+                        }
+                        if ($record->feed_remote_date === null) {
+                            return 'No data';
+                        }
+
+                        return self::workingDaysSince($record->feed_remote_date) > 5 ? 'Stale' : 'Fresh';
+                    })
                     ->color(fn (string $state): string => match ($state) {
-                        'fresh' => 'success',
-                        'amber' => 'warning',
-                        'stale' => 'danger',
+                        'Fresh' => 'success',
+                        'Stale' => 'danger',
+                        'Feed off' => 'danger',
                         default => 'gray',
                     }),
-                // 260626-phz — actual feed date (last data we received per
-                // supplier), badge-coloured by working-day age: RED > 5 working
-                // days, AMBER 4–5, GREEN ≤ 3, GRAY when never. Replaces the old
-                // relative 'Last seen' column (same signal, less precise).
-                TextColumn::make('feed_date')
+                // 260626-q2b — the REAL supplier file date (feeds.remote_date,
+                // mirrored locally by suppliers:sync-feed-dates), badge-coloured
+                // by working-day age: RED > 5 working days, AMBER 4–5, GREEN ≤ 3,
+                // GRAY when never. Replaces the recorded_at-based column, which
+                // showed the MS pull date (always today) instead of the true date.
+                TextColumn::make('feed_remote_date')
                     ->label('Feed date')
                     ->badge()
-                    ->getStateUsing(fn (Supplier $record): ?string => app(SupplierFreshnessResolver::class)
-                        ->latestRecordedAtFor((string) $record->supplier_id)?->format('D j M Y'))
+                    ->sortable()
                     ->placeholder('never')
-                    ->color(fn (Supplier $record): string => self::feedAgeColor(self::workingDaysSince(
-                        app(SupplierFreshnessResolver::class)->latestRecordedAtFor((string) $record->supplier_id)
-                    )))
-                    ->tooltip(fn (Supplier $record): ?string => self::feedAgeTooltip(self::workingDaysSince(
-                        app(SupplierFreshnessResolver::class)->latestRecordedAtFor((string) $record->supplier_id)
-                    ))),
+                    ->formatStateUsing(fn ($state): ?string => $state?->format('D j M Y'))
+                    ->color(fn (Supplier $record): string => self::feedAgeColor(self::workingDaysSince($record->feed_remote_date)))
+                    ->tooltip(fn (Supplier $record): ?string => self::feedAgeTooltip(self::workingDaysSince($record->feed_remote_date))),
+                // 260626-q2b — when the upstream supplier-feed puller last ran
+                // (feeds.cron_run). Distinct from the supplier's own file date:
+                // a stale Nuvias file with a recent cron_run means the puller is
+                // running but the supplier stopped uploading.
+                TextColumn::make('feed_cron_run')
+                    ->label('Upstream pull')
+                    ->dateTime('D j M Y H:i')
+                    ->sortable()
+                    ->toggleable()
+                    ->placeholder('—'),
                 TextColumn::make('stale_after_days')
                     ->label('Stale after (days)')
                     ->sortable()

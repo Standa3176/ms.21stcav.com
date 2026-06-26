@@ -145,22 +145,53 @@ it('has no create action (suppliers are auto-discovered)', function (): void {
     expect(SupplierResource::canCreate())->toBeFalse();
 });
 
-// 260626-phz — the feed-date column renders the ACTUAL recorded_at date
-// ('D j M Y'), not a relative phrase. Carbon is pinned so the seeded
-// recorded_at and the rendered output are deterministic.
-it('renders the actual feed date for a supplier with a snapshot', function (): void {
+// 260626-q2b — the Feed date column now renders the REAL feed_remote_date
+// (feeds.remote_date mirrored locally), NOT the recorded_at MS-pull date. A
+// disabled-upstream supplier (feed_status=0) shows the 'Feed off' status with
+// its true (RED) file date. Carbon is pinned so the working-day colour is
+// deterministic.
+it('renders the real feed_remote_date and a Feed off status for a disabled feed', function (): void {
     Carbon::setTestNow('2026-06-26'); // Friday
 
     $admin = supplierResourceUser('admin');
-    // seedSupplierWithSnapshot stamps recorded_at = today() = the pinned date.
-    seedSupplierWithSnapshot('NUVIAS', true);
-    app(SupplierFreshnessResolver::class)->forget();
+    // Nuvias — true file date 14 May 2026, feed disabled upstream (status=0).
+    Supplier::create([
+        'supplier_id' => '1',
+        'name' => 'Nuvias',
+        'is_active' => true,
+        'feed_remote_date' => '2026-05-14 00:20:24',
+        'feed_status' => 0,
+    ]);
 
     $this->actingAs($admin);
 
     Livewire::test(ListSuppliers::class)
         ->assertSuccessful()
-        ->assertSee('Fri 26 Jun 2026'); // 'D j M Y' of the pinned recorded_at
+        ->assertSee('Thu 14 May 2026') // 'D j M Y' of the real feed_remote_date
+        ->assertSee('Feed off');       // truthful status (feed_status === 0)
+
+    Carbon::setTestNow();
+});
+
+// 260626-q2b — a supplier whose feed refreshed TODAY (status=1) shows 'Fresh'.
+it('renders a Fresh status for a supplier with a recent feed date', function (): void {
+    Carbon::setTestNow('2026-06-26'); // Friday
+
+    $admin = supplierResourceUser('admin');
+    Supplier::create([
+        'supplier_id' => '2',
+        'name' => 'Ingram',
+        'is_active' => true,
+        'feed_remote_date' => '2026-06-26 06:00:00', // today → 0 working days
+        'feed_status' => 1,
+    ]);
+
+    $this->actingAs($admin);
+
+    Livewire::test(ListSuppliers::class)
+        ->assertSuccessful()
+        ->assertSee('Fri 26 Jun 2026')
+        ->assertSee('Fresh');
 
     Carbon::setTestNow();
 });

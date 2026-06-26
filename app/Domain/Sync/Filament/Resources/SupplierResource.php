@@ -31,6 +31,13 @@ use Filament\Tables\Table;
  * action. RBAC mirrors ImportIssueResource (D-02): admin + pricing_manager
  * write (toggle + edit form), sales + read_only are view-only. Write surfaces
  * gate via hasAnyRole on BOTH ->disabled/->visible and ->authorize.
+ *
+ * Quick task 260626-phz — the table carries a 'Feed date' badge column showing
+ * the ACTUAL date of the last feed data we received per supplier
+ * (SupplierFreshnessResolver::latestRecordedAtFor = MAX(recorded_at)), coloured
+ * by WORKING-DAY age (weekends excluded): RED > 5 working days, AMBER 4–5,
+ * GREEN ≤ 3, GRAY when never. It replaced the old relative 'Last seen' column.
+ * The existing fresh/amber/stale freshness badge stays alongside it.
  */
 class SupplierResource extends Resource
 {
@@ -179,11 +186,22 @@ class SupplierResource extends Resource
                         'stale' => 'danger',
                         default => 'gray',
                     }),
-                TextColumn::make('last_seen')
-                    ->label('Last seen')
+                // 260626-phz — actual feed date (last data we received per
+                // supplier), badge-coloured by working-day age: RED > 5 working
+                // days, AMBER 4–5, GREEN ≤ 3, GRAY when never. Replaces the old
+                // relative 'Last seen' column (same signal, less precise).
+                TextColumn::make('feed_date')
+                    ->label('Feed date')
+                    ->badge()
                     ->getStateUsing(fn (Supplier $record): ?string => app(SupplierFreshnessResolver::class)
-                        ->latestRecordedAtFor((string) $record->supplier_id)?->diffForHumans())
-                    ->placeholder('never'),
+                        ->latestRecordedAtFor((string) $record->supplier_id)?->format('D j M Y'))
+                    ->placeholder('never')
+                    ->color(fn (Supplier $record): string => self::feedAgeColor(self::workingDaysSince(
+                        app(SupplierFreshnessResolver::class)->latestRecordedAtFor((string) $record->supplier_id)
+                    )))
+                    ->tooltip(fn (Supplier $record): ?string => self::feedAgeTooltip(self::workingDaysSince(
+                        app(SupplierFreshnessResolver::class)->latestRecordedAtFor((string) $record->supplier_id)
+                    ))),
                 TextColumn::make('stale_after_days')
                     ->label('Stale after (days)')
                     ->sortable()

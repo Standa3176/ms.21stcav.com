@@ -8,6 +8,7 @@ use App\Domain\Sync\Filament\Resources\SupplierResource\Pages\ListSuppliers;
 use App\Domain\Sync\Models\Supplier;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
@@ -142,4 +143,24 @@ it('Excluded-only filter shows inactive suppliers and hides active ones', functi
 
 it('has no create action (suppliers are auto-discovered)', function (): void {
     expect(SupplierResource::canCreate())->toBeFalse();
+});
+
+// 260626-phz — the feed-date column renders the ACTUAL recorded_at date
+// ('D j M Y'), not a relative phrase. Carbon is pinned so the seeded
+// recorded_at and the rendered output are deterministic.
+it('renders the actual feed date for a supplier with a snapshot', function (): void {
+    Carbon::setTestNow('2026-06-26'); // Friday
+
+    $admin = supplierResourceUser('admin');
+    // seedSupplierWithSnapshot stamps recorded_at = today() = the pinned date.
+    seedSupplierWithSnapshot('NUVIAS', true);
+    app(SupplierFreshnessResolver::class)->forget();
+
+    $this->actingAs($admin);
+
+    Livewire::test(ListSuppliers::class)
+        ->assertSuccessful()
+        ->assertSee('Fri 26 Jun 2026'); // 'D j M Y' of the pinned recorded_at
+
+    Carbon::setTestNow();
 });

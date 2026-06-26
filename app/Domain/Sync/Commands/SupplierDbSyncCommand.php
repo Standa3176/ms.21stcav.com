@@ -11,6 +11,7 @@ use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Concerns\JoinsStockSeparate;
+use App\Domain\Sync\Services\SupplierExclusionResolver;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
@@ -49,6 +50,15 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * = false` (back-compat). Safe to default ON: on the very first run after
  * deployment, every supplier with a today() snapshot classifies as fresh.
  *
+ * 260626-oqr extension: buildBestOfferMap ALSO drops offers from operator-
+ * EXCLUDED suppliers (suppliers.is_active=false) — price AND stock — ahead of
+ * the stale filter. This drop is UNCONDITIONAL: it is NOT gated by
+ * excludeStaleSuppliersFromBuyPrice. An explicit operator exclusion (set via
+ * the Filament Suppliers page) outranks the freshness policy and has no OFF
+ * switch. Sourced from the SupplierExclusionResolver singleton. A SKU only an
+ * excluded supplier carried yields no offer (key absent), flowing through the
+ * existing no-fresh-source handling — same behaviour as all-stale.
+ *
  * Always filters product_excluded=0. mysqli is used directly (NOT a registered
  * Laravel connection) so this command does not pollute config/database.php for
  * what is a per-run external query.
@@ -72,12 +82,22 @@ final class SupplierDbSyncCommand extends BaseCommand
 
     protected $description = 'Sync price + stock from the remote supplier MySQL into local products.';
 
+    /**
+     * 260626-oqr — operator-excluded supplier resolver. NULLABLE last param,
+     * resolved from the container when null, so existing constructions
+     * (`new SupplierDbSyncCommand(app(...), app(...), excludeStaleSuppliersFromBuyPrice: $bool)`)
+     * stay backward-compatible.
+     */
+    private readonly SupplierExclusionResolver $exclusion;
+
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
         private readonly SupplierFreshnessResolver $freshness,
         private readonly bool $excludeStaleSuppliersFromBuyPrice = true,
+        ?SupplierExclusionResolver $exclusion = null,
     ) {
         parent::__construct();
+        $this->exclusion = $exclusion ?? app(SupplierExclusionResolver::class);
     }
 
     protected function perform(): int
@@ -516,6 +536,24 @@ final class SupplierDbSyncCommand extends BaseCommand
      */
     public function buildBestOfferMap(array $rows): array
     {
+        // 260626-oqr — operator-excluded suppliers (suppliers.is_active=false) are
+        // dropped UNCONDITIONALLY, ahead of the freshness filter. An explicit
+        // operator exclusion outranks freshness policy and is not behind any flag.
+        // (e.g. Nuvias paused while it ships stale data.) Same row-shape filter as
+        // the stale block below; sourced from the SupplierExclusionResolver singleton.
+        $excludedIds = $this->exclusion->excludedSupplierIds()->all();
+        if ($excludedIds !== []) {
+            $excludedSet = array_flip(array_map('strval', $excludedIds));
+            $rows = array_values(array_filter(
+                $rows,
+                static function (array $row) use ($excludedSet): bool {
+                    $sid = isset($row['supplierid']) ? (string) $row['supplierid'] : '';
+
+                    return $sid === '' || ! isset($excludedSet[$sid]);
+                },
+            ));
+        }
+
         // Quick task 260608-g8x — drop offers belonging to stale suppliers
         // BEFORE the cheapest-in-stock reduction runs. Resolver is per-request
         // cached (singleton) so this is one classify() call per command run.

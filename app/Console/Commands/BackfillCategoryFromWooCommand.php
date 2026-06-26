@@ -197,6 +197,12 @@ class BackfillCategoryFromWooCommand extends BaseCommand
             }
 
             foreach ($chunk as $sku => $wooId) {
+                // PHP coerces all-digit array keys to int; $candidates is keyed by SKU,
+                // so numeric SKUs arrive here as ints. `products.sku` is a varchar — an
+                // int binding makes MariaDB (strict) numerically coerce the whole column
+                // and throw error 1292 on the first non-numeric SKU. Cast back to string.
+                $sku = (string) $sku;
+
                 if (! isset($lookup[$wooId])) {
                     $wooNotFound++;
                     if (count($sample) < 20) {

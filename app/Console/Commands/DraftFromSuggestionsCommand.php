@@ -171,13 +171,14 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                     continue;
                 }
                 $mfrLower = mb_strtolower($supMap[$key]);
-                if (! isset($wooBrandsByLower[$mfrLower])) {
+                $brandKey = $this->resolveBrandKey($mfrLower, $wooBrandsByLower);
+                if ($brandKey === null) {
                     continue;
                 }
-                if ($brandsFilter !== null && ! in_array($mfrLower, $brandsFilter, true)) {
+                if ($brandsFilter !== null && ! in_array($brandKey, $brandsFilter, true)) {
                     continue;
                 }
-                $canonical = $wooBrandsByLower[$mfrLower];
+                $canonical = $wooBrandsByLower[$brandKey];
                 $candidates[$sku] = $canonical;
                 $byBrand[$canonical][] = $sku;
             }
@@ -369,6 +370,41 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         }
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * Resolve a feed manufacturer string to a Woo brand KEY (lowercased), or null.
+     *
+     * Feed manufacturers are frequently "Brand - Category" shaped (e.g.
+     * "Yealink - Headset"), which never equals the clean "Yealink" brand term.
+     * Strategy: exact match first (preserves all current behaviour); on miss,
+     * strip a trailing " - <suffix>" segment and retry. Conservative — only the
+     * " - " (space-hyphen-space) separator is treated as a category suffix.
+     *
+     * @param  array<string,string>  $wooBrandsByLower  lowercased-name => canonical-name
+     */
+    public function resolveBrandKey(string $mfrLower, array $wooBrandsByLower): ?string
+    {
+        $mfrLower = trim($mfrLower);
+        if ($mfrLower === '') {
+            return null;
+        }
+
+        // 1. Exact (current behaviour).
+        if (isset($wooBrandsByLower[$mfrLower])) {
+            return $mfrLower;
+        }
+
+        // 2. Strip a trailing " - <suffix>": take the segment before the FIRST
+        //    " - " so "yealink - headset - uk" → "yealink". Retry.
+        if (str_contains($mfrLower, ' - ')) {
+            $lead = trim(explode(' - ', $mfrLower, 2)[0]);
+            if ($lead !== '' && isset($wooBrandsByLower[$lead])) {
+                return $lead;
+            }
+        }
+
+        return null;
     }
 
     /**

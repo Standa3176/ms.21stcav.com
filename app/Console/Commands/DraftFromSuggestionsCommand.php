@@ -433,6 +433,28 @@ final class DraftFromSuggestionsCommand extends BaseCommand
     }
 
     /**
+     * Pick the first manufacturer that resolves to a Woo brand.
+     * Returns [brandKey, matchedManufacturer]; [null, null] if none resolve.
+     * Handles the multi-row case (e.g. a product + a warranty/protection-plan row
+     * sharing the same MPN) — prefer the real brand over a non-brand add-on label.
+     *
+     * @param  array<int,string>  $manufacturers
+     * @param  array<string,string>  $wooBrandsByLower
+     * @return array{0:?string,1:?string}
+     */
+    public function firstResolvableBrandKey(array $manufacturers, array $wooBrandsByLower): array
+    {
+        foreach ($manufacturers as $mfr) {
+            $bk = $this->resolveBrandKey(mb_strtolower(trim((string) $mfr)), $wooBrandsByLower);
+            if ($bk !== null) {
+                return [$bk, $mfr];
+            }
+        }
+
+        return [null, null];
+    }
+
+    /**
      * Why was a SKU skipped (or null if it's a valid candidate)?
      *   not_sourceable   — no supplier feed row at all
      *   no_manufacturer  — feed row exists but manufacturer blank

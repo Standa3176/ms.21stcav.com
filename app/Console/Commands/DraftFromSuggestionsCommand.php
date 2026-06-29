@@ -169,8 +169,20 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                 if ($mfr === '') {
                     continue;
                 }
-                $supMap[strtolower((string) $r['suppliersku'])] = $mfr;
-                $supMap[strtolower((string) $r['mpn'])] = $mfr;
+                // A SKU can match multiple feed rows under one MPN with different
+                // manufacturers (e.g. a product row + a warranty/protection-plan
+                // row). Collect ALL of them — append + dedup — so the per-SKU loop
+                // can prefer the one that resolves to a Woo brand instead of the
+                // arbitrary last-fetched value.
+                foreach ([strtolower((string) $r['suppliersku']), strtolower((string) $r['mpn'])] as $k) {
+                    if ($k === '') {
+                        continue;
+                    }
+                    $supMap[$k] ??= [];
+                    if (! in_array($mfr, $supMap[$k], true)) {
+                        $supMap[$k][] = $mfr;
+                    }
+                }
             }
             $stmt->close();
 
@@ -180,16 +192,19 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                 }
                 $key = strtolower($sku);
                 $inFeed = isset($seenInFeed[$key]);
-                $hasMfr = isset($supMap[$key]);
-                // Selection is byte-identical to before: resolveBrandKey is only
-                // consulted when a non-empty manufacturer exists ($hasMfr), exactly
-                // as the old `if (! isset($supMap[$key])) continue;` gate did.
-                $brandKey = $hasMfr ? $this->resolveBrandKey(mb_strtolower($supMap[$key]), $wooBrandsByLower) : null;
+                $mfrs = $supMap[$key] ?? [];          // list of manufacturers now
+                $hasMfr = $mfrs !== [];
+                // Multi-row case: prefer the manufacturer that resolves to a Woo
+                // brand over a non-brand add-on (e.g. a "Protect Plus" warranty row
+                // sharing the MPN). For the common single-manufacturer SKU this is a
+                // one-element list, so it behaves exactly as before.
+                [$brandKey, $matchedMfr] = $this->firstResolvableBrandKey($mfrs, $wooBrandsByLower);
                 $reason = $this->classifySkip($inFeed, $hasMfr, $brandKey !== null);
                 if ($reason !== null) {
                     if ($reason === 'brand_not_on_woo') {
-                        // List manufacturer + sku so the operator knows which brand to add.
-                        $skips['brand_not_on_woo'][] = $supMap[$key].' ('.$sku.')';
+                        // List a representative manufacturer + sku so the operator
+                        // knows which brand to add.
+                        $skips['brand_not_on_woo'][] = ($mfrs[0] ?? '?').' ('.$sku.')';
                     } else {
                         $skips[$reason][] = $sku;
                     }

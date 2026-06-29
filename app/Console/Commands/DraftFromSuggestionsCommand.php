@@ -126,11 +126,17 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $candidates = [];
         /** @var array<string, array<int, string>> $byBrand  canonical brand → [skus] */
         $byBrand = [];
+        // Skip-reason buckets — survive across chunks via use (&$skips) below.
+        // not_sourceable / no_manufacturer / brand_not_on_woo populated by
+        // classifySkip(); brand_filtered holds candidates the operator's
+        // explicit --brands list excluded.
+        /** @var array{not_sourceable: array<int, string>, no_manufacturer: array<int, string>, brand_not_on_woo: array<int, string>, brand_filtered: array<int, string>} $skips */
+        $skips = ['not_sourceable' => [], 'no_manufacturer' => [], 'brand_not_on_woo' => [], 'brand_filtered' => []];
 
         // Chunk processor — accepts an iterable of {evidence-shape stdClass} OR
         // can be invoked directly with an array of raw SKU strings via the
         // adapter below. Returns false to stop processing (limit reached).
-        $chunkProcessor = function (iterable $skusInChunk) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, $limit): bool {
+        $chunkProcessor = function (iterable $skusInChunk) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, &$skips, $limit): bool {
             if ($limit > 0 && count($candidates) >= $limit) {
                 return false; // stop processing
             }
@@ -151,8 +157,14 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             $stmt->bind_param(str_repeat('s', count($params)), ...$params);
             $stmt->execute();
             $supMap = [];
+            // Every matched suppliersku/mpn (regardless of manufacturer) — lets
+            // classifySkip() distinguish "not in feed at all" (not_sourceable)
+            // from "in feed but blank manufacturer" (no_manufacturer).
+            $seenInFeed = [];
             $res = $stmt->get_result();
             while ($r = $res->fetch_assoc()) {
+                $seenInFeed[strtolower((string) $r['suppliersku'])] = true;
+                $seenInFeed[strtolower((string) $r['mpn'])] = true;
                 $mfr = trim((string) $r['manufacturer']);
                 if ($mfr === '') {
                     continue;
@@ -167,15 +179,26 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                     return false;
                 }
                 $key = strtolower($sku);
-                if (! isset($supMap[$key])) {
-                    continue;
-                }
-                $mfrLower = mb_strtolower($supMap[$key]);
-                $brandKey = $this->resolveBrandKey($mfrLower, $wooBrandsByLower);
-                if ($brandKey === null) {
+                $inFeed = isset($seenInFeed[$key]);
+                $hasMfr = isset($supMap[$key]);
+                // Selection is byte-identical to before: resolveBrandKey is only
+                // consulted when a non-empty manufacturer exists ($hasMfr), exactly
+                // as the old `if (! isset($supMap[$key])) continue;` gate did.
+                $brandKey = $hasMfr ? $this->resolveBrandKey(mb_strtolower($supMap[$key]), $wooBrandsByLower) : null;
+                $reason = $this->classifySkip($inFeed, $hasMfr, $brandKey !== null);
+                if ($reason !== null) {
+                    if ($reason === 'brand_not_on_woo') {
+                        // List manufacturer + sku so the operator knows which brand to add.
+                        $skips['brand_not_on_woo'][] = $supMap[$key].' ('.$sku.')';
+                    } else {
+                        $skips[$reason][] = $sku;
+                    }
+
                     continue;
                 }
                 if ($brandsFilter !== null && ! in_array($brandKey, $brandsFilter, true)) {
+                    $skips['brand_filtered'][] = $sku;
+
                     continue;
                 }
                 $canonical = $wooBrandsByLower[$brandKey];
@@ -221,6 +244,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $count = count($skuList);
         if ($count === 0) {
             $this->info('No matching SKUs to draft.');
+            $this->printSkipBreakdown($skips, $explicitSkus !== []);
 
             return SymfonyCommand::SUCCESS;
         }
@@ -232,6 +256,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         foreach ($byBrand as $brand => $skus) {
             $this->line('  '.str_pad((string) count($skus), 5, ' ', STR_PAD_LEFT).'  '.$brand);
         }
+        $this->printSkipBreakdown($skips, $explicitSkus !== []);
 
         $perProductPence = self::COST_DRAFTS_PENCE + self::COST_TAXONOMY_PENCE + ($sourceImages ? self::COST_IMAGES_PENCE : 0);
         $totalPence = $count * $perProductPence;
@@ -426,6 +451,43 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         }
 
         return null;
+    }
+
+    /**
+     * Print the per-bucket skip breakdown. On the explicit --skus path also
+     * lists each skipped SKU + reason (the operator picked them, wants detail);
+     * on the walk path prints per-bucket counts only (could be thousands).
+     *
+     * @param  array{not_sourceable: array<int, string>, no_manufacturer: array<int, string>, brand_not_on_woo: array<int, string>, brand_filtered: array<int, string>}  $skips
+     */
+    private function printSkipBreakdown(array $skips, bool $explicit): void
+    {
+        $totalSkipped = array_sum(array_map('count', $skips));
+        if ($totalSkipped <= 0) {
+            return;
+        }
+        $this->newLine();
+        $this->warn("Skipped {$totalSkipped} SKU(s):");
+        if (! empty($skips['not_sourceable'])) {
+            $this->line('  not sourceable (no supplier carries it): '.count($skips['not_sourceable']));
+        }
+        if (! empty($skips['no_manufacturer'])) {
+            $this->line('  no manufacturer in feed: '.count($skips['no_manufacturer']));
+        }
+        if (! empty($skips['brand_not_on_woo'])) {
+            $this->line('  brand not on Woo (add under Products → Brands): '.count($skips['brand_not_on_woo']));
+        }
+        if (! empty($skips['brand_filtered'])) {
+            $this->line('  excluded by --brands filter: '.count($skips['brand_filtered']));
+        }
+        // Explicit --skus path: list each skipped SKU + reason (operator picked them).
+        if ($explicit) {
+            foreach (['not_sourceable' => 'not sourceable', 'no_manufacturer' => 'no manufacturer', 'brand_not_on_woo' => 'brand not on Woo'] as $bk => $label) {
+                foreach ($skips[$bk] ?? [] as $entry) {
+                    $this->line("    - {$entry}: {$label}");
+                }
+            }
+        }
     }
 
     /**

@@ -408,6 +408,27 @@ final class DraftFromSuggestionsCommand extends BaseCommand
     }
 
     /**
+     * Why was a SKU skipped (or null if it's a valid candidate)?
+     *   not_sourceable   — no supplier feed row at all
+     *   no_manufacturer  — feed row exists but manufacturer blank
+     *   brand_not_on_woo — manufacturer present but not a Woo brand
+     */
+    public function classifySkip(bool $inFeed, bool $hasManufacturer, bool $brandResolved): ?string
+    {
+        if (! $inFeed) {
+            return 'not_sourceable';
+        }
+        if (! $hasManufacturer) {
+            return 'no_manufacturer';
+        }
+        if (! $brandResolved) {
+            return 'brand_not_on_woo';
+        }
+
+        return null;
+    }
+
+    /**
      * Parse --brands=A,B,C into a lowercased array. Returns null when filter is empty.
      *
      * @return array<int, string>|null

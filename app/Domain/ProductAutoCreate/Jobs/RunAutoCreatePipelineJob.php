@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Jobs;
 
+use App\Domain\Products\Models\Product;
 use App\Models\User;
 use App\Notifications\OperatorJobCompletedNotification;
 use Illuminate\Bus\Queueable;
@@ -58,7 +59,7 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
 
     public function handle(): int
     {
-        Context::add('correlation_id', (string) \Illuminate\Support\Str::uuid());
+        Context::add('correlation_id', (string) Str::uuid());
         Context::add('triggered_by_user_id', $this->triggeredByUserId);
 
         $args = [
@@ -86,7 +87,7 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
         // for the requested SKU set; re-runs of the same set still count
         // already-drafted SKUs as success (idempotent).
         $totalSkuCount = count($this->skus);
-        $successCount = \App\Domain\Products\Models\Product::whereIn('sku', $this->skus)->count();
+        $successCount = Product::whereIn('sku', $this->skus)->count();
 
         try {
             if ($this->triggeredByUserId > 0 && ($user = User::find($this->triggeredByUserId))) {
@@ -105,6 +106,50 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
         }
 
         return $exitCode;
+    }
+
+    /**
+     * Build [body, level] for the completion notification from the command's run summary.
+     * Falls back to a generic line when $summary is null (older command / cache miss).
+     *
+     * @param  array<string,mixed>|null  $summary
+     * @return array{0:string,1:string}
+     */
+    public static function formatAutoCreateResultBody(?array $summary, int $selectedCount, bool $autoPublish): array
+    {
+        if (! is_array($summary)) {
+            return ["Pipeline finished for {$selectedCount} selected SKU(s). See /admin/products or /admin/auto-create-reviews.", 'info'];
+        }
+        $created = (int) ($summary['created'] ?? 0);
+        $skipped = $summary['skipped'] ?? [];
+        $skipCount = array_sum(array_map(static fn ($a): int => is_array($a) ? count($a) : 0, $skipped));
+
+        $lines = [];
+        $brands = $summary['by_brand'] ?? [];
+        $brandStr = $brands !== [] ? ' ('.implode(', ', array_keys($brands)).')' : '';
+        $lines[] = "Created/updated {$created}{$brandStr}.";
+        if ($autoPublish && isset($summary['auto_publish']) && is_array($summary['auto_publish'])) {
+            $ap = $summary['auto_publish'];
+            $lines[] = 'Published to Woo: '.(int) ($ap['published'] ?? 0)
+                .((int) ($ap['failed'] ?? 0) > 0 ? ', failed: '.(int) $ap['failed'] : '')
+                .((int) ($ap['shadowed'] ?? 0) > 0 ? ', shadowed: '.(int) $ap['shadowed'] : '');
+        }
+        $labels = [
+            'not_sourceable' => 'not sourceable (no supplier carries it)',
+            'no_manufacturer' => 'no manufacturer in feed',
+            'brand_not_on_woo' => 'brand not on Woo (add under Products → Brands)',
+        ];
+        foreach ($labels as $bucket => $label) {
+            $skus = $skipped[$bucket] ?? [];
+            if (is_array($skus) && $skus !== []) {
+                $shown = array_slice($skus, 0, 10);
+                $more = count($skus) - count($shown);
+                $lines[] = 'Skipped — '.$label.': '.implode(', ', $shown).($more > 0 ? " (+{$more} more)" : '');
+            }
+        }
+        $level = $created === 0 ? 'danger' : ($skipCount > 0 ? 'warning' : 'success');
+
+        return [implode("\n", $lines), $level];
     }
 
     /**

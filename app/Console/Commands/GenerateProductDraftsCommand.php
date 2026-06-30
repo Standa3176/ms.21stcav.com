@@ -8,6 +8,7 @@ use App\Console\Concerns\NormalisesEan;
 use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Concerns\PrefersRealSupplierRow;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use Illuminate\Support\Str;
@@ -40,6 +41,12 @@ final class GenerateProductDraftsCommand extends BaseCommand
     // consumes byte-identical logic. Trait widens visibility private → public,
     // which is legal in PHP trait composition.
     use NormalisesEan;
+
+    // Quick task 260630-c3q — shared supplier-row picker. When a SKU matches
+    // multiple supplier_products rows (real product + a warranty/add-on row
+    // sharing the MPN), prefer the brand-resolving, in-stock REAL product row
+    // instead of the most-recent row (which let "Protect Plus" hijack HD226).
+    use PrefersRealSupplierRow;
 
     protected $signature = 'products:generate-drafts
         {--skus= : Comma-separated supplier SKUs or MPNs (required)}
@@ -92,13 +99,13 @@ final class GenerateProductDraftsCommand extends BaseCommand
         } else {
             $this->line('No supplier description/spec column found — grounding on title + identifiers only.');
         }
-        $selectCols = array_merge(['title', 'manufacturer', 'mpn', 'suppliersku', 'ean', 'price', 'rrp'], $detailColumns);
+        $selectCols = array_merge(['title', 'manufacturer', 'mpn', 'suppliersku', 'ean', 'price', 'rrp', 'stock'], $detailColumns);
         $selectList = implode(', ', array_map(static fn (string $col): string => "`{$col}`", $selectCols));
         $stmt = $m->prepare(
             "SELECT {$selectList}
              FROM supplier_products
              WHERE (suppliersku = ? OR mpn = ?) AND product_excluded = 0
-             ORDER BY updated_at DESC LIMIT 1",
+             ORDER BY updated_at DESC LIMIT 25",
         );
 
         $system = $this->systemPrompt();
@@ -108,7 +115,8 @@ final class GenerateProductDraftsCommand extends BaseCommand
         foreach ($skus as $sku) {
             $stmt->bind_param('ss', $sku, $sku);
             $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $row = $this->pickBestSupplierRow($rows, fn (string $m): bool => $m !== '' && $this->taxonomy->resolveBrand($m) !== null);
             if (! $row) {
                 $this->warn("  {$sku}: not found in supplier DB — skipped");
 

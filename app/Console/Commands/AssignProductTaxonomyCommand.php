@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Concerns\PrefersRealSupplierRow;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use Illuminate\Support\Str;
@@ -33,6 +34,12 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  */
 final class AssignProductTaxonomyCommand extends BaseCommand
 {
+    // Quick task 260630-c3q — shared supplier-row picker. supplierManufacturers()
+    // now fetches up to 25 candidate rows and prefers the brand-resolving,
+    // in-stock REAL product row over the most-recent (which let "Protect Plus"
+    // warranty rows hijack the brand on multi-row SKUs like HD226).
+    use PrefersRealSupplierRow;
+
     protected $signature = 'products:assign-taxonomy
         {--skus= : Comma-separated SKUs of existing local Products (required)}
         {--dry-run : Resolve + print choices only; do NOT write}';
@@ -359,9 +366,9 @@ final class AssignProductTaxonomyCommand extends BaseCommand
             return $out;
         }
         $stmt = $m->prepare(
-            'SELECT manufacturer FROM supplier_products
+            'SELECT manufacturer, stock FROM supplier_products
              WHERE (suppliersku = ? OR mpn = ?) AND product_excluded = 0
-             ORDER BY updated_at DESC LIMIT 1',
+             ORDER BY updated_at DESC LIMIT 25',
         );
         if ($stmt === false) {
             $m->close();
@@ -371,9 +378,10 @@ final class AssignProductTaxonomyCommand extends BaseCommand
         foreach ($skus as $sku) {
             $stmt->bind_param('ss', $sku, $sku);
             $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            if (is_array($row) && trim((string) ($row['manufacturer'] ?? '')) !== '') {
-                $out[$sku] = trim((string) $row['manufacturer']);
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $best = $this->pickBestSupplierRow($rows, fn (string $m): bool => $m !== '' && $this->taxonomy->resolveBrand($m) !== null);
+            if ($best !== null && trim((string) ($best['manufacturer'] ?? '')) !== '') {
+                $out[$sku] = trim((string) $best['manufacturer']);
             }
         }
         $stmt->close();

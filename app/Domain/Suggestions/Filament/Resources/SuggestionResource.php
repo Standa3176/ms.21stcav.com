@@ -8,17 +8,13 @@ use App\Domain\ProductAutoCreate\Jobs\RunAutoCreatePipelineJob;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
-use App\Domain\Sync\Services\SupplierSkuRegistry;
 use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
 use App\Foundation\Audit\Services\Auditor;
-use Illuminate\Support\Facades\Cache;
 use Filament\Forms\Components\Radio;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\Toggle;
-use Filament\Tables\Actions\BulkAction;
-use Illuminate\Database\Eloquent\Collection;
 use Filament\Infolists\Components\Grid;
 use Filament\Infolists\Components\Section;
 use Filament\Infolists\Components\TextEntry;
@@ -26,12 +22,15 @@ use Filament\Infolists\Infolist;
 use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Tables\Actions\Action;
+use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class SuggestionResource extends Resource
 {
@@ -688,7 +687,7 @@ class SuggestionResource extends Resource
                         Notification::make()
                             ->success()
                             ->title(count($skus).' SKU(s) queued')
-                            ->body('Pipeline dispatched on the default queue. Watch /horizon → completed jobs, then /admin/products or /admin/auto-create-reviews.')
+                            ->body('Dispatched. The created / skipped (with reasons) result will appear in your notifications bell when the pipeline finishes (usually under a minute).')
                             ->send();
                     }),
             ]);

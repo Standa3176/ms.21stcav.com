@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Jobs;
 
-use App\Domain\Products\Models\Product;
 use App\Models\User;
 use App\Notifications\OperatorJobCompletedNotification;
 use Illuminate\Bus\Queueable;
@@ -14,6 +13,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -62,9 +62,14 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
         Context::add('correlation_id', (string) Str::uuid());
         Context::add('triggered_by_user_id', $this->triggeredByUserId);
 
+        // 260630-ry6 — hand the command a unique cache key it writes its run
+        // summary to; we pull it back after the run for a per-SKU notification.
+        $resultKey = 'autocreate:result:'.(string) Str::uuid();
+
         $args = [
             '--skus' => implode(',', $this->skus),
             '--no-confirm' => true,
+            '--result-cache-key' => $resultKey,
         ];
         if ($this->sourceImages) {
             $args['--source-images'] = true;
@@ -82,20 +87,23 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
 
         $exitCode = Artisan::call('products:draft-from-suggestions', $args);
 
-        // Quick task 260606-p4q — bell-icon completion notification for the
-        // triggering operator. Counts Products that now exist in the catalogue
-        // for the requested SKU set; re-runs of the same set still count
-        // already-drafted SKUs as success (idempotent).
-        $totalSkuCount = count($this->skus);
-        $successCount = Product::whereIn('sku', $this->skus)->count();
+        // 260630-ry6 — pull the structured run summary the command just wrote
+        // (pull = get + forget). Null on a cache miss / older command — the
+        // formatter then falls back to the generic count-based body.
+        $summary = Cache::pull($resultKey);
+
+        // Quick task 260606-p4q → 260630-ry6 — bell-icon completion notification
+        // for the triggering operator. Now reports the PER-SKU outcome (created
+        // with brands + published-to-Woo + skipped-with-reason) via the pure
+        // formatAutoCreateResultBody() helper instead of the old "N/M processed".
+        [$body, $level] = self::formatAutoCreateResultBody($summary, count($this->skus), $this->autoPublish);
 
         try {
             if ($this->triggeredByUserId > 0 && ($user = User::find($this->triggeredByUserId))) {
-                $bodySuffix = $this->autoPublish ? ' + published to Woo' : ' (in review inbox)';
                 $user->notify(new OperatorJobCompletedNotification(
                     title: 'Auto-create pipeline complete',
-                    body: "{$successCount}/{$totalSkuCount} SKUs processed".$bodySuffix,
-                    level: $successCount === $totalSkuCount ? 'success' : 'warning',
+                    body: $body,
+                    level: $level,
                     url: $this->autoPublish ? '/admin/products' : '/admin/auto-create-reviews',
                 ));
             }

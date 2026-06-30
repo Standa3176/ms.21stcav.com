@@ -10,6 +10,7 @@ use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -55,6 +56,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
         {--auto-approve : Bypass the review inbox — auto-dispatch PublishProductJob to push each draft live on Woo (requires WOO_WRITE_ENABLED=true)}
         {--no-confirm : Skip the interactive confirmation prompt (queue/job invocation). Implicitly set when stdin is non-interactive.}
+        {--result-cache-key= : Internal — when set, write the run summary array to this cache key (TTL 600s) for the dispatching job to read}
         {--dry-run : Print the SKU list + cost estimate, do not call generate-drafts}';
 
     protected $description = 'Pre-filter Suggestions → chain generate-drafts + assign-taxonomy for sourceable + brand-on-Woo products.';
@@ -261,6 +263,20 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             $this->info('No matching SKUs to draft.');
             $this->printSkipBreakdown($skips, $explicitSkus !== []);
 
+            // 260630-ry6 — even a 0-created run reports WHY (skip buckets) so the
+            // dispatching job's notification explains a black-box no-op.
+            $this->writeRunSummary([
+                'created' => 0,
+                'created_skus' => [],
+                'by_brand' => [],
+                'skipped' => [
+                    'not_sourceable' => array_values($skips['not_sourceable'] ?? []),
+                    'no_manufacturer' => array_values($skips['no_manufacturer'] ?? []),
+                    'brand_not_on_woo' => array_values($skips['brand_not_on_woo'] ?? []),
+                ],
+                'auto_publish' => null,
+            ]);
+
             return SymfonyCommand::SUCCESS;
         }
 
@@ -362,12 +378,14 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         }
 
         // ── 8. Optional: auto-approve → dispatch PublishProductJob per draft ──
+        // Declared here (not inside the block) so the run-summary at the final
+        // return can reference them regardless of the --auto-approve path.
+        $published = 0;
+        $shadowed = 0;
+        $failed = 0;
         if ($autoApprove) {
             $this->newLine();
             $this->info('==> auto-publish to Woo (PublishProductJob per draft)');
-            $published = 0;
-            $shadowed = 0;
-            $failed = 0;
             foreach ($skuList as $sku) {
                 $product = Product::where('sku', $sku)->first();
                 if ($product === null) {
@@ -409,7 +427,39 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             $this->info("Done. {$count} draft(s) ready in /admin/auto-create-reviews.");
         }
 
+        // 260630-ry6 — structured run summary for the dispatching job's
+        // rich completion notification (no-op on the CLI path: no cache key).
+        $this->writeRunSummary([
+            'created' => $count,
+            'created_skus' => array_values($skuList),
+            'by_brand' => array_map('count', $byBrand),
+            'skipped' => [
+                'not_sourceable' => array_values($skips['not_sourceable'] ?? []),
+                'no_manufacturer' => array_values($skips['no_manufacturer'] ?? []),
+                'brand_not_on_woo' => array_values($skips['brand_not_on_woo'] ?? []),
+            ],
+            'auto_publish' => $autoApprove
+                ? ['published' => $published, 'shadowed' => $shadowed, 'failed' => $failed]
+                : null,
+        ]);
+
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * 260630-ry6 — persist the run summary so the dispatching
+     * RunAutoCreatePipelineJob can build a per-SKU completion notification.
+     * No-op on the CLI path (no --result-cache-key passed) — keeps interactive
+     * `php artisan products:draft-from-suggestions` behaviour byte-identical.
+     *
+     * @param  array<string,mixed>  $summary
+     */
+    private function writeRunSummary(array $summary): void
+    {
+        $key = (string) $this->option('result-cache-key');
+        if ($key !== '') {
+            Cache::put($key, $summary, 600);
+        }
     }
 
     /**

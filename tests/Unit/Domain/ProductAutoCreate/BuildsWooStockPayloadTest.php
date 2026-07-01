@@ -107,3 +107,39 @@ it('qty 5 + invalid status garbage → derived instock', function (): void {
         'stock_status' => 'instock',
     ]);
 });
+
+it('qty 0 + local status instock → outofstock (qty wins, no oversell)', function (): void {
+    $payload = stockPayloadHost()->build(
+        new Product(['stock_quantity' => 0, 'stock_status' => 'instock'])
+    );
+
+    expect($payload)->toBe([
+        'manage_stock' => true,
+        'stock_quantity' => 0,
+        'stock_status' => 'outofstock',
+    ]);
+});
+
+it('qty 5 + local status outofstock → instock (qty wins both directions)', function (): void {
+    $payload = stockPayloadHost()->build(
+        new Product(['stock_quantity' => 5, 'stock_status' => 'outofstock'])
+    );
+
+    expect($payload)->toBe([
+        'manage_stock' => true,
+        'stock_quantity' => 5,
+        'stock_status' => 'instock',
+    ]);
+});
+
+it('qty 5 + onbackorder → preserved even with stock', function (): void {
+    $payload = stockPayloadHost()->build(
+        new Product(['stock_quantity' => 5, 'stock_status' => 'onbackorder'])
+    );
+
+    expect($payload)->toBe([
+        'manage_stock' => true,
+        'stock_quantity' => 5,
+        'stock_status' => 'onbackorder',
+    ]);
+});

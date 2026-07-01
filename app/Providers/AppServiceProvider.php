@@ -22,6 +22,7 @@ use App\Console\Commands\DedupeBrandsCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
+use App\Console\Commands\ReconcileStaleWooIdsCommand;
 use App\Console\Commands\Reports\SupplierSyncDigestCommand;
 use App\Console\Commands\Reports\WeeklyDigestCommand;
 use App\Console\Commands\RetagProductsOnWooCommand;
@@ -952,6 +953,16 @@ class AppServiceProvider extends ServiceProvider
                 // before the 07:00 supplier:db-sync. Lives under
                 // app/Domain/Sync/Commands/ so explicit registration is required.
                 SyncSupplierFeedDatesCommand::class,
+                // Quick task 260701-n4y — products:reconcile-stale-woo-ids.
+                // One-pass cleanup of the 204 stale woo_product_ids (all draft)
+                // surfaced by the 2026-07-01 blast-radius scan: batch-checks
+                // every product's woo_product_id against Woo and NULLs the ones
+                // Woo no longer returns. Operator-triggered (--dry-run first);
+                // NOT scheduled — the PushPriceChangeToWoo skip-non-publish +
+                // self-heal guards (same task) prevent future backlog. Lives
+                // under app/Console/Commands/ (auto-discovered class dir) but
+                // registered explicitly alongside the other Woo commands.
+                ReconcileStaleWooIdsCommand::class,
             ]);
         }
     }

@@ -8,6 +8,7 @@ use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\BackfillProductBrandFromNameCommand;
+use App\Console\Commands\BackfillWooStockCommand;
 use App\Console\Commands\Cutover\AutoSyncDivergenceCommand;
 use App\Console\Commands\Cutover\CutoverChecklistCommand;
 use App\Console\Commands\Cutover\DisableLegacyPluginsCommand;
@@ -963,6 +964,20 @@ class AppServiceProvider extends ServiceProvider
                 // under app/Console/Commands/ (auto-discovered class dir) but
                 // registered explicitly alongside the other Woo commands.
                 ReconcileStaleWooIdsCommand::class,
+                // Quick task 260701-pmr — products:backfill-woo-stock.
+                // One-time (re-runnable) backfill: PUTs manage_stock=true +
+                // stock_quantity + stock_status (via BuildsWooStockPayload) to
+                // Woo for existing app-created PUBLISHED products, so the ~600
+                // products created BEFORE 260701-opg show a stock line like
+                // legacy products. cutover:auto-sync pushes qty but NOT
+                // manage_stock, which is why those products never displayed
+                // stock. Pure Woo writes — no Claude spend. On a WC
+                // woocommerce_rest_product_invalid_id error it NULLs the stale
+                // woo_product_id + continues (mirrors the price-push guard).
+                // Operator-triggered (--dry-run first); NOT scheduled — new
+                // products already get stock keys at publish and auto-sync
+                // keeps quantities fresh afterwards.
+                BackfillWooStockCommand::class,
             ]);
         }
     }

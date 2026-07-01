@@ -79,11 +79,20 @@ it('path A: PUTs status=publish (no leading slash) + flips published + fires eve
         'woo_product_id' => 500,
         'auto_create_status' => 'approved',
         'status' => 'draft',
+        'stock_quantity' => 12,
+        'stock_status' => 'instock',
     ]);
 
     $woo = Mockery::mock(WooClient::class);
+    // 260701-opg — Path A PUT now merges stock keys alongside status=publish so
+    // the flipped-live product shows a storefront stock line like legacy products.
     $woo->shouldReceive('put')
-        ->with('products/500', ['status' => 'publish'])
+        ->with('products/500', [
+            'status' => 'publish',
+            'manage_stock' => true,
+            'stock_quantity' => 12,
+            'stock_status' => 'instock',
+        ])
         ->once()
         ->andReturn(['id' => 500, 'status' => 'publish']);
     $woo->shouldNotReceive('post');

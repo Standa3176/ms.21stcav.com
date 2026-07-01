@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\ProductAutoCreate\Jobs;
 
 use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\ProductAutoCreate\Concerns\BuildsWooStockPayload;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
@@ -50,6 +51,7 @@ use Illuminate\Support\Facades\Log;
  */
 final class PublishProductJob implements ShouldQueue
 {
+    use BuildsWooStockPayload;
     use Dispatchable;
     use InteractsWithQueue;
     use Queueable;
@@ -81,7 +83,9 @@ final class PublishProductJob implements ShouldQueue
         if ($wooId > 0) {
             // ── Path A — already on Woo: flip the existing draft to publish ──
             // No leading slash — the Woo SDK 404s ("rest_no_route") on a leading "/".
-            $response = $woo->put("products/{$wooId}", ['status' => 'publish']);
+            // Stock keys (manage_stock/stock_quantity/stock_status) ride along so the
+            // flipped-live product shows a storefront stock line like legacy products.
+            $response = $woo->put("products/{$wooId}", array_merge(['status' => 'publish'], $this->wooStockPayload($product)));
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
             $payload = $this->buildCreatePayload($product, $calculator);
@@ -341,6 +345,12 @@ final class PublishProductJob implements ShouldQueue
                 $tags,
             );
         }
+
+        // Stock keys (manage_stock/stock_quantity/stock_status) so the created
+        // product shows a storefront stock line like legacy products. Stock is
+        // unaffected by the Cost-of-Goods plugin, so it stays in the initial POST
+        // (unlike regular_price, which handle() defers to a follow-up PUT).
+        $payload = array_merge($payload, $this->wooStockPayload($product));
 
         return $payload;
     }

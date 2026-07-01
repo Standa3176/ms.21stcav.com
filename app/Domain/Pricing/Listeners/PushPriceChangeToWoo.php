@@ -69,6 +69,21 @@ final class PushPriceChangeToWoo implements ShouldQueue
             return;
         }
 
+        // Quick task 260701-n4y — skip products not on the storefront. Drafts /
+        // pending (old `manual` imports) are the sole source of the 204 stale
+        // woo_product_ids Woo 400s on with woocommerce_rest_product_invalid_id;
+        // they aren't published so pushing a price is pointless noise. Live-price
+        // sync for PUBLISHED products is unaffected — this only silences drafts.
+        if ($product->status !== 'publish') {
+            Log::info('pricing.woo_push_skipped_not_published', [
+                'product_id' => $product->id,
+                'sku' => $event->sku,
+                'status' => $product->status,
+            ]);
+
+            return;
+        }
+
         // sell_price (event newPennies) is VAT-inclusive. Push inc-VAT by default;
         // strip to ex-VAT only when the store is configured ex-VAT.
         $pennies = (bool) config('services.woo.push_prices_ex_vat', false)
@@ -87,17 +102,58 @@ final class PushPriceChangeToWoo implements ShouldQueue
 
                 return;
             }
-            $this->woo->put(
+            $this->putOrClearStale(
                 "products/{$product->woo_product_id}/variations/{$variant->woo_variation_id}",
-                ['regular_price' => $regularPrice],
+                $regularPrice,
+                $product,
+                $event,
             );
 
             return;
         }
 
-        $this->woo->put(
+        $this->putOrClearStale(
             "products/{$product->woo_product_id}",
-            ['regular_price' => $regularPrice],
+            $regularPrice,
+            $product,
+            $event,
         );
+    }
+
+    /**
+     * Quick task 260701-n4y — PUT a price to Woo, but self-heal a stale
+     * woo_product_id instead of failing the job.
+     *
+     * On a Woo error whose message contains the WC error CODE
+     * `woocommerce_rest_product_invalid_id` (observed message shape:
+     * "... Error: Invalid ID. [woocommerce_rest_product_invalid_id] ...") the
+     * product's Woo record was deleted underneath us: we NULL the local
+     * woo_product_id (saveQuietly — no observer/audit churn), log it, and RETURN
+     * WITHOUT rethrowing so the job succeeds, stops retrying, and the product is
+     * flagged (null woo id) for re-link. Any OTHER exception rethrows so
+     * genuine/transient errors (5xx, 429-exhaustion, auth) still retry.
+     *
+     * Nulling woo_product_id is the correct recovery even on the variant path —
+     * an invalid parent product id makes the variation write moot.
+     */
+    private function putOrClearStale(string $path, string $regularPrice, Product $product, ProductPriceChanged $event): void
+    {
+        try {
+            $this->woo->put($path, ['regular_price' => $regularPrice]);
+        } catch (\Throwable $e) {
+            if (str_contains($e->getMessage(), 'woocommerce_rest_product_invalid_id')) {
+                Log::warning('pricing.woo_push_stale_id_cleared', [
+                    'product_id' => $product->id,
+                    'sku' => $event->sku,
+                    'woo_product_id' => $product->woo_product_id,
+                    'path' => $path,
+                ]);
+                $product->forceFill(['woo_product_id' => null])->saveQuietly();
+
+                return; // stale link cleared + flagged; do NOT rethrow (no retry, no failed_jobs)
+            }
+
+            throw $e; // genuine/transient — let the job retry
+        }
     }
 }

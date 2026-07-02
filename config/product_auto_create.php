@@ -73,4 +73,11 @@ return [
     // brands-to-add list (case-insensitive). Not real brands / consumables buckets.
     'brands_to_add_exclude' => ['specials', 'un-branded', 'unbranded'],
 
+    // 260702-qd8 — when creating a product from Suggestions whose manufacturer is
+    // not yet a Woo brand, auto-create the brand term (normalised + junk-guarded)
+    // instead of skipping/parking the product. Single on/off switch for both the
+    // per-row approve (CreateWooProductJob) and the bulk pipeline
+    // (draft-from-suggestions via RunAutoCreatePipelineJob).
+    'auto_create_missing_brands' => true,
+
 ];

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Concerns\NormalisesBrandNames;
 use App\Domain\ProductAutoCreate\Concerns\ResolvesWooBrandKey;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Suggestions\Models\Suggestion;
@@ -46,6 +47,10 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  */
 final class RefreshBrandsToAddCommand extends BaseCommand
 {
+    // 260702-qd8 — normaliseBrandName + isJunkBrand now live in this shared
+    // concern (extracted verbatim; used by WooBrandCreator too). Behaviour
+    // unchanged — BrandsToAddIndexTest stays green.
+    use NormalisesBrandNames;
     use ResolvesWooBrandKey;
 
     /** Stable cache key Piece 2's "Brands to Add" page reads. */
@@ -276,22 +281,6 @@ final class RefreshBrandsToAddCommand extends BaseCommand
         }
 
         return ['per_sku' => $perSku, 'to_add' => $toAdd];
-    }
-
-    /** HTML-decode + trim + collapse inner whitespace. 'VOGEL&#039;S' => "VOGEL'S". */
-    private function normaliseBrandName(string $raw): string
-    {
-        $s = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-        return (string) preg_replace('/\s+/u', ' ', trim($s));
-    }
-
-    /** True when a (normalised) brand is on the config exclusion list (case-insensitive). */
-    private function isJunkBrand(string $brand): bool
-    {
-        $ex = array_map('mb_strtolower', (array) config('product_auto_create.brands_to_add_exclude', []));
-
-        return in_array(mb_strtolower(trim($brand)), $ex, true);
     }
 
     /**

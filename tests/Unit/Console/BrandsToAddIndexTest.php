@@ -58,6 +58,104 @@ it('classifies on-woo / to-add / not-sourceable SKUs and aggregates the to-add s
     expect(array_keys($index['to_add']))->toBe(['Trantec']);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Quick task 260702-om7 — normalise + case-collapse + junk-exclude
+|--------------------------------------------------------------------------
+| The raw h50/hg1 to-add list re-pollutes the taxonomy on one-click-create:
+| case-variant duplicates ('BROTHER'+'Brother'), HTML entities ('VOGEL&#039;S'),
+| junk ('SPECIALS'). buildBrandsToAddIndex now HTML-decodes + trims + collapses
+| whitespace on manufacturer names, groups the to-add bucket case-insensitively
+| into ONE canonical (mixed-case preferred, acronyms preserved, never
+| title-cased), and drops junk (config brands_to_add_exclude).
+*/
+
+it('collapses case-variant to-add brands into one mixed-case canonical with summed count', function (): void {
+    $skuToMfr = [
+        'a' => ['BROTHER'],
+        'b' => ['Brother'],
+        'c' => ['Brother'],
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, []);
+
+    // One row, mixed-case 'Brother' preferred over all-caps 'BROTHER', count 3.
+    expect(array_keys($index['to_add']))->toBe(['Brother']);
+    expect($index['to_add']['Brother']['count'])->toBe(3);
+    expect($index['to_add']['Brother']['skus'])->toBe(['a', 'b', 'c']);
+
+    // per_sku brand === the SAME canonical for every case variant.
+    expect($index['per_sku']['a']['brand'])->toBe('Brother');
+    expect($index['per_sku']['b']['brand'])->toBe('Brother');
+    expect($index['per_sku']['c']['brand'])->toBe('Brother');
+});
+
+it('preserves all-caps acronym brands (never title-cases APC)', function (): void {
+    $skuToMfr = [
+        'd' => ['APC'],
+        'e' => ['APC'],
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, []);
+
+    expect(array_keys($index['to_add']))->toBe(['APC']);
+    expect($index['to_add']['APC']['count'])->toBe(2);
+    expect($index['per_sku']['d']['brand'])->toBe('APC');
+});
+
+it('html-decodes a manufacturer so it matches an existing Woo brand', function (): void {
+    $woo = ['yealink' => 'Yealink', "vogel's" => "Vogel's"];
+    $skuToMfr = [
+        'f' => ['VOGEL&#039;S'], // decodes to VOGEL'S -> matches Woo "Vogel's"
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, $woo);
+
+    expect($index['per_sku']['f'])->toBe(['brand' => "Vogel's", 'on_woo' => true, 'sourceable' => true]);
+    expect($index['to_add'])->toBe([]);
+});
+
+it('html-decodes a manufacturer that is not on Woo into the decoded to-add name', function (): void {
+    $woo = ['yealink' => 'Yealink']; // no Vogel's on Woo
+    $skuToMfr = [
+        'g' => ['VOGEL&#039;S'],
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, $woo);
+
+    expect(array_keys($index['to_add']))->toBe(["VOGEL'S"]);
+    expect($index['to_add']["VOGEL'S"]['count'])->toBe(1);
+    expect($index['per_sku']['g']['brand'])->toBe("VOGEL'S");
+});
+
+it('excludes junk brands from the to-add summary and from per_sku brand', function (): void {
+    $skuToMfr = [
+        'h' => ['SPECIALS'],
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, []);
+
+    // Junk => sourceable but not a creatable brand; NOT in to_add.
+    expect($index['per_sku']['h'])->toBe(['brand' => null, 'on_woo' => false, 'sourceable' => true]);
+    expect($index['to_add'])->toBe([]);
+});
+
+it('leaves on-woo / not-sourceable / multi-mfr classification unchanged after normalisation', function (): void {
+    $woo = ['yealink' => 'Yealink'];
+    $skuToMfr = [
+        'i' => ['Yealink'],                 // on woo (unchanged)
+        'j' => [],                          // not sourceable (unchanged)
+        'k' => ['Protect Plus', 'Yealink'], // multi-mfr preference (unchanged)
+    ];
+
+    $index = $this->command->buildBrandsToAddIndex($skuToMfr, $woo);
+
+    expect($index['per_sku']['i'])->toBe(['brand' => 'Yealink', 'on_woo' => true, 'sourceable' => true]);
+    expect($index['per_sku']['j'])->toBe(['brand' => null, 'on_woo' => false, 'sourceable' => false]);
+    expect($index['per_sku']['k'])->toBe(['brand' => 'Yealink', 'on_woo' => true, 'sourceable' => true]);
+    expect($index['to_add'])->toBe([]);
+});
+
 it('caps the sample skus per to-add brand at 25', function (): void {
     $skuToMfr = [];
     for ($i = 0; $i < 40; $i++) {

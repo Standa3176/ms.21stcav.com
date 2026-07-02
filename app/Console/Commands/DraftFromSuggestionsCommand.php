@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\ProductAutoCreate\Concerns\ResolvesWooBrandKey;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
@@ -42,6 +43,10 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  */
 final class DraftFromSuggestionsCommand extends BaseCommand
 {
+    // Quick task 260702-h50 — resolveBrandKey + firstResolvableBrandKey now
+    // live in this shared trait (extracted verbatim; behaviour unchanged).
+    use ResolvesWooBrandKey;
+
     /** Per-product Claude cost ballpark in pence (for the operator estimate). */
     private const COST_DRAFTS_PENCE = 2;
 
@@ -460,63 +465,6 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         if ($key !== '') {
             Cache::put($key, $summary, 600);
         }
-    }
-
-    /**
-     * Resolve a feed manufacturer string to a Woo brand KEY (lowercased), or null.
-     *
-     * Feed manufacturers are frequently "Brand - Category" shaped (e.g.
-     * "Yealink - Headset"), which never equals the clean "Yealink" brand term.
-     * Strategy: exact match first (preserves all current behaviour); on miss,
-     * strip a trailing " - <suffix>" segment and retry. Conservative — only the
-     * " - " (space-hyphen-space) separator is treated as a category suffix.
-     *
-     * @param  array<string,string>  $wooBrandsByLower  lowercased-name => canonical-name
-     */
-    public function resolveBrandKey(string $mfrLower, array $wooBrandsByLower): ?string
-    {
-        $mfrLower = trim($mfrLower);
-        if ($mfrLower === '') {
-            return null;
-        }
-
-        // 1. Exact (current behaviour).
-        if (isset($wooBrandsByLower[$mfrLower])) {
-            return $mfrLower;
-        }
-
-        // 2. Strip a trailing " - <suffix>": take the segment before the FIRST
-        //    " - " so "yealink - headset - uk" → "yealink". Retry.
-        if (str_contains($mfrLower, ' - ')) {
-            $lead = trim(explode(' - ', $mfrLower, 2)[0]);
-            if ($lead !== '' && isset($wooBrandsByLower[$lead])) {
-                return $lead;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Pick the first manufacturer that resolves to a Woo brand.
-     * Returns [brandKey, matchedManufacturer]; [null, null] if none resolve.
-     * Handles the multi-row case (e.g. a product + a warranty/protection-plan row
-     * sharing the same MPN) — prefer the real brand over a non-brand add-on label.
-     *
-     * @param  array<int,string>  $manufacturers
-     * @param  array<string,string>  $wooBrandsByLower
-     * @return array{0:?string,1:?string}
-     */
-    public function firstResolvableBrandKey(array $manufacturers, array $wooBrandsByLower): array
-    {
-        foreach ($manufacturers as $mfr) {
-            $bk = $this->resolveBrandKey(mb_strtolower(trim((string) $mfr)), $wooBrandsByLower);
-            if ($bk !== null) {
-                return [$bk, $mfr];
-            }
-        }
-
-        return [null, null];
     }
 
     /**

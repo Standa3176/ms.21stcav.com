@@ -91,7 +91,7 @@ final class RefreshBrandsToAddCommand extends BaseCommand
         $this->info('Loaded '.count($wooBrandsByLower).' Woo brand terms.');
 
         // ── 2. Walk pending suggestions → [suggestionId => sku] ───────────
-        /** @var array<int, string> $suggestionSku  suggestion id => sku (case preserved) */
+        /** @var array<string, string> $suggestionSku  (string) ULID id => sku (case preserved) */
         $suggestionSku = [];
         $query = DB::table('suggestions')
             ->where('kind', 'new_product_opportunity')
@@ -101,13 +101,7 @@ final class RefreshBrandsToAddCommand extends BaseCommand
             $query->limit($limit);
         }
         $query->chunk(200, function ($rows) use (&$suggestionSku): void {
-            foreach ($rows as $sug) {
-                $ev = json_decode((string) $sug->evidence, true);
-                $sku = trim((string) ($ev['sku'] ?? ''));
-                if ($sku !== '') {
-                    $suggestionSku[(int) $sug->id] = $sku;
-                }
-            }
+            $suggestionSku += $this->indexSuggestionSkus($rows);
         });
 
         if ($suggestionSku === []) {
@@ -164,6 +158,28 @@ final class RefreshBrandsToAddCommand extends BaseCommand
         $this->printToAddTable($index['to_add']);
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * Map suggestion rows to [ (string) ULID id => sku ], skipping rows with no
+     * evidence.sku. Suggestion has a ULID PK — key by string, NEVER (int) (that
+     * collapses every '01…' id to 1). Pure; unit-tested.
+     *
+     * @param  iterable<int,object>  $rows  rows with ->id and ->evidence (JSON string or array)
+     * @return array<string,string>
+     */
+    public function indexSuggestionSkus(iterable $rows): array
+    {
+        $out = [];
+        foreach ($rows as $sug) {
+            $ev = is_array($sug->evidence ?? null) ? $sug->evidence : json_decode((string) ($sug->evidence ?? ''), true);
+            $sku = trim((string) ($ev['sku'] ?? ''));
+            if ($sku !== '') {
+                $out[(string) $sug->id] = $sku;
+            }
+        }
+
+        return $out;
     }
 
     /**

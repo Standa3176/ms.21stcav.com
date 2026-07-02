@@ -9,6 +9,7 @@ use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Concerns\ResolvesWooBrandKey;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Facades\Cache;
@@ -60,6 +61,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         {--limit=100 : Max products to include in this batch (0 = unbounded — careful)}
         {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
         {--auto-approve : Bypass the review inbox — auto-dispatch PublishProductJob to push each draft live on Woo (requires WOO_WRITE_ENABLED=true)}
+        {--create-missing-brands : Auto-create the Woo brand term for brand_not_on_woo SKUs (normalised + junk-guarded) instead of skipping them.}
         {--no-confirm : Skip the interactive confirmation prompt (queue/job invocation). Implicitly set when stdin is non-interactive.}
         {--result-cache-key= : Internal — when set, write the run summary array to this cache key (TTL 600s) for the dispatching job to read}
         {--dry-run : Print the SKU list + cost estimate, do not call generate-drafts}';
@@ -69,6 +71,9 @@ final class DraftFromSuggestionsCommand extends BaseCommand
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
         private readonly TaxonomyResolver $taxonomy,
+        // 260702-qd8 — used to find-or-create the Woo brand for brand_not_on_woo
+        // SKUs when --create-missing-brands is set.
+        private readonly WooBrandCreator $brandCreator,
     ) {
         parent::__construct();
     }
@@ -79,6 +84,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $limit = max(0, (int) $this->option('limit'));
         $sourceImages = (bool) $this->option('source-images');
         $autoApprove = (bool) $this->option('auto-approve');
+        $createMissingBrands = (bool) $this->option('create-missing-brands');
         $dryRun = (bool) $this->option('dry-run');
         $explicitSkus = $this->parseSkusOption((string) ($this->option('skus') ?? ''));
         $skipConfirm = (bool) $this->option('no-confirm')
@@ -143,7 +149,10 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         // Chunk processor — accepts an iterable of {evidence-shape stdClass} OR
         // can be invoked directly with an array of raw SKU strings via the
         // adapter below. Returns false to stop processing (limit reached).
-        $chunkProcessor = function (iterable $skusInChunk) use ($m, $wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, &$skips, $limit): bool {
+        // 260702-qd8 — $wooBrandsByLower is captured BY REFERENCE so a brand
+        // created for one SKU immediately lets sibling SKUs in later chunks
+        // resolve without a second create.
+        $chunkProcessor = function (iterable $skusInChunk) use ($m, &$wooBrandsByLower, $brandsFilter, &$candidates, &$byBrand, &$skips, $limit, $createMissingBrands): bool {
             if ($limit > 0 && count($candidates) >= $limit) {
                 return false; // stop processing
             }
@@ -209,6 +218,19 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                 $reason = $this->classifySkip($inFeed, $hasMfr, $brandKey !== null);
                 if ($reason !== null) {
                     if ($reason === 'brand_not_on_woo') {
+                        // 260702-qd8 — with --create-missing-brands, find-or-create
+                        // the Woo brand term (normalised + junk-guarded) and promote
+                        // the SKU to a candidate instead of skipping it. The new brand
+                        // is added to the in-memory map (by-ref) so sibling SKUs
+                        // resolve without a second create.
+                        $canonical = $this->promoteMissingBrand($mfrs, $createMissingBrands);
+                        if ($canonical !== null) {
+                            $wooBrandsByLower[mb_strtolower($canonical)] = $canonical;
+                            $candidates[$sku] = $canonical;
+                            $byBrand[$canonical][] = $sku;
+
+                            continue;
+                        }
                         // List a representative manufacturer + sku so the operator
                         // knows which brand to add.
                         $skips['brand_not_on_woo'][] = ($mfrs[0] ?? '?').' ('.$sku.')';
@@ -465,6 +487,34 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         if ($key !== '') {
             Cache::put($key, $summary, 600);
         }
+    }
+
+    /**
+     * 260702-qd8 — decide whether a brand_not_on_woo SKU can be PROMOTED to a
+     * candidate by auto-creating its Woo brand. Returns the canonical
+     * (normalised) brand name when --create-missing-brands is set AND
+     * WooBrandCreator successfully find-or-created the (non-junk) term; null
+     * otherwise (flag off, junk/blank name, writes disabled, or create failed) —
+     * in which case the SKU stays in the brand_not_on_woo skip bucket.
+     *
+     * Pure of DB/mysqli (the WooBrandCreator dependency is injectable/mockable),
+     * so the promotion decision is unit-testable without the supplier walk.
+     *
+     * @param  array<int,string>  $mfrs  the SKU's feed manufacturers (first = brand to add)
+     */
+    public function promoteMissingBrand(array $mfrs, bool $createMissingBrands): ?string
+    {
+        if (! $createMissingBrands) {
+            return null;
+        }
+
+        $raw = $mfrs[0] ?? '';
+        $newId = $this->brandCreator->ensureBrandTermId($raw);
+        if ($newId === null) {
+            return null;
+        }
+
+        return $this->brandCreator->normaliseBrandName((string) $raw);
     }
 
     /**

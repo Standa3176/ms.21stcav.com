@@ -77,6 +77,12 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
         if ($this->autoPublish) {
             $args['--auto-approve'] = true;
         }
+        // 260702-qd8 — turn on auto-brand-creation for the Filament
+        // explicit-selection path when the config switch is on (the operator
+        // can disable it without a deploy). The CLI still opts in per-run.
+        if ((bool) config('product_auto_create.auto_create_missing_brands', true)) {
+            $args['--create-missing-brands'] = true;
+        }
 
         Log::info('auto_create_pipeline.dispatched', [
             'sku_count' => count($this->skus),

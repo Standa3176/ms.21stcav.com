@@ -69,4 +69,8 @@ return [
     'brand_taxonomy' => env('PRODUCT_AUTO_CREATE_BRAND_TAXONOMY', 'pa_brand'),
     'category_taxonomy' => env('PRODUCT_AUTO_CREATE_CATEGORY_TAXONOMY', 'product_cat'),
 
+    // 260702-om7 — manufacturer names never offered as creatable Woo brands in the
+    // brands-to-add list (case-insensitive). Not real brands / consumables buckets.
+    'brands_to_add_exclude' => ['specials', 'un-branded', 'unbranded'],
+
 ];

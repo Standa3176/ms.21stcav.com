@@ -198,8 +198,23 @@ final class RefreshBrandsToAddCommand extends BaseCommand
         $perSku = [];
         $toAdd = [];
 
+        // Case-insensitive accumulation for the to-add bucket. Keyed by
+        // lower(brand); each group tracks per-variant counts (for canonical
+        // pick) + the sample SKUs it would unlock.
+        /** @var array<string, array{counts: array<string,int>, skus: array<int,string>}> $groups */
+        $groups = [];
+
         foreach ($skuToManufacturers as $skuLower => $mfrs) {
             $skuLower = (string) $skuLower;
+
+            // Normalise the manufacturer list up-front — HTML-decode + trim +
+            // collapse inner whitespace, dropping blanks — so BOTH the Woo-brand
+            // resolution AND the to-add name see clean, decoded names (e.g.
+            // 'VOGEL&#039;S' can now match a Woo 'Vogel\'s').
+            $mfrs = array_values(array_filter(
+                array_map(fn ($m): string => $this->normaliseBrandName((string) $m), $mfrs),
+                static fn (string $m): bool => $m !== '',
+            ));
 
             // No supplier manufacturer at all → not-sourceable (a different
             // bucket; NOT a brand to add).
@@ -224,17 +239,77 @@ final class RefreshBrandsToAddCommand extends BaseCommand
 
             // Has manufacturer(s) but none resolve → the operator would add the
             // FIRST manufacturer as a new Woo brand to unlock this SKU.
-            $brand = trim((string) $mfrs[0]);
-            $perSku[$skuLower] = ['brand' => $brand, 'on_woo' => false, 'sourceable' => true];
+            $brand = $mfrs[0];
 
-            $toAdd[$brand] ??= ['count' => 0, 'skus' => []];
-            $toAdd[$brand]['count']++;
-            if (count($toAdd[$brand]['skus']) < self::SAMPLE_SKU_CAP) {
-                $toAdd[$brand]['skus'][] = $skuLower;
+            // Junk (consumables / non-brand buckets) → sourceable but never
+            // offered as a creatable brand. per_sku brand=null; not counted.
+            if ($this->isJunkBrand($brand)) {
+                $perSku[$skuLower] = ['brand' => null, 'on_woo' => false, 'sourceable' => true];
+
+                continue;
+            }
+
+            // Accumulate into a case-insensitive group; brand holds a placeholder
+            // group key (remapped to the canonical after the loop).
+            $groupKey = mb_strtolower($brand);
+            $groups[$groupKey]['counts'][$brand] = ($groups[$groupKey]['counts'][$brand] ?? 0) + 1;
+            $groups[$groupKey]['skus'][] = $skuLower;
+            $perSku[$skuLower] = ['brand' => $groupKey, 'on_woo' => false, 'sourceable' => true];
+        }
+
+        // Collapse each case-insensitive group into ONE canonical brand
+        // (mixed-case preferred, acronyms preserved) with summed count + merged
+        // sample SKUs, then remap the per_sku placeholders to that canonical.
+        $keyToCanonical = [];
+        foreach ($groups as $groupKey => $group) {
+            $canonical = $this->pickCanonicalBrand($group['counts']);
+            $keyToCanonical[$groupKey] = $canonical;
+            $toAdd[$canonical] = [
+                'count' => array_sum($group['counts']),
+                'skus' => array_slice(array_values(array_unique($group['skus'])), 0, self::SAMPLE_SKU_CAP),
+            ];
+        }
+        foreach ($perSku as $sku => $data) {
+            if ($data['brand'] !== null && isset($keyToCanonical[$data['brand']])) {
+                $perSku[$sku]['brand'] = $keyToCanonical[$data['brand']];
             }
         }
 
         return ['per_sku' => $perSku, 'to_add' => $toAdd];
+    }
+
+    /** HTML-decode + trim + collapse inner whitespace. 'VOGEL&#039;S' => "VOGEL'S". */
+    private function normaliseBrandName(string $raw): string
+    {
+        $s = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        return (string) preg_replace('/\s+/u', ' ', trim($s));
+    }
+
+    /** True when a (normalised) brand is on the config exclusion list (case-insensitive). */
+    private function isJunkBrand(string $brand): bool
+    {
+        $ex = array_map('mb_strtolower', (array) config('product_auto_create.brands_to_add_exclude', []));
+
+        return in_array(mb_strtolower(trim($brand)), $ex, true);
+    }
+
+    /**
+     * Canonical display for a group of case-variant brand names: prefer a variant
+     * containing a lowercase letter (proper-case, e.g. 'Brother' over 'BROTHER');
+     * among the pool pick the highest total count, tie-break alphabetical. Never
+     * title-cases (keeps acronyms 'APC'/'HP'/'2N' intact).
+     *
+     * @param  array<string,int>  $counts  variant name => count
+     */
+    private function pickCanonicalBrand(array $counts): string
+    {
+        $variants = array_keys($counts);
+        $mixed = array_values(array_filter($variants, static fn (string $v): bool => (bool) preg_match('/\p{Ll}/u', $v)));
+        $pool = $mixed !== [] ? $mixed : $variants;
+        usort($pool, static fn (string $a, string $b): int => ($counts[$b] <=> $counts[$a]) ?: strcmp($a, $b));
+
+        return $pool[0];
     }
 
     /**

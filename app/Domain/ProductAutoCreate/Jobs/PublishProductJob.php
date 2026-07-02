@@ -10,6 +10,7 @@ use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Services\LiveSupplierStockResolver;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -75,8 +76,14 @@ final class PublishProductJob implements ShouldQueue
         PriceCalculator $calculator,
         TaxonomyResolver $taxonomy,
         ProductBrandTermResolver $brandResolver,
+        LiveSupplierStockResolver $stock,
     ): void {
         $product = Product::findOrFail($this->productId);
+
+        // 260702-pes — hydrate local stock from the LIVE cheapest-fresh-in-stock
+        // supplier offer BEFORE building either Woo payload, so a product created
+        // today (stock_quantity=null, no snapshot yet) goes live in-stock.
+        $this->hydrateLiveStock($product, $stock);
 
         $wooId = (int) ($product->woo_product_id ?? 0);
 
@@ -206,6 +213,43 @@ final class PublishProductJob implements ShouldQueue
                 }
             }
         }
+    }
+
+    /**
+     * 260702-pes — hydrate local stock from the LIVE cheapest-fresh-in-stock
+     * supplier offer BEFORE building the Woo payload, so a product created today
+     * (stock_quantity=null, no snapshot yet) goes live with the real qty instead
+     * of null→0→outofstock. Best-effort: resolver returning null (genuinely OOS /
+     * supplier_db unreachable) leaves the product's existing stock untouched, and
+     * a thrown error never fails the publish.
+     */
+    private function hydrateLiveStock(Product $product, LiveSupplierStockResolver $stock): void
+    {
+        $sku = trim((string) ($product->sku ?? ''));
+        if ($sku === '') {
+            return;
+        }
+        try {
+            $offer = $stock->resolveForSku($sku);
+        } catch (\Throwable $e) {
+            Log::warning('auto_create.publish.live_stock_failed', [
+                'product_id' => $product->id, 'sku' => $sku, 'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+        if ($offer === null) {
+            return;
+        }
+        $updates = [
+            'stock_quantity' => $offer['stock_quantity'],
+            'stock_status' => $offer['stock_status'],
+            'last_synced_at' => now(),
+        ];
+        if ($offer['buy_price'] !== null) {
+            $updates['buy_price'] = $offer['buy_price'];
+        }
+        $product->forceFill($updates)->saveQuietly();
     }
 
     /**

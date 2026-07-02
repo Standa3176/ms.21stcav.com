@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Suggestions\Filament\Resources;
 
+use App\Domain\Competitor\Models\Competitor;
 use App\Domain\ProductAutoCreate\Jobs\RunAutoCreatePipelineJob;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
@@ -26,11 +27,13 @@ use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class SuggestionResource extends Resource
 {
@@ -312,6 +315,83 @@ class SuggestionResource extends Resource
                             ? $query->whereRaw("EXISTS ($existsSub)")
                             : $query->whereRaw("NOT EXISTS ($existsSub)");
                     }),
+                // Quick task 260702-hg1 — Competitor / Brand / Brand-on-Woo
+                // filters (Piece 2 of the brands-to-add workflow). Reads the
+                // evidence.brand / evidence.brand_on_woo tags written by
+                // products:refresh-brands-to-add (260702-h50) and the existing
+                // evidence.competitor_sightings[].name array.
+                //
+                // Competitor — options are the Competitor master names; matches
+                // any sighting name via JSON_SEARCH over the sightings array.
+                SelectFilter::make('competitor')
+                    ->label('Competitor')
+                    ->options(fn (): array => Competitor::orderBy('name')->pluck('name', 'name')->all())
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if ($value === null || $value === '') {
+                            return $query;
+                        }
+
+                        // MariaDB (prod): JSON_SEARCH over the sightings array.
+                        // SQLite (tests): no JSON_SEARCH — walk json_each() over
+                        // the competitor_sightings array and match .name.
+                        // (memory: SQLite↔MariaDB strict trap.)
+                        if (DB::connection()->getDriverName() === 'sqlite') {
+                            return $query->whereRaw(
+                                "EXISTS (SELECT 1 FROM json_each(evidence, '$.competitor_sightings') je WHERE json_extract(je.value, '$.name') = ?)",
+                                [$value],
+                            );
+                        }
+
+                        return $query->whereRaw("JSON_SEARCH(evidence, 'one', ?, null, '$.competitor_sightings[*].name') IS NOT NULL", [$value]);
+                    }),
+                // Brand — distinct evidence.brand values tagged on pending
+                // new_product_opportunity rows. Searchable (the brand list is
+                // long once refresh-brands-to-add has run across the inbox).
+                SelectFilter::make('brand')
+                    ->label('Brand')
+                    ->options(function (): array {
+                        // Driver-portable brand extraction: MariaDB (prod) needs
+                        // JSON_UNQUOTE(JSON_EXTRACT(...)); SQLite (tests) has no
+                        // JSON_UNQUOTE and json_extract() already unquotes scalars
+                        // (memory: SQLite↔MariaDB strict trap — green tests must
+                        // stay prod-safe).
+                        $brandExpr = self::brandJsonExpr();
+
+                        return DB::table('suggestions')
+                            ->where('kind', 'new_product_opportunity')
+                            ->whereNotNull(DB::raw($brandExpr))
+                            ->distinct()
+                            ->pluck(DB::raw($brandExpr.' as brand'))
+                            ->filter()
+                            ->sort()
+                            ->mapWithKeys(fn ($b): array => [$b => $b])
+                            ->all();
+                    })
+                    ->searchable()
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+
+                        return ($value === null || $value === '')
+                            ? $query
+                            : $query->whereRaw(self::brandJsonExpr().' = ?', [$value]);
+                    }),
+                // Brand on Woo — ready to create (brand already on Woo) vs needs
+                // the brand added first. Reads the evidence.brand_on_woo boolean
+                // tagged by products:refresh-brands-to-add.
+                TernaryFilter::make('brand_on_woo')
+                    ->label('Brand on Woo')
+                    ->placeholder('All')
+                    ->trueLabel('Ready (brand on Woo)')
+                    ->falseLabel('Needs brand added')
+                    ->queries(
+                        // MariaDB (prod): JSON_EXTRACT(...) = true/false.
+                        // SQLite (tests): json_extract returns 1/0 for booleans.
+                        // (memory: SQLite↔MariaDB strict trap.)
+                        true: fn (Builder $query): Builder => $query->whereRaw(self::brandOnWooJsonExpr().' = '.self::jsonTrueLiteral()),
+                        false: fn (Builder $query): Builder => $query->whereRaw(self::brandOnWooJsonExpr().' = '.self::jsonFalseLiteral()),
+                        blank: fn (Builder $query): Builder => $query,
+                    ),
             ])
             // Render filters always-visible above the table (operator
             // feedback 2026-06-03 — Collapsible variant still hid them
@@ -691,6 +771,38 @@ class SuggestionResource extends Resource
                             ->send();
                     }),
             ]);
+    }
+
+    // ── Quick task 260702-hg1 — driver-portable JSON expression helpers ────
+    //
+    // Prod is MariaDB (strict); tests run on SQLite. The two engines diverge on
+    // JSON scalar extraction (JSON_UNQUOTE vs json_extract) and boolean literals
+    // (true/false vs 1/0). These helpers centralise the driver switch so the
+    // Brand SelectFilter + Brand-on-Woo TernaryFilter stay prod-safe while the
+    // suite runs green on SQLite (memory: SQLite↔MariaDB strict trap).
+
+    private static function brandJsonExpr(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "json_extract(evidence, '$.brand')"
+            : "JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.brand'))";
+    }
+
+    private static function brandOnWooJsonExpr(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "json_extract(evidence, '$.brand_on_woo')"
+            : "JSON_EXTRACT(evidence, '$.brand_on_woo')";
+    }
+
+    private static function jsonTrueLiteral(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite' ? '1' : 'true';
+    }
+
+    private static function jsonFalseLiteral(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite' ? '0' : 'false';
     }
 
     // ── Phase 10 Plan 04 — margin_change detail view extension ────────────

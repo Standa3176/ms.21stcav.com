@@ -20,6 +20,7 @@ use App\Console\Commands\Cutover\SnapshotWooDbCommand;
 use App\Console\Commands\Dashboard\DashboardRefreshCommand;
 use App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand;
 use App\Console\Commands\DedupeBrandsCommand;
+use App\Console\Commands\HydrateLiveStockCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
@@ -844,6 +845,16 @@ class AppServiceProvider extends ServiceProvider
                 // SupplierFreshnessResolver (260608-g8x) for the cheapest-fresh-in-stock
                 // pick — same rule as SupplierDbSyncCommand::buildBestOfferMap.
                 HydrateProductStockFromOffersCommand::class,
+                // Quick task 260702-pes — products:hydrate-live-stock. Operator
+                // backfill/repair for products created TODAY (which have no
+                // supplier_offer_snapshots rows yet, so hydrate-stock-from-offers
+                // can't help them). Re-hydrates stock_quantity/stock_status/buy_price
+                // from the LIVE cheapest-fresh-in-stock supplier offer via
+                // LiveSupplierStockResolver (feeds_products+stockseparate). MS-side
+                // only — NO Woo writes; push with products:backfill-woo-stock.
+                // NOT scheduled — operator-triggered repair tool (every publish
+                // now hydrates stock via PublishProductJob, so no nightly pass needed).
+                HydrateLiveStockCommand::class,
                 // Quick task 260609-nku — products:audit-stock-divergence. Detects
                 // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
                 // fresh supplier reports qty=0. TRUNCATE-and-replaces

@@ -24,6 +24,7 @@ use App\Console\Commands\HydrateProductStockFromOffersCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\ReconcileStaleWooIdsCommand;
+use App\Console\Commands\RefreshBrandsToAddCommand;
 use App\Console\Commands\Reports\SupplierSyncDigestCommand;
 use App\Console\Commands\Reports\WeeklyDigestCommand;
 use App\Console\Commands\RetagProductsOnWooCommand;
@@ -978,6 +979,19 @@ class AppServiceProvider extends ServiceProvider
                 // products already get stock keys at publish and auto-sync
                 // keeps quantities fresh afterwards.
                 BackfillWooStockCommand::class,
+                // Quick task 260702-h50 — products:refresh-brands-to-add.
+                // Piece 1 of the "Brands to Add" workflow. Walks pending
+                // new_product_opportunity suggestions, resolves each SKU's
+                // supplier manufacturer(s) to a Woo brand via the shared
+                // ResolvesWooBrandKey trait, tags evidence.brand/brand_on_woo,
+                // and caches a brands-to-add summary (brand => products it would
+                // unlock) under 'suggestions.brands_to_add' for the Piece-2 page.
+                // --dry-run writes nothing. Scheduled Mon-Fri 07:50 London
+                // (after suppliers:check-stale 07:45) in routes/console.php.
+                // No Claude spend, no storefront writes. Lives under
+                // app/Console/Commands/ (auto-discovered dir) but registered
+                // explicitly alongside the other product commands.
+                RefreshBrandsToAddCommand::class,
             ]);
         }
     }

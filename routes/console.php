@@ -171,6 +171,21 @@ Schedule::command('suppliers:check-stale')
     ->timezone('Europe/London')
     ->description('Snapshot per-supplier freshness (260608-g8x); Mon-Fri 07:45 London');
 
+// Quick task 260702-h50 — products:refresh-brands-to-add Mon-Fri 07:50 London.
+// Piece 1 of the "Brands to Add" workflow. Slots 5 min AFTER suppliers:check-stale
+// (07:45) and AFTER supplier:db-sync (07:00) so today's supplier feed is fresh
+// before we resolve each pending SKU's manufacturer → Woo brand. Tags every
+// pending new_product_opportunity suggestion (evidence.brand + brand_on_woo)
+// and caches the brands-to-add summary under 'suggestions.brands_to_add' for
+// the Piece-2 page. Read-only re. Woo + no Claude spend. The scheduled run
+// writes (no --dry-run); operator previews interactively with --dry-run.
+Schedule::command('products:refresh-brands-to-add')
+    ->cron('50 7 * * 1-5') // Mon-Fri at 07:50 (cron DOW: 1=Mon ... 5=Fri)
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Refresh brands-to-add index + tag pending suggestions (260702-h50); Mon-Fri 07:50 London');
+
 // Stock-updater parity glue — daily post-supplier-sync digest email to
 // AlertRecipients with receives_sync_reports=true. Replaces the legacy
 // plugin's send_results_and_cleanup() 4-CSV email. Mon-Fri 08:00 London.

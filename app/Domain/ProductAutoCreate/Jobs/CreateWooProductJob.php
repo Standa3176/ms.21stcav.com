@@ -15,6 +15,7 @@ use App\Domain\ProductAutoCreate\Services\ProductContentBuilder;
 use App\Domain\ProductAutoCreate\Services\ProductMatcher;
 use App\Domain\ProductAutoCreate\Services\ProductSlugGenerator;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Sync\Services\SupplierClient;
@@ -89,7 +90,12 @@ final class CreateWooProductJob implements ShouldQueue
         RuleResolver $ruleResolver,
         PriceCalculator $calculator,
         CompletenessScorer $scorer,
+        ?WooBrandCreator $brandCreator = null,
     ): void {
+        // 260702-qd8 — method injection supplies the creator on the queue path;
+        // the nullable default keeps the existing direct-call test harness green.
+        $brandCreator ??= app(WooBrandCreator::class);
+
         event(new AutoCreateAttempted($this->sku));
 
         // ── Duplicate gate (AUTO-08) ────────────────────────────────────────
@@ -118,6 +124,12 @@ final class CreateWooProductJob implements ShouldQueue
 
         // ── Taxonomy resolution (AUTO-02) ───────────────────────────────────
         $brandId = $taxonomy->resolveBrand((string) ($supplierData['brand'] ?? ''));
+        // 260702-qd8 — brand not on Woo yet? auto-create it (normalised, junk-guarded)
+        // so a real brand no longer forces the needs-assignment park. Junk/blank/failed
+        // → stays null → existing short-circuit still applies.
+        if ($brandId === null && (bool) config('product_auto_create.auto_create_missing_brands', true)) {
+            $brandId = $brandCreator->ensureBrandTermId((string) ($supplierData['brand'] ?? ''));
+        }
         $categoryId = $taxonomy->resolveCategory((string) ($supplierData['category'] ?? ''));
 
         $buyPennies = (int) round(((float) ($supplierData['price'] ?? 0)) * 100);

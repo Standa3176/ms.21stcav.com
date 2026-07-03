@@ -203,7 +203,8 @@ class ProductBrandTermResolver
      * `meetingstore-brand-cleanup-followups` for the cleanup arc.
      *
      * Strategy (config: services.woo.brand_slug_collision_strategy):
-     *   - 'skip-creation'                   (default, safe)  log + return null
+     *   - 'suffix-on-tag-collision'         (default)        create {slug}-brand on a CONFIRMED tag collision
+     *   - 'skip-creation'                   (safe)           log + return null
      *   - 'auto-delete-empty-colliding-tag' (aggressive)     delete empty tag, retry
      *   - 'force-suffix'                    (DEPRECATED)     old behaviour, last resort
      */
@@ -292,8 +293,29 @@ class ProductBrandTermResolver
             }
         }
 
-        // skip-creation (default) OR auto-delete with non-empty tag OR
-        // auto-delete failure path. NEVER create the suffixed duplicate.
+        // 260703-p8m — suffix-on-tag-collision: a real product_tag holds the clean
+        // slug (confirmed by checkProductTagCollision), so a clean-slug product_brand
+        // can NEVER be created for this name → creating {slug}-brand here cannot spawn
+        // a clean/suffixed duplicate PAIR (the 2026-06-13 force-suffix incident came
+        // from suffixing WITHOUT a confirmed collision). Brand NAME stays clean
+        // ("Yealink"); only the slug is suffixed (/brand/yealink-brand/).
+        if ($strategy === 'suffix-on-tag-collision') {
+            $id = $this->tryCreate($brandName, $primarySlug.'-brand');
+            if ($id !== null) {
+                Log::info('product_brand.suffix_on_tag_collision', [
+                    'brand' => $brandName,
+                    'colliding_tag_id' => $collision['id'],
+                    'created_slug' => $primarySlug.'-brand',
+                ]);
+
+                return $id;
+            }
+            // suffix create also failed — fall through to the skip warning + null.
+        }
+
+        // skip-creation OR auto-delete with non-empty tag OR auto-delete
+        // failure path OR suffix-on-tag-collision suffixed-create failure.
+        // NEVER create a suffixed duplicate of a clean-slug term.
         Log::warning('product_brand.tag_slug_collision', [
             'brand' => $brandName,
             'colliding_tag_id' => $collision['id'],

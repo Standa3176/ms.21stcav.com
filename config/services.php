@@ -94,7 +94,19 @@ return [
         //
         // This config drives the strategy createTerm() applies on slug collision:
         //
-        //   - 'skip-creation'                  (default, SAFE)
+        //   - 'suffix-on-tag-collision'        (default, 260703-p8m — SAFE)
+        //         Pre-flight checks `wp/v2/product_tag?slug={primary}`; on a
+        //         CONFIRMED collision it creates the `{slug}-brand` product_brand
+        //         term (brand NAME stays clean, e.g. "Yealink"; only the slug
+        //         carries the -brand suffix → /brand/yealink-brand/). Safe by
+        //         construction: the clean slug is provably held by an existing
+        //         product_tag, so a clean-slug product_brand can NEVER be created
+        //         for that name → the 2026-06-13 duplicate-PAIR pathology cannot
+        //         recur (that came from force-suffix creating a suffix term
+        //         WITHOUT a confirmed collision). Brands whose clean slug is free
+        //         still create cleanly via Attempt 1.
+        //
+        //   - 'skip-creation'                  (SAFE — old default)
         //         Pre-flight checks `wp/v2/product_tag?slug={primary}` and, on
         //         collision, logs a warning + returns null. NEVER creates the
         //         `-brand` suffixed term. Operator must clean the colliding tag
@@ -114,7 +126,7 @@ return [
         //         suffix retry) and emits a warning surfacing the duplicate-
         //         pair risk on every invocation. Do not set this in prod
         //         unless you've already validated there's no colliding tag.
-        'brand_slug_collision_strategy' => env('WOO_BRAND_SLUG_COLLISION_STRATEGY', 'skip-creation'),
+        'brand_slug_collision_strategy' => env('WOO_BRAND_SLUG_COLLISION_STRATEGY', 'suffix-on-tag-collision'),
 
         // 260607-pys — Storefront base URL for the "View on storefront"
         // per-row action on /admin/ad-candidates. Defaults to the live

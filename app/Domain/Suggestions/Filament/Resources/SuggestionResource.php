@@ -49,6 +49,9 @@ class SuggestionResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'kind';
 
+    /** Cache key for the Brand SelectFilter option list (pre-warmed by products:refresh-brands-to-add). */
+    public const BRAND_FILTER_OPTIONS_CACHE_KEY = 'suggestions.brand_filter_options';
+
     /**
      * Quick task 260606-gnu — high-confidence sourceable attention badge.
      *
@@ -350,24 +353,12 @@ class SuggestionResource extends Resource
                 // long once refresh-brands-to-add has run across the inbox).
                 SelectFilter::make('brand')
                     ->label('Brand')
-                    ->options(function (): array {
-                        // Driver-portable brand extraction: MariaDB (prod) needs
-                        // JSON_UNQUOTE(JSON_EXTRACT(...)); SQLite (tests) has no
-                        // JSON_UNQUOTE and json_extract() already unquotes scalars
-                        // (memory: SQLite↔MariaDB strict trap — green tests must
-                        // stay prod-safe).
-                        $brandExpr = self::brandJsonExpr();
-
-                        return DB::table('suggestions')
-                            ->where('kind', 'new_product_opportunity')
-                            ->whereNotNull(DB::raw($brandExpr))
-                            ->distinct()
-                            ->pluck(DB::raw($brandExpr.' as brand'))
-                            ->filter()
-                            ->sort()
-                            ->mapWithKeys(fn ($b): array => [$b => $b])
-                            ->all();
-                    })
+                    // Quick task 260703-qc0 — the distinct-JSON scan behind this
+                    // dropdown was running on EVERY admin render (~8,826 rows) and
+                    // 30s-timing-out the Suggestions page under load. Now served
+                    // from a cached list (5-min TTL, pre-warmed by
+                    // products:refresh-brands-to-add) via brandFilterOptions().
+                    ->options(fn (): array => self::brandFilterOptions())
                     ->searchable()
                     ->query(function (Builder $query, array $data): Builder {
                         $value = $data['value'] ?? null;
@@ -780,6 +771,39 @@ class SuggestionResource extends Resource
     // (true/false vs 1/0). These helpers centralise the driver switch so the
     // Brand SelectFilter + Brand-on-Woo TernaryFilter stay prod-safe while the
     // suite runs green on SQLite (memory: SQLite↔MariaDB strict trap).
+
+    /**
+     * Distinct evidence.brand values across pending new_product_opportunity rows,
+     * for the Brand filter dropdown. CACHED (5-min TTL) because the underlying
+     * distinct-JSON scan over ~8,826 rows was running on EVERY admin page render
+     * and 30s-timing-out under load. refresh-brands-to-add pre-warms this key.
+     *
+     * Pure caching wrapper — the cached result is byte-identical to the live
+     * query (same kind scope, brandJsonExpr, filter/sort/mapWithKeys shape).
+     *
+     * @return array<string,string>
+     */
+    public static function brandFilterOptions(): array
+    {
+        return Cache::remember(self::BRAND_FILTER_OPTIONS_CACHE_KEY, 300, function (): array {
+            // Driver-portable brand extraction: MariaDB (prod) needs
+            // JSON_UNQUOTE(JSON_EXTRACT(...)); SQLite (tests) has no
+            // JSON_UNQUOTE and json_extract() already unquotes scalars
+            // (memory: SQLite↔MariaDB strict trap — green tests must
+            // stay prod-safe).
+            $brandExpr = self::brandJsonExpr();
+
+            return DB::table('suggestions')
+                ->where('kind', 'new_product_opportunity')
+                ->whereNotNull(DB::raw($brandExpr))
+                ->distinct()
+                ->pluck(DB::raw($brandExpr.' as brand'))
+                ->filter()
+                ->sort()
+                ->mapWithKeys(fn ($b): array => [$b => $b])
+                ->all();
+        });
+    }
 
     private static function brandJsonExpr(): string
     {

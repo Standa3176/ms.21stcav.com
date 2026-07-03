@@ -9,6 +9,7 @@ use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Concerns\NormalisesBrandNames;
 use App\Domain\ProductAutoCreate\Concerns\ResolvesWooBrandKey;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\Suggestions\Filament\Resources\SuggestionResource;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -155,6 +156,14 @@ final class RefreshBrandsToAddCommand extends BaseCommand
                 'brands' => $brands,
             ], self::CACHE_TTL_SECONDS);
             $this->info('Cached brands-to-add summary under "'.self::CACHE_KEY.'" ('.count($brands).' brand(s), TTL 24h).');
+
+            // 260703-qc0 — pre-warm the Suggestions Brand-filter option list off
+            // the web path (the admin page used to run this distinct-JSON scan on
+            // every render and 30s-timed-out under load). Forget then rebuild so
+            // it reflects the tags we just wrote.
+            Cache::forget(SuggestionResource::BRAND_FILTER_OPTIONS_CACHE_KEY);
+            SuggestionResource::brandFilterOptions();
+            $this->info('Pre-warmed the Suggestions Brand-filter option list ("'.SuggestionResource::BRAND_FILTER_OPTIONS_CACHE_KEY.'").');
         } else {
             $this->warn('--dry-run — no evidence tags written, no cache updated.');
         }

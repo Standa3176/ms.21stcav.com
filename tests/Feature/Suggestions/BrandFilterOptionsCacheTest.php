@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use App\Console\Commands\RefreshBrandsToAddCommand;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;

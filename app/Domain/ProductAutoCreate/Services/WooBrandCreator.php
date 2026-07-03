@@ -71,19 +71,18 @@ class WooBrandCreator
         return $id;
     }
 
-    /** Case-insensitive lookup of an existing Woo brand id via TaxonomyResolver::allBrands(). */
+    /**
+     * Find an EXISTING Woo brand id for this (normalised) name, or null. Uses the
+     * same fuzzy matcher the per-row create path trusts (TaxonomyResolver::resolveBrand
+     * → bestMatchId, FUZZY_THRESHOLD 0.85) so a more-specific feed name like
+     * 'Barco Clickshare' reuses the existing 'Barco' term instead of spawning a
+     * near-duplicate. resolveBrand normalises + reads the cached allBrands() list.
+     */
     private function findExistingId(string $name): ?int
     {
-        $needle = mb_strtolower($name);
-        foreach ($this->taxonomy->allBrands() as $b) {
-            if (mb_strtolower(trim((string) ($b['name'] ?? ''))) === $needle) {
-                $id = (int) ($b['id'] ?? 0);
+        $id = $this->taxonomy->resolveBrand($name);
 
-                return $id > 0 ? $id : null;
-            }
-        }
-
-        return null;
+        return ($id !== null && $id > 0) ? $id : null;
     }
 
     /** Mirror BrandsToAddPage::isTermExists — WC surfaces a term-exists error on duplicate names. */

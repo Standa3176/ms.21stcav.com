@@ -42,7 +42,8 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 final class ResyncProductsToWooCommand extends BaseCommand
 {
     protected $signature = 'products:resync-to-woo
-        {--skus= : Comma-separated SKUs of local Products to resync (required)}
+        {--skus= : Comma-separated SKUs of local Products to resync}
+        {--brand= : Comma-separated brand names (case-insensitive) — resync every Product with these brand_ids + a woo_product_id. Use instead of, or with, --skus.}
         {--dry-run : Print the PUT payload; do NOT write}';
 
     protected $description = 'Backfill brand-as-tag + regular_price + attributes onto already-published Woo products (fix for pre-2026-05-31 auto-create batches)';
@@ -63,8 +64,36 @@ final class ResyncProductsToWooCommand extends BaseCommand
             explode(',', (string) $this->option('skus')),
         ), static fn (string $s): bool => $s !== ''));
 
+        // 260703-p8m — --brand: resolve (case-insensitive) brand names to
+        // brand_ids via the live Woo brand list, then gather the SKUs of every
+        // Product with those brand_ids that has been published to Woo. Merged
+        // with any explicit --skus so both sources compose.
+        $brandNames = array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $this->option('brand')),
+        ), static fn (string $s): bool => $s !== ''));
+        if ($brandNames !== []) {
+            $wantLower = array_map('mb_strtolower', $brandNames);
+            $brandIds = [];
+            foreach ($this->taxonomy->allBrands() as $b) {
+                if (in_array(mb_strtolower(trim((string) ($b['name'] ?? ''))), $wantLower, true)) {
+                    $brandIds[] = (int) $b['id'];
+                }
+            }
+            if ($brandIds !== []) {
+                $brandSkus = Product::query()
+                    ->whereIn('brand_id', $brandIds)
+                    ->whereNotNull('woo_product_id')
+                    ->pluck('sku')
+                    ->filter()
+                    ->map(static fn ($s): string => (string) $s)
+                    ->all();
+                $skus = array_values(array_unique(array_merge($skus, $brandSkus)));
+            }
+        }
+
         if ($skus === []) {
-            $this->error('--skus is required.');
+            $this->error('Provide --skus or --brand.');
 
             return SymfonyCommand::FAILURE;
         }

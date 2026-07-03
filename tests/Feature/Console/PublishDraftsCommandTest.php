@@ -28,100 +28,97 @@ use Illuminate\Support\Str;
 |   - TaxonomyResolver: empty allBrands() so the post-publish brand linkage is
 |     skipped without a live Woo REST call.
 |
-| The bindWooStockStub / bindLiveStockResolver helpers are shared with
-| PublishProductStockTest — declared behind function_exists() so this file runs
-| standalone (that file not loaded) AND in the full suite (no redeclare fatal).
+| Helpers are prefixed hn1* (unique names) rather than reusing
+| PublishProductStockTest's bindWooStockStub / bindLiveStockResolver: those are
+| declared there WITHOUT a function_exists guard, so any same-named helper here
+| would redeclare-fatal when both files load in the same suite run. Unique names
+| keep this file self-contained (runs standalone) AND collision-free (full suite).
 */
 
 beforeEach(function (): void {
     Context::add('correlation_id', (string) Str::uuid());
     config()->set('services.woo.write_enabled', true);
-    bindWooStockStub(postResponse: ['id' => 4242, 'slug' => 'published-draft']);
-    bindLiveStockResolver(null);
-    bindNoBrandsTaxonomy();
+    hn1BindWooStub(postResponse: ['id' => 4242, 'slug' => 'published-draft']);
+    hn1BindLiveStock(null);
+    hn1BindNoBrandsTaxonomy();
 });
 
-if (! function_exists('bindLiveStockResolver')) {
-    /**
-     * Bind a Mockery LiveSupplierStockResolver double whose resolveForSku()
-     * returns $offer (null = genuine OOS / no live offer → hydration no-op).
-     *
-     * @param  array{stock_quantity:int, stock_status:string, buy_price:?float}|null  $offer
-     */
-    function bindLiveStockResolver(?array $offer): void
-    {
-        $mock = Mockery::mock(LiveSupplierStockResolver::class);
-        $mock->shouldReceive('resolveForSku')->andReturn($offer);
-        app()->instance(LiveSupplierStockResolver::class, $mock);
-    }
+/**
+ * Bind a Mockery LiveSupplierStockResolver double whose resolveForSku() returns
+ * $offer (null = genuine OOS / no live offer → 260702-pes hydration no-op).
+ *
+ * @param  array{stock_quantity:int, stock_status:string, buy_price:?float}|null  $offer
+ */
+function hn1BindLiveStock(?array $offer): void
+{
+    $mock = Mockery::mock(LiveSupplierStockResolver::class);
+    $mock->shouldReceive('resolveForSku')->andReturn($offer);
+    app()->instance(LiveSupplierStockResolver::class, $mock);
 }
 
-if (! function_exists('bindWooStockStub')) {
-    /**
-     * Bind a WooClient stub that records every put()/post() call as
-     * ['method','path','body'] and returns a canned response.
-     *
-     * @return object stub with a public array $calls
-     */
-    function bindWooStockStub(array $putResponse = [], array $postResponse = []): object
+/**
+ * Bind a WooClient stub that records every put()/post() call and returns a
+ * canned response. post() returning ['id'=>N,'slug'=>..] makes PublishProductJob
+ * Path-B back-fill woo_product_id.
+ *
+ * @return object stub with a public array $calls
+ */
+function hn1BindWooStub(array $putResponse = [], array $postResponse = []): object
+{
+    $stub = new class($putResponse, $postResponse) extends WooClient
     {
-        $stub = new class($putResponse, $postResponse) extends WooClient
+        /** @var array<int, array{method:string, path:string, body:array<string,mixed>}> */
+        public array $calls = [];
+
+        public function __construct(
+            public array $putResponse,
+            public array $postResponse,
+        ) {
+            // Skip parent constructor — no IntegrationLogger / resolver needed.
+        }
+
+        public function put(string $endpoint, array $payload): array
         {
-            /** @var array<int, array{method:string, path:string, body:array<string,mixed>}> */
-            public array $calls = [];
+            $this->calls[] = ['method' => 'PUT', 'path' => $endpoint, 'body' => $payload];
 
-            public function __construct(
-                public array $putResponse,
-                public array $postResponse,
-            ) {
-                // Skip parent constructor — no IntegrationLogger / resolver needed.
-            }
+            return $this->putResponse;
+        }
 
-            public function put(string $endpoint, array $payload): array
-            {
-                $this->calls[] = ['method' => 'PUT', 'path' => $endpoint, 'body' => $payload];
+        public function post(string $endpoint, array $payload): array
+        {
+            $this->calls[] = ['method' => 'POST', 'path' => $endpoint, 'body' => $payload];
 
-                return $this->putResponse;
-            }
+            return $this->postResponse;
+        }
+    };
 
-            public function post(string $endpoint, array $payload): array
-            {
-                $this->calls[] = ['method' => 'POST', 'path' => $endpoint, 'body' => $payload];
+    app()->instance(WooClient::class, $stub);
 
-                return $this->postResponse;
-            }
-        };
-
-        app()->instance(WooClient::class, $stub);
-
-        return $stub;
-    }
+    return $stub;
 }
 
-if (! function_exists('bindNoBrandsTaxonomy')) {
-    /**
-     * Bind a TaxonomyResolver whose allBrands() is empty so PublishProductJob's
-     * post-publish brand linkage resolves to null (skipped) without a live Woo
-     * REST call. Constructor is bypassed (no WooClient dep needed).
-     */
-    function bindNoBrandsTaxonomy(): void
+/**
+ * Bind a TaxonomyResolver whose allBrands() is empty so PublishProductJob's
+ * post-publish brand linkage resolves to null (skipped) without a live Woo REST
+ * call. Constructor is bypassed (no WooClient dep needed).
+ */
+function hn1BindNoBrandsTaxonomy(): void
+{
+    $stub = new class extends TaxonomyResolver
     {
-        $stub = new class extends TaxonomyResolver
+        public function __construct() {}
+
+        public function allBrands(): array
         {
-            public function __construct() {}
+            return [];
+        }
+    };
 
-            public function allBrands(): array
-            {
-                return [];
-            }
-        };
-
-        app()->instance(TaxonomyResolver::class, $stub);
-    }
+    app()->instance(TaxonomyResolver::class, $stub);
 }
 
 /** Create a COMPLETE, never-pushed auto-created draft. */
-function completeDraft(array $overrides = []): Product
+function hn1CompleteDraft(array $overrides = []): Product
 {
     return Product::factory()->create(array_merge([
         'woo_product_id' => null,
@@ -136,7 +133,7 @@ function completeDraft(array $overrides = []): Product
 it('publishes a complete not-pushed draft via PublishProductJob (woo_product_id + published)', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $draft = completeDraft(['sku' => 'HN1-COMPLETE-A', 'name' => 'Complete Widget A']);
+    $draft = hn1CompleteDraft(['sku' => 'HN1-COMPLETE-A', 'name' => 'Complete Widget A']);
 
     $this->artisan('products:publish-drafts')
         ->assertExitCode(0);
@@ -150,7 +147,7 @@ it('publishes a complete not-pushed draft via PublishProductJob (woo_product_id 
 it('reports published counter = 1 for a single complete draft', function (): void {
     Event::fake([ProductPublished::class]);
 
-    completeDraft(['sku' => 'HN1-COUNT-1', 'name' => 'Count Widget']);
+    hn1CompleteDraft(['sku' => 'HN1-COUNT-1', 'name' => 'Count Widget']);
 
     $this->artisan('products:publish-drafts')
         ->expectsOutputToContain('published: 1')
@@ -160,7 +157,7 @@ it('reports published counter = 1 for a single complete draft', function (): voi
 it('never publishes an incomplete draft (brand_id null) — stays draft/not-pushed', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $incomplete = completeDraft([
+    $incomplete = hn1CompleteDraft([
         'sku' => 'HN1-INCOMPLETE',
         'name' => 'Incomplete Widget',
         'brand_id' => null,
@@ -177,7 +174,7 @@ it('never publishes an incomplete draft (brand_id null) — stays draft/not-push
 it('never publishes an incomplete draft (category_id null)', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $incomplete = completeDraft([
+    $incomplete = hn1CompleteDraft([
         'sku' => 'HN1-NOCAT',
         'name' => 'No Category Widget',
         'category_id' => null,
@@ -193,7 +190,7 @@ it('never publishes an incomplete draft (category_id null)', function (): void {
 it('skips an already-pushed product (woo_product_id set)', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $pushed = completeDraft([
+    $pushed = hn1CompleteDraft([
         'sku' => 'HN1-ALREADY',
         'name' => 'Already Pushed Widget',
         'woo_product_id' => 555,
@@ -211,7 +208,7 @@ it('skips an already-pushed product (woo_product_id set)', function (): void {
 it('--dry-run publishes nothing and lists the matching SKU + total', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $draft = completeDraft(['sku' => 'HN1-DRYRUN', 'name' => 'Dry Run Widget']);
+    $draft = hn1CompleteDraft(['sku' => 'HN1-DRYRUN', 'name' => 'Dry Run Widget']);
 
     $this->artisan('products:publish-drafts --dry-run')
         ->expectsOutputToContain('HN1-DRYRUN')
@@ -226,12 +223,12 @@ it('--dry-run publishes nothing and lists the matching SKU + total', function ()
 it('--require-images excludes a 0-image draft and includes a draft with a gallery', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $noImages = completeDraft([
+    $noImages = hn1CompleteDraft([
         'sku' => 'HN1-NOIMG',
         'name' => 'No Image Widget',
         'gallery_image_urls' => [],
     ]);
-    $withImages = completeDraft([
+    $withImages = hn1CompleteDraft([
         'sku' => 'HN1-WITHIMG',
         'name' => 'With Image Widget',
         'gallery_image_urls' => ['https://ms.example/img/a.webp'],
@@ -252,8 +249,8 @@ it('--require-images excludes a 0-image draft and includes a draft with a galler
 it('--skus=A only publishes A even when B also qualifies', function (): void {
     Event::fake([ProductPublished::class]);
 
-    $a = completeDraft(['sku' => 'HN1-ONLY-A', 'name' => 'Widget A']);
-    $b = completeDraft(['sku' => 'HN1-ALSO-B', 'name' => 'Widget B']);
+    $a = hn1CompleteDraft(['sku' => 'HN1-ONLY-A', 'name' => 'Widget A']);
+    $b = hn1CompleteDraft(['sku' => 'HN1-ALSO-B', 'name' => 'Widget B']);
 
     $this->artisan('products:publish-drafts --skus=HN1-ONLY-A')->assertExitCode(0);
 

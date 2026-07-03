@@ -172,35 +172,14 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             $params = array_merge($skus, $skus);
             $stmt->bind_param(str_repeat('s', count($params)), ...$params);
             $stmt->execute();
-            $supMap = [];
             // Every matched suppliersku/mpn (regardless of manufacturer) — lets
             // classifySkip() distinguish "not in feed at all" (not_sourceable)
-            // from "in feed but blank manufacturer" (no_manufacturer).
-            $seenInFeed = [];
-            $res = $stmt->get_result();
-            while ($r = $res->fetch_assoc()) {
-                $seenInFeed[strtolower((string) $r['suppliersku'])] = true;
-                $seenInFeed[strtolower((string) $r['mpn'])] = true;
-                $mfr = trim((string) $r['manufacturer']);
-                if ($mfr === '') {
-                    continue;
-                }
-                // A SKU can match multiple feed rows under one MPN with different
-                // manufacturers (e.g. a product row + a warranty/protection-plan
-                // row). Collect ALL of them — append + dedup — so the per-SKU loop
-                // can prefer the one that resolves to a Woo brand instead of the
-                // arbitrary last-fetched value.
-                foreach ([strtolower((string) $r['suppliersku']), strtolower((string) $r['mpn'])] as $k) {
-                    if ($k === '') {
-                        continue;
-                    }
-                    $supMap[$k] ??= [];
-                    if (! in_array($mfr, $supMap[$k], true)) {
-                        $supMap[$k][] = $mfr;
-                    }
-                }
-            }
+            // from "in feed but blank manufacturer" (no_manufacturer). Keys are
+            // LOWER(TRIM())'d by indexSupplierRows() so space-padded CHAR feed
+            // columns match the trimmed evidence SKU (bug 260703-rk3).
+            $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             $stmt->close();
+            ['seen' => $seenInFeed, 'mfrs' => $supMap] = $this->indexSupplierRows($rows);
 
             foreach ($skus as $sku) {
                 if ($limit > 0 && count($candidates) >= $limit) {
@@ -487,6 +466,52 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         if ($key !== '') {
             Cache::put($key, $summary, 600);
         }
+    }
+
+    /**
+     * Build the in-feed membership set + manufacturer map from supplier_products
+     * rows. Keys are LOWER(TRIM()) of suppliersku/mpn: the supplier feed stores
+     * these as space-padded CHAR columns ("49XE4F-M            "), so WITHOUT trim()
+     * the key never equals the trimmed evidence SKU and the row is wrongly classed
+     * not_sourceable (bug 2026-07-03: LG/panel SKUs skipped despite being in feed).
+     * Mirrors supplier_sku_cache's LOWER(TRIM()) keying. Pure; unit-tested.
+     *
+     * A SKU can match multiple feed rows under one MPN with different manufacturers
+     * (e.g. a product row + a warranty/protection-plan row). Collect ALL of them —
+     * append + dedup — so the per-SKU loop can prefer the one that resolves to a
+     * Woo brand instead of the arbitrary last-fetched value.
+     *
+     * @param  iterable<int, array<string,mixed>>  $rows  supplier_products rows (suppliersku, mpn, manufacturer)
+     * @return array{seen: array<string,bool>, mfrs: array<string,array<int,string>>}
+     */
+    public function indexSupplierRows(iterable $rows): array
+    {
+        $seen = [];
+        $mfrs = [];
+        foreach ($rows as $r) {
+            $ssku = strtolower(trim((string) ($r['suppliersku'] ?? '')));
+            $mpn = strtolower(trim((string) ($r['mpn'] ?? '')));
+            foreach ([$ssku, $mpn] as $k) {
+                if ($k !== '') {
+                    $seen[$k] = true;
+                }
+            }
+            $mfr = trim((string) ($r['manufacturer'] ?? ''));
+            if ($mfr === '') {
+                continue;
+            }
+            foreach ([$ssku, $mpn] as $k) {
+                if ($k === '') {
+                    continue;
+                }
+                $mfrs[$k] ??= [];
+                if (! in_array($mfr, $mfrs[$k], true)) {
+                    $mfrs[$k][] = $mfr;
+                }
+            }
+        }
+
+        return ['seen' => $seen, 'mfrs' => $mfrs];
     }
 
     /**

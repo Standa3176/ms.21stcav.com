@@ -352,3 +352,114 @@ it('Case J: assignToProduct posts product_brand:[termId] to wp/v2/product/{id}',
             && str_contains((string) $r->body(), '42');
     });
 });
+
+/* ───────────────────────────────────────────────────────────────────────
+ | 260703-p8m — suffix-on-tag-collision strategy
+ |
+ | New default. When the clean-slug create fails AND a real product_tag
+ | is CONFIRMED to hold that slug (checkProductTagCollision), create the
+ | {slug}-brand product_brand term (brand NAME stays clean, only the slug
+ | carries the -brand suffix). Safe by construction: the clean slug is
+ | provably blocked, so no clean-slug sibling can be created later → the
+ | 2026-06-13 duplicate-PAIR pathology cannot recur (that came from
+ | force-suffix creating a suffix term WITHOUT a confirmed collision).
+ ──────────────────────────────────────────────────────────────────────── */
+it('Case K: suffix-on-tag-collision + confirmed collision → POSTs slug yealink-brand, returns new id', function (): void {
+    config()->set('services.woo.brand_slug_collision_strategy', 'suffix-on-tag-collision');
+
+    Http::fake([
+        WP_BASE.'/wp/v2/product_brand?per_page=100&page=1' => Http::response(emptyBrandListResponse(), 200),
+        WP_BASE.'/wp/v2/product_brand' => Http::sequence()
+            ->push(['code' => 'term_exists'], 400)  // clean 'yealink' refused (tag owns it)
+            ->push(['id' => 6060, 'slug' => 'yealink-brand', 'name' => 'Yealink', 'taxonomy' => 'product_brand'], 201),
+        WP_BASE.'/wp/v2/product_tag?slug=yealink' => Http::response([
+            ['id' => 9001, 'name' => 'Yealink', 'slug' => 'yealink', 'count' => 5, 'taxonomy' => 'product_tag'],
+        ], 200),
+    ]);
+
+    $id = makeResolver()->getTermIdForName('Yealink');
+
+    expect($id)->toBe(6060);
+
+    // Pre-flight GET confirmed the collision.
+    Http::assertSent(fn ($r) => $r->method() === 'GET' && str_contains($r->url(), '/wp/v2/product_tag') && str_contains($r->url(), 'slug=yealink'));
+
+    // The suffixed create posted slug 'yealink-brand' (NAME stays clean 'Yealink').
+    Http::assertSent(function ($r): bool {
+        return $r->method() === 'POST'
+            && str_ends_with($r->url(), '/wp/v2/product_brand')
+            && str_contains((string) $r->body(), '"slug":"yealink-brand"')
+            && str_contains((string) $r->body(), '"name":"Yealink"');
+    });
+
+    // No colliding tag deleted — suffix strategy never mutates the tag.
+    Http::assertNotSent(fn ($r) => $r->method() === 'DELETE');
+
+    Log::shouldHaveReceived('info')
+        ->withArgs(function (string $channel, array $ctx = []): bool {
+            return $channel === 'product_brand.suffix_on_tag_collision'
+                && ($ctx['brand'] ?? null) === 'Yealink'
+                && ($ctx['created_slug'] ?? null) === 'yealink-brand'
+                && (int) ($ctx['colliding_tag_id'] ?? 0) === 9001;
+        })
+        ->atLeast()->once();
+});
+
+it('Case L: skip-creation (explicit) + collision → returns null, NO suffixed create (unchanged)', function (): void {
+    config()->set('services.woo.brand_slug_collision_strategy', 'skip-creation');
+
+    Http::fake([
+        WP_BASE.'/wp/v2/product_brand?per_page=100&page=1' => Http::response(emptyBrandListResponse(), 200),
+        WP_BASE.'/wp/v2/product_brand' => Http::sequence()
+            ->push(['code' => 'term_exists'], 400),
+        WP_BASE.'/wp/v2/product_tag?slug=yealink' => Http::response([
+            ['id' => 9001, 'name' => 'Yealink', 'slug' => 'yealink', 'count' => 5, 'taxonomy' => 'product_tag'],
+        ], 200),
+    ]);
+
+    $id = makeResolver()->getTermIdForName('Yealink');
+
+    expect($id)->toBeNull();
+
+    Http::assertNotSent(fn ($r) => $r->method() === 'POST' && str_contains((string) $r->body(), '"slug":"yealink-brand"'));
+});
+
+it('Case M: suffix-on-tag-collision + clean slug FREE → clean create wins, no suffix, no collision probe', function (): void {
+    config()->set('services.woo.brand_slug_collision_strategy', 'suffix-on-tag-collision');
+
+    Http::fake([
+        WP_BASE.'/wp/v2/product_brand?per_page=100&page=1' => Http::response(emptyBrandListResponse(), 200),
+        WP_BASE.'/wp/v2/product_brand' => Http::response([
+            'id' => 4242,
+            'slug' => 'yealink',
+            'name' => 'Yealink',
+            'taxonomy' => 'product_brand',
+        ], 201),
+    ]);
+
+    $id = makeResolver()->getTermIdForName('Yealink');
+
+    expect($id)->toBe(4242);
+
+    // Clean slug succeeded on Attempt 1 — no collision probe, no suffix POST.
+    Http::assertNotSent(fn ($r) => $r->method() === 'GET' && str_contains($r->url(), '/wp/v2/product_tag'));
+    Http::assertNotSent(fn ($r) => $r->method() === 'POST' && str_contains((string) $r->body(), '"slug":"yealink-brand"'));
+});
+
+it('Case N: suffix-on-tag-collision + suffixed create ALSO fails → returns null (graceful)', function (): void {
+    config()->set('services.woo.brand_slug_collision_strategy', 'suffix-on-tag-collision');
+
+    Http::fake([
+        WP_BASE.'/wp/v2/product_brand?per_page=100&page=1' => Http::response(emptyBrandListResponse(), 200),
+        WP_BASE.'/wp/v2/product_brand' => Http::sequence()
+            ->push(['code' => 'term_exists'], 400)  // clean fails
+            ->push(['code' => 'term_exists'], 400), // suffixed ALSO fails
+        WP_BASE.'/wp/v2/product_tag?slug=yealink' => Http::response([
+            ['id' => 9001, 'name' => 'Yealink', 'slug' => 'yealink', 'count' => 5, 'taxonomy' => 'product_tag'],
+        ], 200),
+    ]);
+
+    $id = makeResolver()->getTermIdForName('Yealink');
+
+    expect($id)->toBeNull();
+});

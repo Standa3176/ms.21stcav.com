@@ -60,7 +60,7 @@ function bindLiveStockResolver(?array $offer): void
  *
  * @return object stub with a public array $calls
  */
-function bindWooStockStub(array $putResponse = [], array $postResponse = []): object
+function bindPublishWooStockStub(array $putResponse = [], array $postResponse = []): object
 {
     $stub = new class($putResponse, $postResponse) extends WooClient
     {
@@ -105,7 +105,7 @@ it('Path A: publish PUT carries status=publish + manage_stock + stock_quantity +
         'status' => 'draft',
     ]);
 
-    $stub = bindWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
+    $stub = bindPublishWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
 
     PublishProductJob::dispatchSync((int) $product->id, 0);
 
@@ -135,7 +135,7 @@ it('Path B: create POST carries manage_stock + stock_quantity=0 + stock_status=o
         'status' => 'draft',
     ]);
 
-    $stub = bindWooStockStub(postResponse: ['id' => 4242, 'slug' => 'out-of-stock-widget']);
+    $stub = bindPublishWooStockStub(postResponse: ['id' => 4242, 'slug' => 'out-of-stock-widget']);
 
     PublishProductJob::dispatchSync((int) $product->id, 0);
 
@@ -174,7 +174,7 @@ it('260702-pes Path A: live resolver qty beats the null local qty on the PUT', f
         'status' => 'draft',
     ]);
 
-    $stub = bindWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
+    $stub = bindPublishWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
 
     PublishProductJob::dispatchSync((int) $product->id, 0);
 
@@ -210,7 +210,7 @@ it('260702-pes Path B: live resolver qty flows onto the create POST', function (
         'status' => 'draft',
     ]);
 
-    $stub = bindWooStockStub(postResponse: ['id' => 4242, 'slug' => 'live-stock-widget']);
+    $stub = bindPublishWooStockStub(postResponse: ['id' => 4242, 'slug' => 'live-stock-widget']);
 
     PublishProductJob::dispatchSync((int) $product->id, 0);
 
@@ -238,7 +238,7 @@ it('260702-pes null resolver leaves existing local stock untouched in the payloa
         'status' => 'draft',
     ]);
 
-    $stub = bindWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
+    $stub = bindPublishWooStockStub(putResponse: ['id' => 999, 'status' => 'publish']);
 
     PublishProductJob::dispatchSync((int) $product->id, 0);
 

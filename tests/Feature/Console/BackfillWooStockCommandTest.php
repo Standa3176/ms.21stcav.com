@@ -30,7 +30,7 @@ it('pushes the stock payload for each published product and excludes the draft o
     // D — non-published; default scope must exclude it.
     Product::factory()->create(['sku' => 'D-SKU', 'woo_product_id' => 400, 'auto_create_status' => 'draft', 'stock_quantity' => 9, 'stock_status' => 'instock']);
 
-    $stub = bindWooStockStub();
+    $stub = bindBackfillWooStockStub();
 
     $exit = Artisan::call('products:backfill-woo-stock');
 
@@ -54,7 +54,7 @@ it('dry-run records zero PUTs and changes nothing', function (): void {
     Product::factory()->create(['sku' => 'B-SKU', 'woo_product_id' => 200, 'auto_create_status' => 'published', 'stock_quantity' => 0, 'stock_status' => 'outofstock']);
     Product::factory()->create(['sku' => 'C-SKU', 'woo_product_id' => 300, 'auto_create_status' => 'published', 'stock_quantity' => 12, 'stock_status' => 'instock']);
 
-    $stub = bindWooStockStub();
+    $stub = bindBackfillWooStockStub();
 
     Artisan::call('products:backfill-woo-stock', ['--dry-run' => true]);
 
@@ -70,7 +70,7 @@ it('invalid-id error nulls that product id, still pushes the rest, and exits SUC
     Product::factory()->create(['sku' => 'C-SKU', 'woo_product_id' => 300, 'auto_create_status' => 'published', 'stock_quantity' => 12, 'stock_status' => 'instock']);
 
     // Woo product 200 no longer exists — the stub throws the WC invalid-id error.
-    $stub = bindWooStockStub(throwForWooId: 200);
+    $stub = bindBackfillWooStockStub(throwForWooId: 200);
 
     $exit = Artisan::call('products:backfill-woo-stock');
 
@@ -91,7 +91,7 @@ it('--skus targets only the named product ignoring the published-scope default',
     Product::factory()->create(['sku' => 'A-SKU', 'woo_product_id' => 100, 'auto_create_status' => 'published', 'stock_quantity' => 5, 'stock_status' => 'instock']);
     Product::factory()->create(['sku' => 'B-SKU', 'woo_product_id' => 200, 'auto_create_status' => 'published', 'stock_quantity' => 0, 'stock_status' => 'outofstock']);
 
-    $stub = bindWooStockStub();
+    $stub = bindBackfillWooStockStub();
 
     $exit = Artisan::call('products:backfill-woo-stock', ['--skus' => 'A-SKU']);
 
@@ -110,7 +110,7 @@ it('--skus targets only the named product ignoring the published-scope default',
  *
  * @return object the bound stub with public array $calls
  */
-function bindWooStockStub(?int $throwForWooId = null): object
+function bindBackfillWooStockStub(?int $throwForWooId = null): object
 {
     $stub = new class($throwForWooId) extends WooClient
     {

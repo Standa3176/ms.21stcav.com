@@ -29,7 +29,7 @@ use Illuminate\Support\Str;
 |     skipped without a live Woo REST call.
 |
 | Helpers are prefixed hn1* (unique names) rather than reusing
-| PublishProductStockTest's bindWooStockStub / bindLiveStockResolver: those are
+| PublishProductStockTest's bindPublishWooStockStub / bindLiveStockResolver: those are
 | declared there WITHOUT a function_exists guard, so any same-named helper here
 | would redeclare-fatal when both files load in the same suite run. Unique names
 | keep this file self-contained (runs standalone) AND collision-free (full suite).

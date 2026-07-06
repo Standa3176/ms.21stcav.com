@@ -56,6 +56,13 @@ return [
     'beat_by_pennies' => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
     'csv_retention_days' => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
     'stale_feed_hours' => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),
+
+    // 260705-pw3 — Competitor Feeds list red-colouring tolerance. A competitor's
+    // Last Ingest is shown RED when it lags the NEWEST active competitor's last
+    // ingest by more than this many hours (i.e. it missed the latest feed run).
+    // Feeds refresh ~daily, so 24h tolerates same-run timing skew while flagging a
+    // feed that's a day+ behind. Distinct from stale_feed_hours (48h alert cadence).
+    'last_run_lag_hours' => (int) env('COMPETITOR_LAST_RUN_LAG_HOURS', 24),
     'csv_chunk_size' => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
     'filename_regex' => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
 

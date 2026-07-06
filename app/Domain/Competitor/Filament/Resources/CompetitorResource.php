@@ -6,6 +6,7 @@ namespace App\Domain\Competitor\Filament\Resources;
 
 use App\Domain\Competitor\Filament\Resources\CompetitorResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
+use Carbon\Carbon;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -73,6 +74,49 @@ class CompetitorResource extends Resource
     public static function getNavigationBadgeColor(): ?string
     {
         return 'gray';
+    }
+
+    /**
+     * 260705-pw3 — PURE colour for the Last Ingest cell. RED when the feed is
+     * behind the latest run (null, or > $lagHours older than the newest active
+     * ingest); GREEN when it arrived with the latest run; GRAY when there's no
+     * reference (no active competitor has ingested yet). Unit-tested.
+     */
+    public static function freshnessColorFor(?Carbon $lastIngestAt, ?Carbon $latestRun, int $lagHours): string
+    {
+        if ($latestRun === null) {
+            return 'gray';
+        }
+        if ($lastIngestAt === null) {
+            return 'danger';
+        }
+
+        return $lastIngestAt->lt($latestRun->copy()->subHours(max(0, $lagHours)))
+            ? 'danger'
+            : 'success';
+    }
+
+    /**
+     * 260705-pw3 — Newest last_ingest_at across ACTIVE competitors = "the last
+     * feed run". Memoised for the request so the column's ->color() closure
+     * doesn't run a MAX() per row.
+     */
+    protected static ?Carbon $latestActiveIngestAtMemo = null;
+
+    protected static bool $latestActiveIngestAtLoaded = false;
+
+    public static function latestActiveIngestAt(): ?Carbon
+    {
+        if (! self::$latestActiveIngestAtLoaded) {
+            self::$latestActiveIngestAtLoaded = true;
+            $max = Competitor::query()
+                ->where('status', Competitor::STATUS_ACTIVE)
+                ->where('is_active', true)
+                ->max('last_ingest_at');
+            self::$latestActiveIngestAtMemo = $max !== null ? Carbon::parse($max) : null;
+        }
+
+        return self::$latestActiveIngestAtMemo;
     }
 
     public static function form(Form $form): Form
@@ -157,7 +201,28 @@ class CompetitorResource extends Resource
                 TextColumn::make('last_ingest_at')
                     ->label('Last Ingest')
                     ->dateTime('Y-m-d H:i')
-                    ->placeholder('— never'),
+                    ->placeholder('— never')
+                    // 260705-pw3 — RED when behind the latest feed run (pure
+                    // rule + memoised newest-active reference; display-only).
+                    ->color(fn (Competitor $record): string => self::freshnessColorFor(
+                        $record->last_ingest_at,
+                        self::latestActiveIngestAt(),
+                        (int) config('competitor.last_run_lag_hours', 24),
+                    ))
+                    ->tooltip(function (Competitor $record): ?string {
+                        $latest = self::latestActiveIngestAt();
+                        if ($latest === null) {
+                            return null;
+                        }
+                        if ($record->last_ingest_at === null) {
+                            return 'Never ingested — not from the last feed run';
+                        }
+                        $lag = (int) config('competitor.last_run_lag_hours', 24);
+
+                        return $record->last_ingest_at->lt($latest->copy()->subHours(max(0, $lag)))
+                            ? 'Behind the latest run ('.$record->last_ingest_at->diffForHumans($latest, ['parts' => 1]).' before the newest feed)'
+                            : 'From the latest feed run';
+                    }),
 
                 ToggleColumn::make('is_active'),
             ])

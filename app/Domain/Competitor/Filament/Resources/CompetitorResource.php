@@ -6,6 +6,7 @@ namespace App\Domain\Competitor\Filament\Resources;
 
 use App\Domain\Competitor\Filament\Resources\CompetitorResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
+use App\Domain\Competitor\Models\CompetitorFtpFeed;
 use Carbon\Carbon;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -18,6 +19,7 @@ use Filament\Tables\Actions\EditAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 
 /**
@@ -119,6 +121,31 @@ class CompetitorResource extends Resource
         return self::$latestActiveIngestAtMemo;
     }
 
+    /**
+     * 260706-pfy — Newest remote_file_date (the actual feed-FILE creation date,
+     * distinct from last_ingest_at = when the app processed it) across ACTIVE
+     * competitors' FTP feeds = "the latest feed-file run". Memoised for the
+     * request so the Feed file date column's ->color() closure doesn't run a
+     * MAX() per row. Ignores inactive competitors so a dormant feed can't raise
+     * the reference and make everyone else look behind.
+     */
+    protected static ?Carbon $latestActiveFeedFileDateMemo = null;
+
+    protected static bool $latestActiveFeedFileDateLoaded = false;
+
+    public static function latestActiveFeedFileDate(): ?Carbon
+    {
+        if (! self::$latestActiveFeedFileDateLoaded) {
+            self::$latestActiveFeedFileDateLoaded = true;
+            $max = CompetitorFtpFeed::query()
+                ->whereHas('competitor', fn (Builder $q): Builder => $q->active())
+                ->max('remote_file_date');
+            self::$latestActiveFeedFileDateMemo = $max !== null ? Carbon::parse($max) : null;
+        }
+
+        return self::$latestActiveFeedFileDateMemo;
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -173,6 +200,9 @@ class CompetitorResource extends Resource
     {
         return $table
             ->defaultSort('name', 'asc')
+            // 260706-pfy — load the newest remote_file_date per competitor in one
+            // aggregate (no N+1). Exposes $record->ftp_feeds_max_remote_file_date.
+            ->modifyQueryUsing(fn (Builder $query): Builder => $query->withMax('ftpFeeds', 'remote_file_date'))
             ->columns([
                 TextColumn::make('id')->label('Id')->sortable()->toggleable(isToggledHiddenByDefault: true),
 
@@ -196,6 +226,7 @@ class CompetitorResource extends Resource
                 TextColumn::make('feeds_count')
                     ->label('Feeds')
                     ->counts('ftpFeeds')
+                    ->tooltip('Number of feed files configured for this competitor')
                     ->sortable(),
 
                 TextColumn::make('last_ingest_at')
@@ -222,6 +253,39 @@ class CompetitorResource extends Resource
                         return $record->last_ingest_at->lt($latest->copy()->subHours(max(0, $lag)))
                             ? 'Behind the latest run ('.$record->last_ingest_at->diffForHumans($latest, ['parts' => 1]).' before the newest feed)'
                             : 'From the latest feed run';
+                    }),
+
+                // 260706-pfy — the actual feed-FILE creation date (newest
+                // remote_file_date across this competitor's feeds), distinct
+                // from Last Ingest (when the app processed it). Same behind-the-
+                // latest-run red rule as Last Ingest (reuses freshnessColorFor +
+                // a memoised newest-active-feed-file reference); withMax-backed so
+                // no N+1. Display-only.
+                TextColumn::make('feed_file_date')
+                    ->label('Feed file date')
+                    ->state(fn (Competitor $record): ?string => $record->ftp_feeds_max_remote_file_date)
+                    ->dateTime('Y-m-d H:i')
+                    ->placeholder('— none')
+                    ->color(fn (Competitor $record): string => self::freshnessColorFor(
+                        $record->ftp_feeds_max_remote_file_date !== null ? Carbon::parse($record->ftp_feeds_max_remote_file_date) : null,
+                        self::latestActiveFeedFileDate(),
+                        (int) config('competitor.last_run_lag_hours', 24),
+                    ))
+                    ->tooltip(function (Competitor $record): ?string {
+                        $latest = self::latestActiveFeedFileDate();
+                        $raw = $record->ftp_feeds_max_remote_file_date;
+                        if ($latest === null) {
+                            return null;
+                        }
+                        if ($raw === null) {
+                            return 'No feed file date — not from the last feed run';
+                        }
+                        $date = Carbon::parse($raw);
+                        $lag = (int) config('competitor.last_run_lag_hours', 24);
+
+                        return $date->lt($latest->copy()->subHours(max(0, $lag)))
+                            ? 'Feed file behind the latest run ('.$date->diffForHumans($latest, ['parts' => 1]).' before the newest feed file)'
+                            : 'Feed file from the latest run';
                     }),
 
                 ToggleColumn::make('is_active'),

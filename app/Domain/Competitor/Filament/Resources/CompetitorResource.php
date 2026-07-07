@@ -223,14 +223,18 @@ class CompetitorResource extends Resource
                         default => 'gray',
                     }),
 
-                // 260707-f06 — key MUST match the withCount('ftpFeeds') alias
-                // (ftp_feeds_count). It was 'feeds_count' → read a non-existent
-                // attribute → column always blank.
+                // 260707-fkx — resolve the count directly per row instead of
+                // Filament's ->counts() aggregate: the withCount subquery +
+                // the ->modifyQueryUsing(withMax('ftpFeeds', ...)) modifier
+                // populated ftp_feeds_count on SQLite (tests green) but NOT on
+                // MariaDB (prod) → column read null → blank. A direct COUNT is
+                // identical on both engines; ~5-row settings table so the
+                // per-row query is negligible. Not DB-sortable (computed state),
+                // so ->sortable() is dropped.
                 TextColumn::make('ftp_feeds_count')
                     ->label('Feeds')
-                    ->counts('ftpFeeds')
-                    ->tooltip('Number of feed files configured for this competitor')
-                    ->sortable(),
+                    ->state(fn (Competitor $record): int => $record->ftpFeeds()->count())
+                    ->tooltip('Number of feed files configured for this competitor'),
 
                 TextColumn::make('last_ingest_at')
                     ->label('Last Ingest')

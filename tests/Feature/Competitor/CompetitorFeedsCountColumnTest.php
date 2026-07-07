@@ -13,15 +13,19 @@ use Livewire\Livewire;
 uses(RefreshDatabase::class);
 
 /**
- * Quick task 260707-f06 — the Feeds column on the Competitor Feeds list was
- * ALWAYS blank. Root cause: TextColumn::make('feeds_count')->counts('ftpFeeds')
- * — ->counts('ftpFeeds') adds withCount('ftpFeeds') which yields the attribute
- * ftp_feeds_count (Laravel snake-cases the ftpFeeds relation), but the column
- * was keyed 'feeds_count', so it read a non-existent attribute → blank.
+ * Quick task 260707-fkx — the Feeds column was STILL blank on prod (MariaDB)
+ * after the 260707-f06 key rename (b872801 deployed). Root cause: the column's
+ * ->counts('ftpFeeds') aggregate adds a withCount subquery which — combined
+ * with the table's ->modifyQueryUsing(withMax('ftpFeeds','remote_file_date'))
+ * modifier — populated ftp_feeds_count on SQLite (tests green) but NOT on
+ * MariaDB (prod) → column read null → blank. The recurring SQLite↔MariaDB
+ * divergence, invisible to a SQLite test suite.
  *
- * Fix = rename the column KEY to ftp_feeds_count so it matches the withCount
- * alias. This guard asserts the column state now equals the ftpFeeds count
- * (2 and 0) rather than null/blank.
+ * Fix = resolve the count with an engine-independent per-row relation count:
+ * ->state(fn (Competitor $record) => $record->ftpFeeds()->count()). A plain
+ * COUNT per row behaves identically on SQLite + MariaDB and cannot be affected
+ * by aggregate-select/subquery behaviour. This guard asserts the column state
+ * equals the ftpFeeds count (2 and 0) via the ->state closure.
  */
 beforeEach(function (): void {
     $this->seed(RolePermissionSeeder::class);
@@ -37,10 +41,10 @@ it('Feeds column state equals the ftpFeeds count (2 / 0), not blank', function (
 
     $noFeeds = Competitor::factory()->create();
 
-    // Pass the record KEY (not the model instance): Filament then resolves the
-    // record through the table query pipeline, so the withCount('ftpFeeds')
-    // alias ftp_feeds_count is populated. A raw model instance from the factory
-    // has no such attribute and would read null (the pre-fix blank symptom).
+    // Pass the record KEY (not the model instance): Filament resolves the record
+    // through the table query pipeline, then the column's ->state closure runs
+    // $record->ftpFeeds()->count() — an engine-independent per-row COUNT that no
+    // longer depends on any aggregate-select attribute being present on the query.
     Livewire::test(ListCompetitors::class)
         ->assertSuccessful()
         ->assertTableColumnStateSet('ftp_feeds_count', 2, record: $withFeeds->getKey())

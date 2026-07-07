@@ -27,7 +27,6 @@ use Filament\Tables\Actions\BulkAction;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -246,6 +245,10 @@ class SuggestionResource extends Resource
             // visible feedback after a bulk Auto-create instead of a silent list.
             // Read-only refresh; safe.
             ->poll('30s')
+            // Quick task 260707-iz9 — friendly empty state so a filtered-to-nothing
+            // list explains itself instead of showing a bare "No records".
+            ->emptyStateHeading('No suggestions match')
+            ->emptyStateDescription('New product opportunities appear here when competitors list SKUs you do not sell yet. Clear the filters to see other kinds.')
             ->columns([
                 // Part / SKU — the actual product identifier (from evidence JSON;
                 // also present on margin_change rows). Searchable so an 8k-row
@@ -264,6 +267,7 @@ class SuggestionResource extends Resource
                     ->label('Comp')
                     ->badge()
                     ->color('info')
+                    ->tooltip('Number of competitors currently tracking this SKU')
                     ->state(fn (Suggestion $record) => $record->kind === 'new_product_opportunity'
                         ? (int) (data_get($record->evidence, 'supporting_competitors', 0))
                         : null)
@@ -272,6 +276,7 @@ class SuggestionResource extends Resource
                 // Which competitors list it (names from competitor_sightings[]).
                 TextColumn::make('competitors')
                     ->label('Competitors')
+                    ->tooltip('Which competitors list this SKU')
                     ->state(fn (Suggestion $record) => collect((array) data_get($record->evidence, 'competitor_sightings', []))
                         ->pluck('name')->filter()->implode(', ') ?: null)
                     ->wrap()
@@ -279,6 +284,7 @@ class SuggestionResource extends Resource
                 // Competitor price / range — gross pennies → £.
                 TextColumn::make('comp_price')
                     ->label('Comp price')
+                    ->tooltip('Competitor price (range) seen for this SKU')
                     ->state(function (Suggestion $record): ?string {
                         $prices = collect((array) data_get($record->evidence, 'competitor_sightings', []))
                             ->pluck('price_gross_pennies')
@@ -418,6 +424,52 @@ class SuggestionResource extends Resource
                             ? $query->whereRaw("EXISTS ($existsSub)")
                             : $query->whereRaw("NOT EXISTS ($existsSub)");
                     }),
+                // Quick task 260707-iz9 — Readiness filter. Narrows to exactly the
+                // rows the operator can action, MATCHING the 260707-gsy Readiness
+                // COLUMN verdict (same sourceable check + same brand + same junk
+                // config): 'ready' = sourceable + non-blank non-junk brand;
+                // 'needs_brand' = sourceable + (blank OR junk brand);
+                // 'not_sourceable' = NOT sourceable. Supersedes the retired
+                // Brand-on-Woo ternary. Driver-portable — sourceableExistsSql()
+                // switches SQLite json_extract vs MariaDB JSON_UNQUOTE(JSON_EXTRACT)
+                // (memory: SQLite↔MariaDB strict trap); brand via brandJsonExpr().
+                SelectFilter::make('readiness')
+                    ->label('Readiness')
+                    ->options([
+                        'ready' => 'Ready to create',
+                        'needs_brand' => 'Needs brand',
+                        'not_sourceable' => 'Not sourceable',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if ($value === null || $value === '') {
+                            return $query;
+                        }
+                        $exists = self::sourceableExistsSql();
+                        $brand = self::brandJsonExpr();  // portable evidence.brand
+                        $junk = array_values(array_filter(array_map(
+                            'mb_strtolower',
+                            (array) config('product_auto_create.brands_to_add_exclude', []),
+                        )));
+                        $ph = $junk === [] ? '' : implode(',', array_fill(0, count($junk), '?'));
+
+                        return match ($value) {
+                            'not_sourceable' => $query->whereRaw("NOT {$exists}"),
+                            'ready' => $query
+                                ->whereRaw($exists)
+                                ->whereRaw("{$brand} IS NOT NULL AND TRIM({$brand}) != ''")
+                                ->when($junk !== [], fn (Builder $q): Builder => $q->whereRaw("LOWER(TRIM({$brand})) NOT IN ({$ph})", $junk)),
+                            'needs_brand' => $query
+                                ->whereRaw($exists)
+                                ->where(function (Builder $q) use ($brand, $junk, $ph): void {
+                                    $q->whereRaw("{$brand} IS NULL OR TRIM({$brand}) = ''");
+                                    if ($junk !== []) {
+                                        $q->orWhereRaw("LOWER(TRIM({$brand})) IN ({$ph})", $junk);
+                                    }
+                                }),
+                            default => $query,
+                        };
+                    }),
                 // Quick task 260702-hg1 — Competitor / Brand / Brand-on-Woo
                 // filters (Piece 2 of the brands-to-add workflow). Reads the
                 // evidence.brand / evidence.brand_on_woo tags written by
@@ -467,22 +519,10 @@ class SuggestionResource extends Resource
                             ? $query
                             : $query->whereRaw(self::brandJsonExpr().' = ?', [$value]);
                     }),
-                // Brand on Woo — ready to create (brand already on Woo) vs needs
-                // the brand added first. Reads the evidence.brand_on_woo boolean
-                // tagged by products:refresh-brands-to-add.
-                TernaryFilter::make('brand_on_woo')
-                    ->label('Brand on Woo')
-                    ->placeholder('All')
-                    ->trueLabel('Ready (brand on Woo)')
-                    ->falseLabel('Needs brand added')
-                    ->queries(
-                        // MariaDB (prod): JSON_EXTRACT(...) = true/false.
-                        // SQLite (tests): json_extract returns 1/0 for booleans.
-                        // (memory: SQLite↔MariaDB strict trap.)
-                        true: fn (Builder $query): Builder => $query->whereRaw(self::brandOnWooJsonExpr().' = '.self::jsonTrueLiteral()),
-                        false: fn (Builder $query): Builder => $query->whereRaw(self::brandOnWooJsonExpr().' = '.self::jsonFalseLiteral()),
-                        blank: fn (Builder $query): Builder => $query,
-                    ),
+                // Quick task 260707-iz9 — the Brand-on-Woo TernaryFilter was
+                // retired here: it showed 'none' both ways under normal data and
+                // is superseded by the Readiness filter above (which classifies
+                // ready / needs_brand / not_sourceable directly).
             ])
             // Render filters always-visible above the table (operator
             // feedback 2026-06-03 — Collapsible variant still hid them
@@ -871,10 +911,10 @@ class SuggestionResource extends Resource
     // ── Quick task 260702-hg1 — driver-portable JSON expression helpers ────
     //
     // Prod is MariaDB (strict); tests run on SQLite. The two engines diverge on
-    // JSON scalar extraction (JSON_UNQUOTE vs json_extract) and boolean literals
-    // (true/false vs 1/0). These helpers centralise the driver switch so the
-    // Brand SelectFilter + Brand-on-Woo TernaryFilter stay prod-safe while the
-    // suite runs green on SQLite (memory: SQLite↔MariaDB strict trap).
+    // JSON scalar extraction (JSON_UNQUOTE vs json_extract). These helpers
+    // centralise the driver switch so the Brand + Readiness SelectFilters stay
+    // prod-safe while the suite runs green on SQLite (memory: SQLite↔MariaDB
+    // strict trap).
 
     /**
      * Distinct evidence.brand values across pending new_product_opportunity rows,
@@ -916,21 +956,22 @@ class SuggestionResource extends Resource
             : "JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.brand'))";
     }
 
-    private static function brandOnWooJsonExpr(): string
+    /**
+     * Quick task 260707-iz9 — driver-portable "evidence.sku is in
+     * supplier_sku_cache" EXISTS SQL, matching readiness()/on_supplier_db.
+     *
+     * SQLite (tests) has no JSON_UNQUOTE and json_extract() already unquotes
+     * scalars; MariaDB (prod) needs JSON_UNQUOTE(JSON_EXTRACT(...)). The
+     * lowercased-trim match mirrors readiness() + DraftFromSuggestionsCommand
+     * (memory: SQLite↔MariaDB strict trap — green tests must stay prod-safe).
+     */
+    private static function sourceableExistsSql(): string
     {
-        return DB::connection()->getDriverName() === 'sqlite'
-            ? "json_extract(evidence, '$.brand_on_woo')"
-            : "JSON_EXTRACT(evidence, '$.brand_on_woo')";
-    }
+        $sku = DB::connection()->getDriverName() === 'sqlite'
+            ? "json_extract(suggestions.evidence, '$.sku')"
+            : "JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))";
 
-    private static function jsonTrueLiteral(): string
-    {
-        return DB::connection()->getDriverName() === 'sqlite' ? '1' : 'true';
-    }
-
-    private static function jsonFalseLiteral(): string
-    {
-        return DB::connection()->getDriverName() === 'sqlite' ? '0' : 'false';
+        return "EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM({$sku})))";
     }
 
     // ── Phase 10 Plan 04 — margin_change detail view extension ────────────

@@ -24,9 +24,12 @@ uses(RefreshDatabase::class);
 |     S3 brand=Trantec brand_on_woo=false sightings=[Ballicom]
 |   plus Competitor rows (Ballicom, AVPartsmaster) so the SelectFilter options
 |   resolve. Asserts each filter narrows via Livewire ->filterTable():
-|     - brand_on_woo=false → S2 + S3, not S1
 |     - brand='Trantec'    → S2 + S3, not S1
 |     - competitor='AVPartsmaster' → only S2
+|
+| NOTE (260707-iz9): the Brand-on-Woo TernaryFilter was retired (superseded by
+| the Readiness SelectFilter), so its assertion was removed here. The seed still
+| writes evidence.brand_on_woo (harmless) to keep the fixture shape stable.
 */
 
 function brandFilterAdmin(): User
@@ -65,15 +68,6 @@ beforeEach(function (): void {
     $this->s1 = seedBrandSuggestion('SKU-1', 'Yealink', true, 'Ballicom');
     $this->s2 = seedBrandSuggestion('SKU-2', 'Trantec', false, 'AVPartsmaster');
     $this->s3 = seedBrandSuggestion('SKU-3', 'Trantec', false, 'Ballicom');
-});
-
-it('brand_on_woo=false narrows to the not-on-Woo suggestions', function (): void {
-    $this->actingAs(brandFilterAdmin());
-
-    Livewire::test(ListSuggestions::class)
-        ->filterTable('brand_on_woo', false)
-        ->assertCanSeeTableRecords([$this->s2, $this->s3])
-        ->assertCanNotSeeTableRecords([$this->s1]);
 });
 
 it('brand=Trantec narrows to the Trantec suggestions', function (): void {

@@ -36,6 +36,7 @@ use App\Filament\Pages\CatalogueGapsPage;
 use App\Filament\Widgets\WooMaintenanceGapsWidget;
 use App\Models\User;
 use Filament\Facades\Filament;
+use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -147,7 +148,7 @@ it('WooMaintenanceGapsWidget gap stats deep-link into the Catalogue Gaps page pe
     $widget = new WooMaintenanceGapsWidget;
     $method = new ReflectionMethod($widget, 'getStats');
     $method->setAccessible(true);
-    /** @var array<int, \Filament\Widgets\StatsOverviewWidget\Stat> $stats */
+    /** @var array<int, Stat> $stats */
     $stats = $method->invoke($widget);
 
     // Collect every non-null stat url.

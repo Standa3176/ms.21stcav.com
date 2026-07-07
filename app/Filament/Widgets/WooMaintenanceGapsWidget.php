@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Filament\Widgets;
 
 use App\Domain\Products\Services\ProductGapReport;
+use App\Filament\Pages\CatalogueGapsPage;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -16,7 +17,14 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
  * this overview and the Pass-2 drill-down list stay in lock-step.
  *
  * A gap card is 'warning' when its count > 0 (something to fix), 'success'
- * when 0. No ->url() yet — Pass 2 wires the stat cards to the drill-down.
+ * when 0.
+ *
+ * Quick task 260707-wa9 (Pass 2) — each per-gap Stat now ->url()s into the
+ * CatalogueGapsPage drill-down pre-filtered to that gap via the Filament
+ * SelectFilter form-state deep-link (?tableFilters[gap][value]=<gap>), so
+ * clicking e.g. "Missing EAN" opens the list of exactly those products.
+ * Deep-link precedent: HighConfidenceSourceableWidget. The 'Live on Woo'
+ * total links to the page unfiltered (defaults to missing_images there).
  */
 final class WooMaintenanceGapsWidget extends StatsOverviewWidget
 {
@@ -31,7 +39,8 @@ final class WooMaintenanceGapsWidget extends StatsOverviewWidget
             Stat::make('Live on Woo', (string) $total)
                 ->description('Products live on the shop (publish + Woo ID)')
                 ->descriptionIcon('heroicon-m-globe-alt')
-                ->color('primary'),
+                ->color('primary')
+                ->url(CatalogueGapsPage::getUrl()),
         ];
 
         foreach (ProductGapReport::GAPS as $key => $label) {
@@ -40,7 +49,8 @@ final class WooMaintenanceGapsWidget extends StatsOverviewWidget
             $stats[] = Stat::make($label, (string) $count)
                 ->description(sprintf('of %s live products', number_format($total)))
                 ->descriptionIcon('heroicon-m-exclamation-triangle')
-                ->color($count > 0 ? 'warning' : 'success');
+                ->color($count > 0 ? 'warning' : 'success')
+                ->url(CatalogueGapsPage::getUrl().'?tableFilters[gap][value]='.$key);
         }
 
         return $stats;

@@ -40,10 +40,11 @@ use App\Domain\Products\Models\Product;
 use App\Domain\Products\Services\ProductGapReport;
 use App\Filament\Pages\WooMaintenanceOverviewPage;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Spatie\Permission\Models\Role;
 
-uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
+uses(RefreshDatabase::class);
 
 beforeEach(function (): void {
     Cache::flush();
@@ -59,7 +60,7 @@ function w2wLiveProduct(string $sku, array $overrides = []): Product
     return Product::factory()->create(array_merge([
         'sku' => $sku,
         'status' => 'publish',
-        'ean' => 'EAN-' . $sku,
+        'ean' => 'EAN-'.$sku,
         'stock_status' => 'instock',
         'brand_id' => 10,
         'category_id' => 20,
@@ -140,6 +141,6 @@ it('renders the Maintenance Overview page for an admin', function (): void {
     seedProductGapMatrix();
 
     $this->actingAs($admin->fresh())
-        ->get('/admin/' . WooMaintenanceOverviewPage::getSlug())
+        ->get('/admin/'.WooMaintenanceOverviewPage::getSlug())
         ->assertSuccessful();
 });

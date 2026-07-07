@@ -223,7 +223,10 @@ class CompetitorResource extends Resource
                         default => 'gray',
                     }),
 
-                TextColumn::make('feeds_count')
+                // 260707-f06 — key MUST match the withCount('ftpFeeds') alias
+                // (ftp_feeds_count). It was 'feeds_count' → read a non-existent
+                // attribute → column always blank.
+                TextColumn::make('ftp_feeds_count')
                     ->label('Feeds')
                     ->counts('ftpFeeds')
                     ->tooltip('Number of feed files configured for this competitor')

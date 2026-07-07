@@ -37,8 +37,12 @@ it('Feeds column state equals the ftpFeeds count (2 / 0), not blank', function (
 
     $noFeeds = Competitor::factory()->create();
 
+    // Pass the record KEY (not the model instance): Filament then resolves the
+    // record through the table query pipeline, so the withCount('ftpFeeds')
+    // alias ftp_feeds_count is populated. A raw model instance from the factory
+    // has no such attribute and would read null (the pre-fix blank symptom).
     Livewire::test(ListCompetitors::class)
         ->assertSuccessful()
-        ->assertTableColumnStateSet('ftp_feeds_count', 2, record: $withFeeds)
-        ->assertTableColumnStateSet('ftp_feeds_count', 0, record: $noFeeds);
+        ->assertTableColumnStateSet('ftp_feeds_count', 2, record: $withFeeds->getKey())
+        ->assertTableColumnStateSet('ftp_feeds_count', 0, record: $noFeeds->getKey());
 });

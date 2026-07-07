@@ -43,6 +43,12 @@ it('rendering N suggestions executes a BOUNDED number of queries (not N + N)', f
 
     \Livewire\Livewire::test(ListSuggestions::class)
         ->assertSuccessful()
+        // 260707-gsy — clear the new default Kind/Status filters so the 10
+        // seeded kind='test' applied suggestions are all rendered. (kind='test'
+        // means the Readiness column adds no supplier_sku_cache lookups, so the
+        // bounded-query assertion below is unaffected.)
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->assertCanSeeTableRecords(Suggestion::all());
 
     $queries = DB::getQueryLog();

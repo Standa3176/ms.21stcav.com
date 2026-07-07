@@ -53,6 +53,77 @@ class SuggestionResource extends Resource
     public const BRAND_FILTER_OPTIONS_CACHE_KEY = 'suggestions.brand_filter_options';
 
     /**
+     * Quick task 260707-gsy — per-request memo so the Readiness column's
+     * state/color/tooltip closures don't each re-query supplier_sku_cache.
+     * Keyed by Suggestion primary key.
+     *
+     * @var array<string, array{label:string,color:string}|null>
+     */
+    protected static array $readinessMemo = [];
+
+    /**
+     * Quick task 260707-gsy — PURE readiness verdict for the Suggestions list.
+     *
+     * sourceable = the SKU is currently carried by a supplier (membership in
+     * supplier_sku_cache); brand comes from evidence.brand. Verdict:
+     *   - not sourceable            → 'Not sourceable' / gray
+     *   - sourceable + blank/junk   → 'Needs brand'    / warning
+     *   - sourceable + usable brand → 'Ready'          / success (Auto-create
+     *     auto-adds the Woo brand if new, per 260702-qd8)
+     * Junk = config('product_auto_create.brands_to_add_exclude') (case-insensitive).
+     *
+     * @return array{label:string,color:string}
+     */
+    public static function readinessFrom(bool $sourceable, ?string $brand): array
+    {
+        if (! $sourceable) {
+            return ['label' => 'Not sourceable', 'color' => 'gray'];
+        }
+
+        $brand = trim((string) $brand);
+        $junk = $brand === '' || in_array(
+            mb_strtolower($brand),
+            array_map('mb_strtolower', (array) config('product_auto_create.brands_to_add_exclude', [])),
+            true,
+        );
+
+        return $junk
+            ? ['label' => 'Needs brand', 'color' => 'warning']
+            : ['label' => 'Ready', 'color' => 'success'];
+    }
+
+    /**
+     * Quick task 260707-gsy — readiness verdict for a record (null for
+     * non-opportunity kinds). Memoised per request.
+     *
+     * CRITICAL (memory: SQLite ↔ MariaDB strict trap): the sourceable check is
+     * engine-independent — the SKU is pulled from evidence in PHP, lowercased +
+     * trimmed, then matched via a plain indexed where('sku', …)->exists() on
+     * supplier_sku_cache. NO JSON_UNQUOTE/JSON_EXTRACT SQL (that's exactly what
+     * has repeatedly bitten this page).
+     *
+     * @return array{label:string,color:string}|null
+     */
+    public static function readiness(Suggestion $record): ?array
+    {
+        if ($record->kind !== 'new_product_opportunity') {
+            return null;
+        }
+
+        $key = (string) $record->getKey();
+        if (! array_key_exists($key, self::$readinessMemo)) {
+            $sku = strtolower(trim((string) data_get($record->evidence, 'sku', '')));
+            $sourceable = $sku !== '' && DB::table('supplier_sku_cache')->where('sku', $sku)->exists();
+            self::$readinessMemo[$key] = self::readinessFrom(
+                $sourceable,
+                (string) data_get($record->evidence, 'brand', ''),
+            );
+        }
+
+        return self::$readinessMemo[$key];
+    }
+
+    /**
      * Quick task 260606-gnu — high-confidence sourceable attention badge.
      *
      * Counts only rows the operator can actually action: pending +
@@ -170,6 +241,11 @@ class SuggestionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Quick task 260707-gsy — auto-refresh so rows flip to 'applied' as
+            // the Horizon auto-create pipeline finishes, giving the operator
+            // visible feedback after a bulk Auto-create instead of a silent list.
+            // Read-only refresh; safe.
+            ->poll('30s')
             ->columns([
                 // Part / SKU — the actual product identifier (from evidence JSON;
                 // also present on margin_change rows). Searchable so an 8k-row
@@ -227,6 +303,25 @@ class SuggestionResource extends Resource
                     'failed' => 'danger',
                     default => 'gray',
                 })->sortable(),
+                // Quick task 260707-gsy — Readiness badge. Makes what-will-create
+                // visible up front so the operator isn't left guessing after a
+                // silent Auto-create: Ready (sourceable + usable brand),
+                // Needs brand (sourceable but blank/junk brand → parks), Not
+                // sourceable (no supplier carries the SKU). '—' for non-opportunity
+                // kinds. Verdict is computed engine-independently via readiness()
+                // (PHP-extracted SKU + supplier_sku_cache exists() — no JSON-in-SQL).
+                TextColumn::make('readiness')
+                    ->label('Readiness')
+                    ->badge()
+                    ->state(fn (Suggestion $record): ?string => self::readiness($record)['label'] ?? null)
+                    ->color(fn (Suggestion $record): string => self::readiness($record)['color'] ?? 'gray')
+                    ->placeholder('—')
+                    ->tooltip(fn (Suggestion $record): ?string => match (self::readiness($record)['label'] ?? null) {
+                        'Ready' => 'In the supplier feed + brand known — Auto-create will create it (brand auto-added if new).',
+                        'Needs brand' => 'In the supplier feed but no usable brand — parks until a brand is set.',
+                        'Not sourceable' => 'No supplier currently carries this SKU — cannot be created.',
+                        default => null,
+                    }),
                 TextColumn::make('kind')->badge()->sortable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('correlation_id')
                     ->fontFamily('mono')
@@ -245,6 +340,10 @@ class SuggestionResource extends Resource
                 // getEloquentQuery; choosing this filter value DOES expose them
                 // because the `when(! filled(tableFilters.kind.value))` clause
                 // skips the kind!='agent_guardrail_blocked' default scope.
+                // Quick task 260707-gsy — default to new_product_opportunity so
+                // the operator lands on the actionable set (still freely
+                // changeable). Option list + getEloquentQuery guardrail-hiding
+                // unchanged; the default is only the initial selection.
                 SelectFilter::make('kind')->options([
                     'margin_change' => 'margin_change',
                     'new_product_opportunity' => 'new_product_opportunity',
@@ -252,14 +351,15 @@ class SuggestionResource extends Resource
                     'auto_create_failed' => 'auto_create_failed',
                     'seo_content_patch' => 'seo_content_patch',
                     'agent_guardrail_blocked' => 'agent_guardrail_blocked (audit)',
-                ]),
+                ])->default('new_product_opportunity'),
+                // Quick task 260707-gsy — default to pending (the actionable set).
                 SelectFilter::make('status')->options([
                     'pending' => 'Pending',
                     'approved' => 'Approved',
                     'rejected' => 'Rejected',
                     'applied' => 'Applied',
                     'failed' => 'Failed',
-                ]),
+                ])->default('pending'),
                 // Competitor-count bucket filter for new_product_opportunity
                 // suggestions. Reads the denormalised evidence.supporting_competitors
                 // value with a portable whereRaw (matches Laravel's JSON path
@@ -755,10 +855,14 @@ class SuggestionResource extends Resource
                             (int) auth()->id(),
                         );
 
+                        // Quick task 260707-gsy — set expectations + point onward
+                        // so the operator isn't left wondering after a silent
+                        // dispatch. Title ("{n} SKU(s) queued") + the dispatch call
+                        // above are unchanged.
                         Notification::make()
                             ->success()
                             ->title(count($skus).' SKU(s) queued')
-                            ->body('Dispatched. The created / skipped (with reasons) result will appear in your notifications bell when the pipeline finishes (usually under a minute).')
+                            ->body('Dispatched. These rows will change to "applied" here as each finishes (this list refreshes itself), and the new products appear under Auto-create Health. The full created/skipped result lands in your notifications bell — usually under a minute.')
                             ->send();
                     }),
             ]);

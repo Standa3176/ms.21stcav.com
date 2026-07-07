@@ -114,6 +114,10 @@ it('admin role can access the Filament SuggestionResource list page', function (
 
     \Livewire\Livewire::test(\App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions::class)
         ->assertSuccessful()
+        // 260707-gsy — clear the new default Kind/Status filters so the seeded
+        // kind='test' pending suggestion is visible in the list.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->assertCanSeeTableRecords(Suggestion::all());
 });
 

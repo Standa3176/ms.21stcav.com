@@ -103,6 +103,10 @@ it('writes agent_rejection_feedback JSON column on successful structured submiss
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so this
+        // margin_change/crm_push_failed record is visible in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('reject', $suggestion, data: [
             'misleading' => 'yes',
             'notes' => $longNotes,
@@ -136,6 +140,10 @@ it('leaves agent_rejection_feedback NULL on successful non-margin_change rejecti
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so this
+        // margin_change/crm_push_failed record is visible in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('reject', $suggestion, data: [
             'rejection_reason' => 'Bitrix endpoint moved; not retrying.',
         ])
@@ -153,6 +161,10 @@ it('leaves agent_rejection_feedback NULL when margin_change has empty agent_run_
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so this
+        // margin_change/crm_push_failed record is visible in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('reject', $suggestion, data: [
             'rejection_reason' => 'Manual override — different reason.',
         ])
@@ -170,6 +182,10 @@ it('rejects submission when notes < 10 chars (validation fails; suggestion stays
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so this
+        // margin_change/crm_push_failed record is visible in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('reject', $suggestion, data: [
             'misleading' => 'yes',
             'notes' => 'short',
@@ -187,6 +203,10 @@ it('rejects submission when misleading radio is missing (validation fails)', fun
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so this
+        // margin_change/crm_push_failed record is visible in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('reject', $suggestion, data: [
             // misleading omitted on purpose
             'notes' => 'Plenty of substance in this rejection note — over ten characters easy.',
@@ -206,6 +226,10 @@ it('round-trips partial and no values for misleading onto agent_rejection_feedba
 
         Livewire::actingAs($admin)
             ->test(ListSuggestions::class)
+            // 260707-gsy — clear the new default Kind/Status filters so this
+            // margin_change record is visible in the table.
+            ->set('tableFilters.kind.value', null)
+            ->set('tableFilters.status.value', null)
             ->callTableAction('reject', $suggestion, data: [
                 'misleading' => $value,
                 'notes' => $notes,

@@ -50,6 +50,10 @@ it('dispatches ApplySuggestionJob when admin approves a pending margin_change su
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so
+        // margin_change / non-pending records are present in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('approve_margin_change', $suggestion)
         ->assertHasNoTableActionErrors();
 
@@ -75,6 +79,10 @@ it('approve_margin_change action is hidden for kinds other than margin_change', 
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so
+        // margin_change / non-pending records are present in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->assertTableActionHidden('approve_margin_change', $otherKind);
 });
 
@@ -93,6 +101,10 @@ it('approve_margin_change action is hidden when status is not pending', function
 
     Livewire::actingAs($admin)
         ->test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so
+        // margin_change / non-pending records are present in the table.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->assertTableActionHidden('approve_margin_change', $alreadyApplied);
 });
 

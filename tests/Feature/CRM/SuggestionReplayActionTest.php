@@ -93,6 +93,10 @@ it('clicking replay dispatches ApplySuggestionJob with the correct suggestion id
     $suggestion = makeReplayTestSuggestion();
 
     Livewire::test(ListSuggestions::class)
+        // 260707-gsy — clear the new default Kind/Status filters so the
+        // crm_push_failed record is present in the table for the action.
+        ->set('tableFilters.kind.value', null)
+        ->set('tableFilters.status.value', null)
         ->callTableAction('replay', $suggestion->id);
 
     Queue::assertPushed(

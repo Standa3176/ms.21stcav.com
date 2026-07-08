@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Services\WpRestClient;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -19,6 +20,14 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  *   - woo_category_count = count(categories)
  *   - woo_stock_status   = stock_status
  *   - woo_reconciled_at  = now()
+ *
+ * Quick task 260708-dyy (Pass A) adds a SECOND, read-only pass AFTER the WC pass:
+ * it pages the WP REST product list (`GET wp/v2/product`, status=publish,
+ * _fields=id,product_brand) via WpRestClient and sets:
+ *   - woo_brand_count = count(product_brand term-id array)
+ * product_brand is the taxonomy that drives the storefront Brand: link and is the
+ * one gap NOT in the WC /products response, hence the separate WP REST pass. The
+ * WC pass + all its counters are UNCHANGED.
  *
  * WHY — the local product mirror never captured media/EAN/category state for the
  * 3,614 legacy WC-migrated products, so the Maintenance dashboard (Pass 2) would
@@ -48,8 +57,13 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
 
     protected $description = 'Mirror each live product\'s real Woo state (image count, EAN, category count, stock) into local woo_* columns for the Maintenance dashboard. Read-only on Woo (GETs).';
 
-    public function __construct(private readonly WooClient $woo)
-    {
+    public function __construct(
+        private readonly WooClient $woo,
+        // 260708-dyy — brand reconciliation Pass A: the product_brand taxonomy
+        // (the storefront Brand link) lives on the WP REST product list, NOT the
+        // WC /products response, so the brand pass needs the WordPress client.
+        private readonly WpRestClient $wp,
+    ) {
         parent::__construct();
     }
 
@@ -71,6 +85,9 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
         $matched = 0;
         $updated = 0;
         $unmatched = 0;
+        // 260708-dyy — count of products whose woo_brand_count was written by the
+        // WP-REST brand pass (below, after the WC pass).
+        $brandUpdated = 0;
 
         $page = 1;
         while (true) {
@@ -141,6 +158,69 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
             }
         }
 
+        // ── Brand pass (260708-dyy): real product_brand presence via WP REST ──
+        //
+        // product_brand is the taxonomy that drives meetingstore.co.uk's clickable
+        // Brand: link — and it is the ONE gap NOT in the WC /products response, so
+        // it needs a separate WP REST pass over the same publish set, matched by
+        // woo_product_id. READ-ONLY (GET only). Per-page try/catch mirrors the WC
+        // pass: one bad page logs a warning and breaks (partial reconcile retained).
+        $bPage = 1;
+        while (true) {
+            try {
+                $brandRows = $this->wp->get('wp/v2/product', [
+                    'status' => 'publish',
+                    'per_page' => $perPage,
+                    'page' => $bPage,
+                    '_fields' => 'id,product_brand',
+                ]);
+            } catch (\Throwable $e) {
+                $this->warn("WP REST product page {$bPage} failed: {$e->getMessage()} — stopping (partial reconcile retained).");
+                Log::warning('reconcile_woo_maintenance.wp_page_failed', [
+                    'page' => $bPage,
+                    'error' => $e->getMessage(),
+                ]);
+
+                break;
+            }
+
+            if (! is_array($brandRows) || $brandRows === []) {
+                break;
+            }
+
+            foreach ($brandRows as $p) {
+                // WpRestClient decodes to arrays, but cast defensively (mirrors the
+                // WC-pass stdClass fix) so a future client change can't crash here.
+                $p = (array) $p;
+                $wooId = (int) ($p['id'] ?? 0);
+                if ($wooId <= 0) {
+                    continue;
+                }
+
+                $product = Product::where('woo_product_id', $wooId)->first();
+                if ($product === null) {
+                    continue;
+                }
+
+                if (! $dry) {
+                    $product->forceFill([
+                        'woo_brand_count' => count((array) ($p['product_brand'] ?? [])),
+                    ])->saveQuietly();
+                    $brandUpdated++;
+                }
+            }
+
+            // Short page = last page.
+            if (count($brandRows) < $perPage) {
+                break;
+            }
+
+            $bPage++;
+            if ($maxPages > 0 && $bPage > $maxPages) {
+                break;
+            }
+        }
+
         $this->newLine();
         $this->table(
             ['Metric', 'Count'],
@@ -150,6 +230,7 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
                 ['matched', $matched],
                 ['updated', $updated],
                 ['unmatched', $unmatched],
+                ['brand_updated', $brandUpdated],
                 ['dry_run', $dry ? 'yes' : 'no'],
             ],
         );

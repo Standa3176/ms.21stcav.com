@@ -61,6 +61,10 @@ final class Product extends Model
         'woo_category_count',
         'woo_stock_status',
         'woo_reconciled_at',
+        // Quick task 260708-dyy — brand reconciliation Pass A: real product_brand
+        // term count per live product (the storefront Brand link), captured by the
+        // WP-REST brand pass in products:reconcile-woo-maintenance.
+        'woo_brand_count',
     ];
 
     protected $casts = [
@@ -91,6 +95,8 @@ final class Product extends Model
         'woo_image_count' => 'integer',
         'woo_category_count' => 'integer',
         'woo_reconciled_at' => 'datetime',
+        // Quick task 260708-dyy — brand reconciliation Pass A.
+        'woo_brand_count' => 'integer',
     ];
 
     public function variants(): HasMany

@@ -33,11 +33,17 @@ final class RunCatalogueGapFixJob implements ShouldQueue
 
     public int $timeout = 900;  // 25 image-sources can be slow; sync-bulk is single-worker so this is safe.
 
-    /** @param array<int, string> $skus */
+    /**
+     * @param  array<int, string>  $skus
+     * @param  array<string, mixed>  $options  extra artisan options merged into the call
+     *                                         (e.g. ['--push-to-woo' => true] for the
+     *                                         Source-images fix). Trusted admin-only input.
+     */
     public function __construct(
         public readonly string $command,
         public readonly array $skus,
         public readonly ?int $actorId = null,
+        public readonly array $options = [],
     ) {
         $this->onQueue('sync-bulk');
     }
@@ -65,6 +71,6 @@ final class RunCatalogueGapFixJob implements ShouldQueue
             'command' => $this->command, 'count' => count($this->skus), 'actor_id' => $this->actorId,
         ]);
 
-        Artisan::call($this->command, ['--skus' => $csv]);
+        Artisan::call($this->command, array_merge(['--skus' => $csv], $this->options));
     }
 }

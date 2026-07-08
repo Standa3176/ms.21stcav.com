@@ -131,13 +131,15 @@ it('gap=missing_brand narrows to the zero-brand reconciled product only', functi
         ->assertCanNotSeeTableRecords([$m['R1'], $m['R2'], $m['R3']]);
 });
 
-it('source-images row action dispatches products:source-images with the row SKU', function (): void {
+it('source-images row action dispatches products:source-images with the row SKU + --push-to-woo', function (): void {
+    // Quick task 260708-kg4 — the row fix now publishes the sourced gallery to
+    // Woo, so it threads --push-to-woo alongside --skus.
     $this->actingAs(catalogueGapsUser('admin'));
     $m = seedCatalogueGapsMatrix();
 
     Artisan::shouldReceive('call')
         ->once()
-        ->with('products:source-images', ['--skus' => 'CEY-R1-NO-IMAGES'])
+        ->with('products:source-images', ['--skus' => 'CEY-R1-NO-IMAGES', '--push-to-woo' => true])
         ->andReturn(0);
 
     Livewire::test(CatalogueGapsPage::class)
@@ -284,6 +286,33 @@ it('bulk fix action carries the correct command for each fix type', function (st
     'source images' => ['source_images_bulk', 'products:source-images'],
     'backfill EAN' => ['backfill_ean_bulk', 'products:backfill-merchant-feed'],
     'resync' => ['resync_bulk', 'products:resync-to-woo'],
+]);
+
+it('Source-images bulk threads --push-to-woo into every dispatched job; EAN + Resync carry no options', function (string $bulkAction, string $command, array $expectedOptions): void {
+    // Quick task 260708-kg4 — the Source-images fix is now END-TO-END: the bulk
+    // path passes ['--push-to-woo' => true] so each job PUBLISHES the sourced
+    // gallery to Woo. EAN/Resync bulk fixes are UNCHANGED (no options).
+    config()->set('services.woo.maintenance_fix_batch_limit', 2);
+    config()->set('services.woo.maintenance_fix_max_per_run', 1000);
+    Queue::fake();
+    $this->actingAs(catalogueGapsUser('admin'));
+    $products = seedFourMissingImageProducts(); // 4 live products, chunk 2 → 2 jobs.
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->callTableBulkAction($bulkAction, $products)
+        ->assertHasNoTableBulkActionErrors();
+
+    Queue::assertPushed(RunCatalogueGapFixJob::class, 2);
+    Queue::assertPushed(RunCatalogueGapFixJob::class, function (RunCatalogueGapFixJob $job) use ($command, $expectedOptions): bool {
+        expect($job->command)->toBe($command);
+        expect($job->options)->toBe($expectedOptions);
+
+        return true;
+    });
+})->with([
+    'source images → --push-to-woo' => ['source_images_bulk', 'products:source-images', ['--push-to-woo' => true]],
+    'backfill EAN → no options' => ['backfill_ean_bulk', 'products:backfill-merchant-feed', []],
+    'resync → no options' => ['resync_bulk', 'products:resync-to-woo', []],
 ]);
 
 it('WooMaintenanceGapsWidget gap stats deep-link into the Catalogue Gaps page per gap', function (): void {

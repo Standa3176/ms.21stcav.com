@@ -12,6 +12,7 @@ use App\Domain\ProductAutoCreate\Services\ProductImageProcessor;
 use App\Domain\ProductAutoCreate\Services\ProductImageVisionValidator;
 use App\Domain\ProductAutoCreate\Services\WebImageSearchClient;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooGalleryPublisher;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -52,6 +53,7 @@ final class SourceProductImagesCommand extends BaseCommand
         {--max=3 : Max validated images to keep per product}
         {--candidates=8 : Max candidate images to evaluate per product (cost bound)}
         {--max-spend-pence=2000 : Abort once cumulative Claude spend exceeds this (safety)}
+        {--push-to-woo : After sourcing, publish the new gallery to the product\'s existing Woo product (replaces the gallery incl. any placeholder) + bump woo_image_count. Only affects products already live on Woo that got a REAL image. Off by default (review-first).}
         {--dry-run : Source + validate + print verdicts only; do NOT store or write}';
 
     protected $description = 'Source product images (Icecat by EAN + supplier feed + web image search), Claude-vision validate (no watermarks/overlays), store up to N per draft Product';
@@ -63,6 +65,7 @@ final class SourceProductImagesCommand extends BaseCommand
         private readonly ProductImageFetcher $fetcher,
         private readonly ProductImageProcessor $processor,
         private readonly ProductImageVisionValidator $vision,
+        private readonly WooGalleryPublisher $publisher,
     ) {
         parent::__construct();
     }
@@ -73,6 +76,7 @@ final class SourceProductImagesCommand extends BaseCommand
         $max = max(1, (int) $this->option('max'));
         $candidateCap = max(1, (int) $this->option('candidates'));
         $maxSpendPence = max(0, (int) $this->option('max-spend-pence'));
+        $pushToWoo = (bool) $this->option('push-to-woo');
 
         $skus = array_values(array_filter(array_map(
             'trim',
@@ -105,6 +109,7 @@ final class SourceProductImagesCommand extends BaseCommand
             $product = Product::query()->where('sku', $sku)->first();
             if ($product === null) {
                 $this->warn("  {$sku}: no local Product — run products:generate-drafts first; skipped");
+
                 continue;
             }
 
@@ -148,6 +153,7 @@ final class SourceProductImagesCommand extends BaseCommand
 
             if ($candidates === []) {
                 $this->warn('  no candidate images — left for manual review');
+
                 continue;
             }
 
@@ -167,6 +173,7 @@ final class SourceProductImagesCommand extends BaseCommand
                 $webp = $this->fetchAndProcess($cand['url']);
                 if ($webp === null) {
                     $this->line('    ✗ '.$cand['source'].': fetch/decode failed  '.Str::limit($cand['url'], 70));
+
                     continue;
                 }
 
@@ -187,12 +194,14 @@ final class SourceProductImagesCommand extends BaseCommand
 
             if ($kept === []) {
                 $this->warn('  0 images passed validation — left for manual review');
+
                 continue;
             }
 
             if ($dryRun) {
                 $this->info('  would keep '.count($kept).' image(s) [dry-run — not stored]');
                 $productsWithImages++;
+
                 continue;
             }
 
@@ -205,6 +214,13 @@ final class SourceProductImagesCommand extends BaseCommand
 
             $productsWithImages++;
             $this->info('  ✓ stored '.count($urls).' image(s); primary set, manual-review cleared');
+
+            if ($pushToWoo) {
+                $published = $this->publisher->publish($product, $urls);
+                $this->line($published
+                    ? '  ↑ published gallery to Woo #'.$product->woo_product_id.' — placeholder replaced'
+                    : '  · not live on Woo (or no images) — kept local only');
+            }
         }
 
         $mysqli->close();
@@ -218,7 +234,9 @@ final class SourceProductImagesCommand extends BaseCommand
             number_format($totalPence / 100, 2),
         ));
         if (! $dryRun && $productsWithImages > 0) {
-            $this->line('Review at /admin/auto-create-reviews. Images are local only (no Woo write).');
+            $this->line($pushToWoo
+                ? 'Sourced images were published to Woo (gallery replaced incl. any placeholder); woo_image_count bumped.'
+                : 'Review at /admin/auto-create-reviews. Images are local only (no Woo write).');
         }
 
         return SymfonyCommand::SUCCESS;

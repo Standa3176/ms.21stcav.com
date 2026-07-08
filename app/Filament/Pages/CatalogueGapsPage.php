@@ -164,8 +164,9 @@ final class CatalogueGapsPage extends Page implements HasTable
                     'heroicon-o-photo',
                     'primary',
                     'products:source-images',
-                    'Runs products:source-images --skus=<sku>. Icecat + supplier feed + web search + Claude vision (~10p). Use only when the gallery is empty.',
+                    'Runs products:source-images --skus=<sku> --push-to-woo. Icecat + supplier feed + web search + Claude vision (~10p), then PUBLISHES the new gallery to the live Woo product — replacing any placeholder. Use only when the gallery is empty.',
                     fn (Product $record): bool => empty((array) $record->gallery_image_urls),
+                    ['--push-to-woo' => true],
                 ),
                 $this->fixAction(
                     'backfill_ean',
@@ -187,7 +188,7 @@ final class CatalogueGapsPage extends Page implements HasTable
                 ),
             ])
             ->bulkActions([
-                $this->bulkFixAction('source_images_bulk', 'Source images', 'heroicon-o-photo', 'products:source-images'),
+                $this->bulkFixAction('source_images_bulk', 'Source images', 'heroicon-o-photo', 'products:source-images', ['--push-to-woo' => true]),
                 $this->bulkFixAction('backfill_ean_bulk', 'Backfill EAN', 'heroicon-o-bars-3-bottom-left', 'products:backfill-merchant-feed'),
                 $this->bulkFixAction('resync_bulk', 'Resync to Woo', 'heroicon-o-arrow-path', 'products:resync-to-woo'),
             ]);
@@ -208,6 +209,7 @@ final class CatalogueGapsPage extends Page implements HasTable
         string $command,
         string $description,
         callable $visible,
+        array $extraOptions = [],
     ): Action {
         return Action::make($name)
             ->label($label)
@@ -218,7 +220,7 @@ final class CatalogueGapsPage extends Page implements HasTable
             ->modalDescription($description)
             ->visible(fn (Product $record): bool => (bool) auth()->user()?->hasRole('admin') && $visible($record))
             ->authorize(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
-            ->action(function (Product $record) use ($command, $label): void {
+            ->action(function (Product $record) use ($command, $label, $extraOptions): void {
                 try {
                     Log::info('CatalogueGapsPage: fix action invoked', [
                         'command' => $command,
@@ -227,7 +229,7 @@ final class CatalogueGapsPage extends Page implements HasTable
                     ]);
                     // Array-option form — never concatenate user input into a
                     // shell-style string.
-                    Artisan::call($command, ['--skus' => $record->sku]);
+                    Artisan::call($command, array_merge(['--skus' => $record->sku], $extraOptions));
 
                     Notification::make()
                         ->success()
@@ -259,7 +261,7 @@ final class CatalogueGapsPage extends Page implements HasTable
      * notification says '(capped at N of M — run again for the rest)'. Per-row
      * fixAction() stays synchronous + UNCHANGED.
      */
-    private function bulkFixAction(string $name, string $label, string $icon, string $command): BulkAction
+    private function bulkFixAction(string $name, string $label, string $icon, string $command, array $extraOptions = []): BulkAction
     {
         $chunkSize = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
         $maxPerRun = max($chunkSize, (int) config('services.woo.maintenance_fix_max_per_run', 1000));
@@ -271,7 +273,7 @@ final class CatalogueGapsPage extends Page implements HasTable
             ->modalDescription("Queues {$command} for every selected product (up to {$maxPerRun}) as background batches of {$chunkSize}, processed one batch at a time on the sync-bulk queue so it can't overload the shop or the fix APIs. Watch progress in Horizon — you don't need to re-run.")
             ->visible(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
             ->authorize(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
-            ->action(function (Collection $records) use ($command, $label, $chunkSize, $maxPerRun): void {
+            ->action(function (Collection $records) use ($command, $label, $chunkSize, $maxPerRun, $extraOptions): void {
                 $skus = $records
                     ->pluck('sku')
                     ->filter(fn ($sku): bool => $sku !== null && $sku !== '')
@@ -289,7 +291,7 @@ final class CatalogueGapsPage extends Page implements HasTable
 
                 $batches = 0;
                 foreach ($skus->chunk($chunkSize) as $chunk) {
-                    RunCatalogueGapFixJob::dispatch($command, $chunk->values()->all(), auth()->id());
+                    RunCatalogueGapFixJob::dispatch($command, $chunk->values()->all(), auth()->id(), $extraOptions);
                     $batches++;
                 }
 

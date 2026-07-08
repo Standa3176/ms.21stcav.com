@@ -65,6 +65,31 @@ it('drops blank SKUs from the CSV but still runs when at least one is valid', fu
     (new RunCatalogueGapFixJob('products:source-images', ['', 'SKU-KEEP', '']))->handle();
 });
 
+it('forwards extra options (e.g. --push-to-woo) alongside --skus into Artisan::call', function (): void {
+    // Quick task 260708-kg4 — the Source-images fix threads --push-to-woo through
+    // the job so the sourced gallery is PUBLISHED to Woo (not just stored locally).
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('products:source-images', ['--skus' => 'SKU-1,SKU-2', '--push-to-woo' => true])
+        ->andReturn(0);
+
+    (new RunCatalogueGapFixJob(
+        'products:source-images',
+        ['SKU-1', 'SKU-2'],
+        null,
+        ['--push-to-woo' => true],
+    ))->handle();
+});
+
+it('passes ONLY --skus when no extra options are given (default — EAN/Resync path)', function (): void {
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('products:resync-to-woo', ['--skus' => 'SKU-1'])
+        ->andReturn(0);
+
+    (new RunCatalogueGapFixJob('products:resync-to-woo', ['SKU-1']))->handle();
+});
+
 it('dispatches onto the sync-bulk queue', function (): void {
     Queue::fake();
 

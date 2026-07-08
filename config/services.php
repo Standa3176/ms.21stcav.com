@@ -135,9 +135,15 @@ return [
         // EnvUsageTest guardrail — never read env() from the page directly.
         'storefront_url' => env('WOO_STOREFRONT_URL', 'https://meetingstore.co.uk'),
 
-        // 260708-gab — max products a single Catalogue Gaps BULK fix action processes (Source images / Backfill
-        // EAN cost per-SKU API calls; cap protects against an accidental huge run + a 30s web timeout).
+        // 260708-gab / 260708-jou — CHUNK size for background Catalogue Gaps bulk fixes: how many SKUs go into
+        // each RunCatalogueGapFixJob dispatched onto the sync-bulk queue. No longer a hard per-click cap — the
+        // whole ticked selection is queued (up to maintenance_fix_max_per_run below) as chunks of this size,
+        // processed one batch at a time by the single sync-bulk worker.
         'maintenance_fix_batch_limit' => (int) env('WOO_MAINTENANCE_FIX_BATCH_LIMIT', 25),
+
+        // 260708-jou — hard ceiling on how many products a single Catalogue Gaps bulk-fix CLICK may queue
+        // (the work runs in the background now; this stops one click queueing the entire catalogue).
+        'maintenance_fix_max_per_run' => (int) env('WOO_MAINTENANCE_FIX_MAX_PER_RUN', 1000),
     ],
 
     'woocommerce' => [

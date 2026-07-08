@@ -32,6 +32,7 @@ declare(strict_types=1);
 |   R3 fully populated     — no gaps
 */
 
+use App\Domain\Products\Jobs\RunCatalogueGapFixJob;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Services\ProductGapReport;
 use App\Filament\Pages\CatalogueGapsPage;
@@ -42,6 +43,7 @@ use Filament\Widgets\StatsOverviewWidget\Stat;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -177,47 +179,112 @@ function seedFourMissingImageProducts(): array
         ->all();
 }
 
-it('bulk fix action caps the dispatched SKUs at the configured batch limit', function (): void {
-    // Quick task 260708-gab — with the batch limit set LOW, selecting MORE than
-    // the limit must dispatch only the first N SKUs (money-costing per-SKU calls
-    // + a synchronous ~30s web request → an accidental huge run is the hazard).
+/**
+ * Collect the SKU list carried by every RunCatalogueGapFixJob that was pushed,
+ * asserting each job is for the expected command + on the sync-bulk queue.
+ *
+ * @return array<int, string> the flattened union of every job's ->skus
+ */
+function pushedGapFixSkus(string $expectedCommand): array
+{
+    $union = [];
+
+    Queue::assertPushed(RunCatalogueGapFixJob::class, function (RunCatalogueGapFixJob $job) use ($expectedCommand, &$union): bool {
+        expect($job->command)->toBe($expectedCommand);
+        expect($job->queue)->toBe('sync-bulk');
+
+        foreach ($job->skus as $sku) {
+            $union[] = $sku;
+        }
+
+        return true;
+    });
+
+    return $union;
+}
+
+it('bulk fix action queues the WHOLE selection as chunked jobs on sync-bulk (none lost or duplicated)', function (): void {
+    // Quick task 260708-jou — one click no longer stops at 25: it queues the
+    // entire ticked selection to sync-bulk in chunks of maintenance_fix_batch_limit.
     config()->set('services.woo.maintenance_fix_batch_limit', 2);
+    config()->set('services.woo.maintenance_fix_max_per_run', 1000);
+    Queue::fake();
     $this->actingAs(catalogueGapsUser('admin'));
     $products = seedFourMissingImageProducts(); // 4 live products, all missing_images.
 
-    Artisan::shouldReceive('call')
-        ->once()
-        ->withArgs(function (string $command, array $options): bool {
-            return $command === 'products:resync-to-woo'
-                && isset($options['--skus'])
-                // Exactly 2 SKUs dispatched even though 4 were selected.
-                && count(array_filter(explode(',', (string) $options['--skus']))) === 2;
-        })
-        ->andReturn(0);
-
     Livewire::test(CatalogueGapsPage::class)
         ->callTableBulkAction('resync_bulk', $products)
         ->assertHasNoTableBulkActionErrors();
+
+    // 4 selected / chunk 2 → exactly 2 jobs.
+    Queue::assertPushed(RunCatalogueGapFixJob::class, 2);
+
+    $expected = collect($products)->map(fn (Product $p): string => (string) $p->sku)->sort()->values()->all();
+    $union = collect(pushedGapFixSkus('products:resync-to-woo'))->sort()->values()->all();
+
+    // Union across all jobs equals the selected set — none lost, none duplicated.
+    expect($union)->toBe($expected);
+    expect($union)->toHaveCount(4);
 });
 
-it('bulk fix action dispatches every selected SKU when the selection is within the batch limit', function (): void {
+it('bulk fix action queues a single batch when the selection fits in one chunk', function (): void {
     config()->set('services.woo.maintenance_fix_batch_limit', 10);
+    config()->set('services.woo.maintenance_fix_max_per_run', 1000);
+    Queue::fake();
     $this->actingAs(catalogueGapsUser('admin'));
-    $products = seedFourMissingImageProducts(); // 4 live products, limit 10 → no cap.
-
-    Artisan::shouldReceive('call')
-        ->once()
-        ->withArgs(function (string $command, array $options): bool {
-            return $command === 'products:resync-to-woo'
-                && isset($options['--skus'])
-                && count(array_filter(explode(',', (string) $options['--skus']))) === 4;
-        })
-        ->andReturn(0);
+    $products = seedFourMissingImageProducts(); // 4 live products, chunk 10 → 1 batch.
 
     Livewire::test(CatalogueGapsPage::class)
         ->callTableBulkAction('resync_bulk', $products)
         ->assertHasNoTableBulkActionErrors();
+
+    Queue::assertPushed(RunCatalogueGapFixJob::class, 1);
+
+    $union = pushedGapFixSkus('products:resync-to-woo');
+    expect($union)->toHaveCount(4);
 });
+
+it('bulk fix action enforces the max-per-run ceiling (only the first N are queued)', function (): void {
+    // Quick task 260708-jou — a single click queues at most maintenance_fix_max_per_run
+    // products; the rest wait for a re-run. chunk 1 + ceiling 2 + 4 selected → 2 jobs.
+    config()->set('services.woo.maintenance_fix_batch_limit', 1);
+    config()->set('services.woo.maintenance_fix_max_per_run', 2);
+    Queue::fake();
+    $this->actingAs(catalogueGapsUser('admin'));
+    $products = seedFourMissingImageProducts(); // 4 selected, ceiling 2.
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->callTableBulkAction('resync_bulk', $products)
+        ->assertHasNoTableBulkActionErrors();
+
+    // min(4, 2) / chunk 1 → exactly 2 jobs (the ceiling capped the run).
+    Queue::assertPushed(RunCatalogueGapFixJob::class, 2);
+
+    $union = pushedGapFixSkus('products:resync-to-woo');
+    expect($union)->toHaveCount(2);
+    // Every queued SKU is one of the selected products (a genuine subset).
+    $selected = collect($products)->map(fn (Product $p): string => (string) $p->sku)->all();
+    expect(collect($union)->every(fn (string $sku): bool => in_array($sku, $selected, true)))->toBeTrue();
+});
+
+it('bulk fix action carries the correct command for each fix type', function (string $bulkAction, string $command): void {
+    config()->set('services.woo.maintenance_fix_batch_limit', 25);
+    config()->set('services.woo.maintenance_fix_max_per_run', 1000);
+    Queue::fake();
+    $this->actingAs(catalogueGapsUser('admin'));
+    $products = seedFourMissingImageProducts();
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->callTableBulkAction($bulkAction, $products)
+        ->assertHasNoTableBulkActionErrors();
+
+    Queue::assertPushed(RunCatalogueGapFixJob::class, 1);
+    pushedGapFixSkus($command); // asserts ->command + sync-bulk queue for the pushed job
+})->with([
+    'source images' => ['source_images_bulk', 'products:source-images'],
+    'backfill EAN' => ['backfill_ean_bulk', 'products:backfill-merchant-feed'],
+    'resync' => ['resync_bulk', 'products:resync-to-woo'],
+]);
 
 it('WooMaintenanceGapsWidget gap stats deep-link into the Catalogue Gaps page per gap', function (): void {
     $this->actingAs(catalogueGapsUser('admin'));

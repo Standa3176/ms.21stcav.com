@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Filament\Pages;
 
+use App\Domain\Products\Jobs\RunCatalogueGapFixJob;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Services\ProductGapReport;
 use App\Models\User;
@@ -243,76 +244,70 @@ final class CatalogueGapsPage extends Page implements HasTable
     }
 
     /**
-     * A bulk fix action: gather the selected SKUs into a CSV --skus option and
-     * dispatch the same command once. Admin-gated, requiresConfirmation, same
-     * try/catch → Notification shape.
+     * A bulk fix action: queue the WHOLE ticked selection (up to a high safety
+     * ceiling) to the background as chunked RunCatalogueGapFixJob on the
+     * sync-bulk queue. Admin-gated, requiresConfirmation.
      *
-     * Quick task 260708-gab — the bulk actions are CAPPED at
-     * config('services.woo.maintenance_fix_batch_limit', 25) SKUs per run.
-     * Source images / Backfill EAN cost per-SKU API calls and the command runs
-     * synchronously inside the web request, so an accidental 600-SKU selection
-     * would burn money and blow past the ~30s web timeout. If the operator
-     * selects MORE than the limit, only the first N SKUs are dispatched and the
-     * notification says how many were capped. Per-row fixAction() is UNCHANGED.
+     * Quick task 260708-jou — REPLACES the 260708-gab synchronous 25-cap. One
+     * click no longer stops at 25: it takes up to
+     * config('services.woo.maintenance_fix_max_per_run', 1000) selected SKUs,
+     * chunks them by config('services.woo.maintenance_fix_batch_limit', 25),
+     * and dispatches one RunCatalogueGapFixJob per chunk onto sync-bulk (Horizon
+     * maxProcesses=1 → one batch at a time, so a big run can't saturate prod CPU
+     * or burst the per-SKU fix APIs, and no supervisor/deploy change is needed).
+     * If the selection exceeds the ceiling, the first N are queued and the
+     * notification says '(capped at N of M — run again for the rest)'. Per-row
+     * fixAction() stays synchronous + UNCHANGED.
      */
     private function bulkFixAction(string $name, string $label, string $icon, string $command): BulkAction
     {
-        $limit = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
+        $chunkSize = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
+        $maxPerRun = max($chunkSize, (int) config('services.woo.maintenance_fix_max_per_run', 1000));
 
         return BulkAction::make($name)
             ->label($label)
             ->icon($icon)
             ->requiresConfirmation()
-            ->modalDescription("Runs {$command} --skus=<selected SKUs> once for the selected products. Bulk runs are capped at {$limit} product(s) per click — if you select more, the first {$limit} are processed and you re-run for the rest.")
+            ->modalDescription("Queues {$command} for every selected product (up to {$maxPerRun}) as background batches of {$chunkSize}, processed one batch at a time on the sync-bulk queue so it can't overload the shop or the fix APIs. Watch progress in Horizon — you don't need to re-run.")
             ->visible(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
             ->authorize(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
-            ->action(function (Collection $records) use ($command, $label): void {
-                $limit = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
-
+            ->action(function (Collection $records) use ($command, $label, $chunkSize, $maxPerRun): void {
                 $skus = $records
                     ->pluck('sku')
                     ->filter(fn ($sku): bool => $sku !== null && $sku !== '')
                     ->values();
                 $selected = $skus->count();
-                $batch = $skus->take($limit);
-                $csv = $batch->implode(',');
 
-                if ($csv === '') {
-                    Notification::make()
-                        ->warning()
-                        ->title('No SKUs in the selection')
-                        ->send();
+                if ($selected === 0) {
+                    Notification::make()->warning()->title('No SKUs in the selection')->send();
 
                     return;
                 }
 
-                try {
-                    Log::info('CatalogueGapsPage: bulk fix action invoked', [
-                        'command' => $command,
-                        'skus' => $csv,
-                        'dispatched' => $batch->count(),
-                        'selected' => $selected,
-                        'limit' => $limit,
-                        'actor_id' => auth()->id(),
-                    ]);
-                    Artisan::call($command, ['--skus' => $csv]);
+                $skus = $skus->take($maxPerRun);
+                $queued = $skus->count();
 
-                    $title = "{$label} dispatched for ".$batch->count().' product(s)';
-                    if ($selected > $limit) {
-                        $title .= " (capped at {$limit} of {$selected} selected — run again for the rest)";
-                    }
-
-                    Notification::make()
-                        ->success()
-                        ->title($title)
-                        ->send();
-                } catch (\Throwable $e) {
-                    Notification::make()
-                        ->danger()
-                        ->title("{$label} failed")
-                        ->body($e->getMessage())
-                        ->send();
+                $batches = 0;
+                foreach ($skus->chunk($chunkSize) as $chunk) {
+                    RunCatalogueGapFixJob::dispatch($command, $chunk->values()->all(), auth()->id());
+                    $batches++;
                 }
+
+                Log::info('CatalogueGapsPage: bulk fix queued', [
+                    'command' => $command, 'selected' => $selected, 'queued' => $queued,
+                    'batches' => $batches, 'chunk_size' => $chunkSize, 'actor_id' => auth()->id(),
+                ]);
+
+                $title = "{$label}: queued {$queued} product(s) in {$batches} background batch(es)";
+                if ($selected > $maxPerRun) {
+                    $title .= " (capped at {$maxPerRun} of {$selected} — run again for the rest)";
+                }
+
+                Notification::make()
+                    ->success()
+                    ->title($title)
+                    ->body('Processing in the background on the sync-bulk queue — watch Horizon; one batch at a time.')
+                    ->send();
             });
     }
 }

@@ -36,7 +36,7 @@ use App\Foundation\Audit\Services\Auditor;
  * to the system activity log via Auditor so the ops-side inspector can see
  * exactly which fields the guard pushed back.
  */
-final class ProductOverrideGuard
+class ProductOverrideGuard
 {
     /**
      * @var array<string, array{pin: ?string, local: ?string}>

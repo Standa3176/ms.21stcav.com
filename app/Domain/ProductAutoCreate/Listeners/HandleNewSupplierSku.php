@@ -38,11 +38,16 @@ final class HandleNewSupplierSku implements ShouldQueue
 {
     use InteractsWithQueue;
 
-    public function __construct(private IntegrationLogger $logger)
+    public function __construct(private IntegrationLogger $logger) {}
+
+    /**
+     * Queued-listener queue selector — listeners have no onQueue(); viaQueue() is
+     * the sanctioned hook and avoids the PHP 8.4 public-$queue property collision
+     * the class warns about (Phase 5 Plan 02 + Phase 6 Plan 02 lessons).
+     */
+    public function viaQueue(): string
     {
-        // PHP 8.4 trait-collision guard — NEVER public string $queue
-        // (Phase 5 Plan 02 + Phase 6 Plan 02 lessons).
-        $this->onQueue('sync-bulk');
+        return 'sync-bulk';
     }
 
     public function handle(NewSupplierSkuDetected $event): void

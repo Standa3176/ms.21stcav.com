@@ -67,15 +67,25 @@ final class FieldPinManager
      */
     public function savePins(Product $product, array $pins): bool
     {
-        if (! auth()->user()?->can('update', ProductOverride::class)) {
+        // Build the override first so the gate authorises against an INSTANCE —
+        // ProductOverridePolicy::update(User, ProductOverride) requires the model
+        // arg; a class-string would raise ArgumentCountError (pin-save 500).
+        // The policy is role-only, so a non-persisted instance is fine here.
+        $override = ProductOverride::firstOrNew(['product_id' => $product->id]);
+
+        if (! auth()->user()?->can('update', $override)) {
             return false;
         }
-
-        $override = ProductOverride::firstOrNew(['product_id' => $product->id]);
 
         if (! $override->exists) {
             $override->created_by_user_id = auth()->id();
             $override->reason = 'Pin flags set via Filament Products Resource';
+            // product_overrides.margin_basis_points is NOT NULL. A pins-only
+            // override carries no margin change, so seed 0 — the same convention
+            // App\Domain\Agents\Appliers\SeoContentPatchApplier uses when it
+            // upserts an override solely for pin flags. Without this the INSERT
+            // 500s on a product that has no pre-existing override.
+            $override->margin_basis_points ??= 0;
         }
 
         foreach (self::PIN_COLUMNS as $col) {

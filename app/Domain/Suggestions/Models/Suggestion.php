@@ -10,7 +10,9 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Human-in-the-loop suggestion. Producers create these; admins approve/reject
@@ -66,6 +68,26 @@ class Suggestion extends Model
         //     triaged_by_user_id?: int }
         'agent_rejection_feedback' => 'array',
     ];
+
+    /**
+     * Prod audit-write hardening — payload + correlation_id are NOT NULL in the
+     * schema, but failure-audit hooks (CreateWooProductJob::failed,
+     * ProcessAutoCreateImageJob) write Suggestions outside a correlated context
+     * and without a payload. Default only when MISSING; explicit values pass
+     * through unchanged.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (self $s): void {
+            if ($s->payload === null) {
+                $s->payload = [];
+            }
+
+            if ($s->correlation_id === null || $s->correlation_id === '') {
+                $s->correlation_id = Context::get('correlation_id') ?? (string) Str::uuid();
+            }
+        });
+    }
 
     public function proposedBy(): MorphTo
     {

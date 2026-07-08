@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Context;
  * D-09 compliance: retention prune commands call Auditor::record() so the prune
  * action itself is auditable. FOUND-04 compliance: correlation_id threads through.
  */
-final class Auditor
+class Auditor
 {
     public function record(string $action, array $context = []): void
     {

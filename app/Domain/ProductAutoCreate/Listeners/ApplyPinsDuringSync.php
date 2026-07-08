@@ -41,8 +41,10 @@ use Illuminate\Support\Facades\Log;
  *
  * Queue strategy: sync-bulk (same queue as the triggering Phase 2 event) so
  * the revert PUT rides the same worker shard and minimises divergence latency.
- * `$this->onQueue('sync-bulk')` in the constructor — NEVER public string $queue
- * (Phase 5 Plan 02 + Phase 6 Plan 02 PHP 8.4 trait-collision lesson).
+ * Selected via viaQueue() — queued LISTENERS (unlike jobs) have no onQueue()
+ * from InteractsWithQueue, so a constructor onQueue() call fatals on
+ * instantiation. viaQueue() is the sanctioned hook and avoids the PHP 8.4
+ * public-$queue property collision (Phase 5 Plan 02 + Phase 6 Plan 02 lesson).
  *
  * Fail-open: per-event exceptions from the guard are logged + swallowed via
  * safeRevert() so a single failed revert does NOT cascade-fail the rest of the
@@ -52,9 +54,11 @@ final class ApplyPinsDuringSync implements ShouldQueue
 {
     use InteractsWithQueue;
 
-    public function __construct(private ProductOverrideGuard $guard)
+    public function __construct(private ProductOverrideGuard $guard) {}
+
+    public function viaQueue(): string
     {
-        $this->onQueue('sync-bulk');
+        return 'sync-bulk';
     }
 
     public function handlePriceChanged(SupplierPriceChanged $event): void

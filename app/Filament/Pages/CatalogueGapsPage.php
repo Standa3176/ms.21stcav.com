@@ -38,9 +38,16 @@ use Illuminate\Support\Facades\Log;
  * action is admin-gated, requiresConfirmation, dispatches the existing artisan
  * command via Artisan::call(['--skus' => ...]) (array-option form — never
  * concatenate into a shell string), and wraps in try/catch with a Notification.
- * The four fixable gaps map to: source-images (missing images), backfill EAN
- * (missing ean), hydrate stock (missing stock status), resync-to-woo (always).
- * Brand/category gaps have no one-click fix — surfaced for manual triage.
+ * The fixable gaps map to: source-images (missing images), backfill EAN
+ * (missing ean), resync-to-woo (always). Category gaps have no one-click fix
+ * — surfaced for manual triage.
+ *
+ * Quick task 260708-cey — PASS 2 REWIRE. The Gap filter is now the 3 reconciled
+ * gaps (ProductGapReport::GAPS) and reuses ProductGapReport::apply(), which
+ * gates on woo_reconciled_at and reads the woo_* mirror. The columns surface
+ * that reconciled truth: woo_image_count / woo_gtin / woo_category_count /
+ * woo_reconciled_at. Stock dropped from the gap set (always set on Woo), so the
+ * Hydrate stock action was removed; the remaining fix actions are unchanged.
  */
 final class CatalogueGapsPage extends Page implements HasTable
 {
@@ -91,42 +98,39 @@ final class CatalogueGapsPage extends Page implements HasTable
                     ->limit(50)
                     ->tooltip(fn (Product $record): ?string => $record->name),
 
-                TextColumn::make('brand_id')
-                    ->label('Brand')
-                    ->state(fn (Product $record): string => $record->brand_id === null
-                        ? '— none'
-                        : '#'.$record->brand_id)
-                    ->badge()
-                    ->color(fn (string $state): string => $state === '— none' ? 'danger' : 'gray'),
-
-                TextColumn::make('category_id')
-                    ->label('Category')
-                    ->state(fn (Product $record): string => $record->category_id === null
-                        ? '— none'
-                        : '#'.$record->category_id)
-                    ->badge()
-                    ->color(fn (string $state): string => $state === '— none' ? 'danger' : 'gray'),
-
-                TextColumn::make('images')
+                // Reconciled truth (woo_* mirror), not the local columns.
+                TextColumn::make('woo_image_count')
                     ->label('Images')
-                    ->state(fn (Product $record): int => count((array) $record->gallery_image_urls))
                     ->badge()
-                    ->color(fn (int $state): string => $state === 0 ? 'danger' : 'success'),
+                    ->placeholder('—')
+                    ->color(fn (?int $state): string => $state === null
+                        ? 'gray'
+                        : ($state === 0 ? 'danger' : 'success')),
 
-                TextColumn::make('ean')
+                TextColumn::make('woo_gtin')
+                    ->label('EAN')
                     ->placeholder('— none')
                     ->badge()
                     ->color(fn (?string $state): string => ($state === null || $state === '') ? 'danger' : 'gray'),
 
-                TextColumn::make('stock_status')
-                    ->placeholder('— none')
+                TextColumn::make('woo_category_count')
+                    ->label('Categories')
                     ->badge()
-                    ->color(fn (?string $state): string => ($state === null || $state === '') ? 'danger' : 'gray'),
+                    ->placeholder('—')
+                    ->color(fn (?int $state): string => $state === null
+                        ? 'gray'
+                        : ($state === 0 ? 'danger' : 'success')),
+
+                TextColumn::make('woo_reconciled_at')
+                    ->label('Reconciled')
+                    ->dateTime()
+                    ->placeholder('never')
+                    ->toggleable(),
 
                 TextColumn::make('woo_product_id')
                     ->label('Woo ID')
                     ->fontFamily('mono')
-                    ->toggleable(),
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('gap')
@@ -157,15 +161,6 @@ final class CatalogueGapsPage extends Page implements HasTable
                     fn (Product $record): bool => $record->ean === null || trim((string) $record->ean) === '',
                 ),
                 $this->fixAction(
-                    'hydrate_stock',
-                    'Hydrate stock',
-                    'heroicon-o-cube',
-                    'primary',
-                    'products:hydrate-live-stock',
-                    'Runs products:hydrate-live-stock --skus=<sku>. Re-hydrates stock_quantity/stock_status/buy_price from the live cheapest-fresh-in-stock supplier offer. MS-side only.',
-                    fn (Product $record): bool => $record->stock_status === null || trim((string) $record->stock_status) === '',
-                ),
-                $this->fixAction(
                     'resync',
                     'Resync to Woo',
                     'heroicon-o-arrow-path',
@@ -178,7 +173,6 @@ final class CatalogueGapsPage extends Page implements HasTable
             ->bulkActions([
                 $this->bulkFixAction('source_images_bulk', 'Source images', 'heroicon-o-photo', 'products:source-images'),
                 $this->bulkFixAction('backfill_ean_bulk', 'Backfill EAN', 'heroicon-o-bars-3-bottom-left', 'products:backfill-merchant-feed'),
-                $this->bulkFixAction('hydrate_stock_bulk', 'Hydrate stock', 'heroicon-o-cube', 'products:hydrate-live-stock'),
                 $this->bulkFixAction('resync_bulk', 'Resync to Woo', 'heroicon-o-arrow-path', 'products:resync-to-woo'),
             ]);
     }

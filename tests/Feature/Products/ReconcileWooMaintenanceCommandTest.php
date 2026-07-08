@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Services\WpRestClient;
 use Illuminate\Support\Facades\Artisan;
 
 /*
@@ -16,11 +17,17 @@ use Illuminate\Support\Facades\Artisan;
 | local woo_* columns, matched by woo_product_id. READ-ONLY on Woo — the stub's
 | put()/post() THROW so any accidental Woo write fails the test.
 |
+| Quick task 260708-dyy (Pass A) adds a SECOND, read-only pass over the WP REST
+| product list (`GET wp/v2/product`, _fields=id,product_brand) via WpRestClient
+| that records each matched product's real product_brand count into the new
+| woo_brand_count column — product_brand is the taxonomy driving the storefront
+| Brand link. The WC pass above is UNCHANGED; WP writes (post/put/delete) THROW.
+|
 | Scenarios:
-|   A — Product 101 (2 images / gtin '50123' / 1 category / instock) reconciles.
-|   B — Product 102 (0 images / blank gtin / 0 categories / outofstock) → gtin null.
-|   C — A local product whose woo id is NOT returned by Woo stays untouched.
-|   D — --dry-run pages Woo but writes NOTHING.
+|   A — Product 101 (2 images / gtin '50123' / 1 category / instock / 1 brand) reconciles.
+|   B — Product 102 (0 images / blank gtin / 0 categories / outofstock / 0 brands) → gtin + brand-count-0.
+|   C — A local product whose woo id is NOT returned by Woo/WP stays untouched.
+|   D — --dry-run pages Woo + WP but writes NOTHING.
 */
 
 /**
@@ -72,6 +79,69 @@ function bindReconcileWooStub(array $page1Rows): object
     return $stub;
 }
 
+/**
+ * Bind a WpRestClient stub for the Pass-A brand pass (quick task 260708-dyy).
+ *
+ * get('wp/v2/product', page 1) returns the product_brand fixture rows (plain
+ * assoc arrays — WpRestClient json-decodes to arrays, unlike the WC list which
+ * stays stdClass); page >= 2 returns [] (exhausted). post()/put()/delete()
+ * THROW — the brand pass is READ-ONLY on WP, so any accidental write fails the
+ * suite (mirrors the WooClient read-only guard above).
+ *
+ * @return object the bound stub (public $getCalls records the get() args)
+ */
+function bindReconcileWpStub(): object
+{
+    $stub = new class extends WpRestClient
+    {
+        /** @var array<int, array{path:string, query:array<string,mixed>}> */
+        public array $getCalls = [];
+
+        public function __construct()
+        {
+            // Skip parent constructor — no baseUrl/creds needed; only get()
+            // returns data, writes throw.
+        }
+
+        public function get(string $path, array $query = []): array
+        {
+            $this->getCalls[] = ['path' => $path, 'query' => $query];
+
+            return ((int) ($query['page'] ?? 1)) === 1
+                ? [
+                    ['id' => 101, 'product_brand' => [12843]],
+                    ['id' => 102, 'product_brand' => []],
+                ]
+                : [];
+        }
+
+        public function post(string $path, array $body): array
+        {
+            throw new RuntimeException(
+                "260708-dyy invariant violated: reconcile called WpRestClient::post({$path}). Read-only on WP."
+            );
+        }
+
+        public function put(string $path, array $body): array
+        {
+            throw new RuntimeException(
+                "260708-dyy invariant violated: reconcile called WpRestClient::put({$path}). Read-only on WP."
+            );
+        }
+
+        public function delete(string $path): bool
+        {
+            throw new RuntimeException(
+                "260708-dyy invariant violated: reconcile called WpRestClient::delete({$path}). Read-only on WP."
+            );
+        }
+    };
+
+    app()->instance(WpRestClient::class, $stub);
+
+    return $stub;
+}
+
 /** The two live products Woo returns for page 1, plus one Woo omits. */
 function seedReconcileProducts(): void
 {
@@ -112,6 +182,7 @@ function reconcileFixtureRows(): array
 it('mirrors Woo state into woo_* columns per matched product', function (): void {
     seedReconcileProducts();
     $stub = bindReconcileWooStub(reconcileFixtureRows());
+    $wpStub = bindReconcileWpStub();
 
     $exit = Artisan::call('products:reconcile-woo-maintenance');
 
@@ -123,6 +194,8 @@ it('mirrors Woo state into woo_* columns per matched product', function (): void
     expect($p101->woo_category_count)->toBe(1);
     expect($p101->woo_stock_status)->toBe('instock');
     expect($p101->woo_reconciled_at)->not->toBeNull();
+    // Pass A — real product_brand presence from the WP REST pass.
+    expect($p101->woo_brand_count)->toBe(1);
 
     $p102 = Product::where('woo_product_id', 102)->firstOrFail();
     expect($p102->woo_image_count)->toBe(0);
@@ -130,18 +203,27 @@ it('mirrors Woo state into woo_* columns per matched product', function (): void
     expect($p102->woo_category_count)->toBe(0);
     expect($p102->woo_stock_status)->toBe('outofstock');
     expect($p102->woo_reconciled_at)->not->toBeNull();
+    // Empty product_brand array → 0 (the "missing brand" gap Pass B will report).
+    expect($p102->woo_brand_count)->toBe(0);
 
-    // Only GETs were issued — put()/post() would have thrown.
+    // WC pass — only GETs were issued — put()/post() would have thrown.
     expect($stub->getCalls)->not->toBeEmpty();
     expect($stub->getCalls[0]['endpoint'])->toBe('products');
     expect($stub->getCalls[0]['query']['status'])->toBe('publish');
     expect($stub->getCalls[0]['query']['_fields'])
         ->toBe('id,images,global_unique_id,categories,stock_status');
+
+    // WP REST brand pass — read-only GET on wp/v2/product with the brand field.
+    expect($wpStub->getCalls)->not->toBeEmpty();
+    expect($wpStub->getCalls[0]['path'])->toBe('wp/v2/product');
+    expect($wpStub->getCalls[0]['query']['status'])->toBe('publish');
+    expect($wpStub->getCalls[0]['query']['_fields'])->toBe('id,product_brand');
 });
 
 it('leaves a product Woo does not return untouched', function (): void {
     seedReconcileProducts();
     bindReconcileWooStub(reconcileFixtureRows());
+    bindReconcileWpStub();
 
     Artisan::call('products:reconcile-woo-maintenance');
 
@@ -151,11 +233,14 @@ it('leaves a product Woo does not return untouched', function (): void {
     expect($p999->woo_category_count)->toBeNull();
     expect($p999->woo_stock_status)->toBeNull();
     expect($p999->woo_reconciled_at)->toBeNull();
+    // Neither the WC pass nor the WP brand pass returned 999 → brand count stays null.
+    expect($p999->woo_brand_count)->toBeNull();
 });
 
 it('--dry-run pages Woo but writes nothing', function (): void {
     seedReconcileProducts();
     $stub = bindReconcileWooStub(reconcileFixtureRows());
+    $wpStub = bindReconcileWpStub();
 
     $exit = Artisan::call('products:reconcile-woo-maintenance', ['--dry-run' => true]);
 
@@ -168,15 +253,19 @@ it('--dry-run pages Woo but writes nothing', function (): void {
         expect($p->woo_category_count)->toBeNull();
         expect($p->woo_stock_status)->toBeNull();
         expect($p->woo_reconciled_at)->toBeNull();
+        // Brand pass is also a no-op under --dry-run.
+        expect($p->woo_brand_count)->toBeNull();
     }
 
-    // Dry-run still PAGES Woo (read-only), so a match report can be printed.
+    // Dry-run still PAGES both Woo and WP (read-only), so a match report can be printed.
     expect($stub->getCalls)->not->toBeEmpty();
+    expect($wpStub->getCalls)->not->toBeEmpty();
 });
 
 it('clamps --per-page into the 1..100 Woo range', function (): void {
     seedReconcileProducts();
     $stub = bindReconcileWooStub(reconcileFixtureRows());
+    bindReconcileWpStub();
 
     Artisan::call('products:reconcile-woo-maintenance', ['--per-page' => 500]);
 

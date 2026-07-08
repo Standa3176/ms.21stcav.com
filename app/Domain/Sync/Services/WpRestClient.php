@@ -26,7 +26,10 @@ use Illuminate\Support\Facades\Log;
  * try/catch without parsing exception classes — keeps the surface small
  * for the one taxonomy use-case this currently exists for.
  */
-final class WpRestClient
+// Not `final` so the feature suite can bind a subclass stub via
+// app()->instance (mirrors the WooClient read-only-guard stub in
+// ReconcileWooMaintenanceCommandTest — writes throw). No behaviour change.
+class WpRestClient
 {
     public function __construct(
         private readonly string $baseUrl,

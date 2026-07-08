@@ -98,6 +98,10 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
             $pages++;
 
             foreach ($rows as $p) {
+                // Woo list items are stdClass (normaliseResponseBody returns an
+                // already-array /products response as-is, so items stay objects);
+                // cast so $p['id'] etc. work. No-op if a caller passes an array.
+                $p = (array) $p;
                 $wooId = (int) ($p['id'] ?? 0);
                 if ($wooId <= 0) {
                     continue;

@@ -81,18 +81,25 @@ function seedReconcileProducts(): void
     Product::factory()->create(['woo_product_id' => 999, 'sku' => 'R-999', 'status' => 'publish']);
 }
 
-/** Fixture rows the stub returns for page 1. */
+/**
+ * Fixture rows the stub returns for page 1.
+ *
+ * Returned as stdClass OBJECTS to match what WooClient actually yields: its
+ * normaliseResponseBody() returns an already-array response (the /products list)
+ * as-is, so each list ITEM stays a stdClass. This shape reproduces the prod crash
+ * ("Cannot use object of type stdClass as array") on the unfixed command.
+ */
 function reconcileFixtureRows(): array
 {
     return [
-        [
+        (object) [
             'id' => 101,
-            'images' => [['id' => 1], ['id' => 2]],
+            'images' => [(object) [], (object) []],
             'global_unique_id' => '50123',
-            'categories' => [['id' => 10]],
+            'categories' => [(object) []],
             'stock_status' => 'instock',
         ],
-        [
+        (object) [
             'id' => 102,
             'images' => [],
             'global_unique_id' => '',

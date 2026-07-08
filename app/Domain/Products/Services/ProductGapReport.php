@@ -34,10 +34,16 @@ use Illuminate\Support\Facades\Cache;
  *   missing_images   — woo_image_count = 0
  *   missing_ean      — woo_gtin IS NULL
  *   missing_category — woo_category_count = 0
+ *   missing_brand    — woo_brand_count = 0
  *
- * Brand + stock dropped from the gap set: brand isn't in the Woo /products
- * reconciliation (it would need a product_brand scan — a future pass), and
- * stock_status is always set on Woo so it's never a gap.
+ * Quick task 260708-fyh — PASS B adds missing_brand. woo_brand_count is the
+ * live product_brand term count captured by the WP-REST brand pass in
+ * products:reconcile-woo-maintenance (260708-dyy); 0 means the storefront
+ * Brand: link is empty (prod-verified 391 over 4,612 reconciled). This
+ * completes the reconciled gap set (images / EAN / category / brand).
+ *
+ * Stock dropped from the gap set: stock_status is always set on Woo so it's
+ * never a gap.
  *
  * All predicates are plain indexed-column comparisons (no JSON function) —
  * driver-portable across SQLite (tests) and MariaDB (prod), and cheap (keeps
@@ -50,6 +56,7 @@ class ProductGapReport
         'missing_images' => 'Missing images',
         'missing_ean' => 'Missing EAN',
         'missing_category' => 'Missing category',
+        'missing_brand' => 'Missing brand',
     ];
 
     /** Products live on the shop — the maintenance target. */
@@ -73,6 +80,7 @@ class ProductGapReport
             'missing_images' => $query->where('woo_image_count', 0),
             'missing_ean' => $query->whereNull('woo_gtin'),
             'missing_category' => $query->where('woo_category_count', 0),
+            'missing_brand' => $query->where('woo_brand_count', 0),
             default => $query,
         };
     }
@@ -95,6 +103,7 @@ class ProductGapReport
                 .', SUM(CASE WHEN woo_reconciled_at IS NOT NULL AND woo_image_count = 0 THEN 1 ELSE 0 END) as missing_images'
                 .', SUM(CASE WHEN woo_reconciled_at IS NOT NULL AND woo_gtin IS NULL THEN 1 ELSE 0 END) as missing_ean'
                 .', SUM(CASE WHEN woo_reconciled_at IS NOT NULL AND woo_category_count = 0 THEN 1 ELSE 0 END) as missing_category'
+                .', SUM(CASE WHEN woo_reconciled_at IS NOT NULL AND woo_brand_count = 0 THEN 1 ELSE 0 END) as missing_brand'
                 .', MAX(woo_reconciled_at) as last_reconciled_at'
             )->first();
 
@@ -110,6 +119,7 @@ class ProductGapReport
                     'missing_images' => (int) ($row->missing_images ?? 0),
                     'missing_ean' => (int) ($row->missing_ean ?? 0),
                     'missing_category' => (int) ($row->missing_category ?? 0),
+                    'missing_brand' => (int) ($row->missing_brand ?? 0),
                 ],
             ];
         });

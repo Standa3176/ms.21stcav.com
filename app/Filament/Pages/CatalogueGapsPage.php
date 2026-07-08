@@ -42,12 +42,17 @@ use Illuminate\Support\Facades\Log;
  * (missing ean), resync-to-woo (always). Category gaps have no one-click fix
  * — surfaced for manual triage.
  *
- * Quick task 260708-cey — PASS 2 REWIRE. The Gap filter is now the 3 reconciled
- * gaps (ProductGapReport::GAPS) and reuses ProductGapReport::apply(), which
- * gates on woo_reconciled_at and reads the woo_* mirror. The columns surface
- * that reconciled truth: woo_image_count / woo_gtin / woo_category_count /
+ * Quick task 260708-cey — PASS 2 REWIRE. The Gap filter is the reconciled gaps
+ * (ProductGapReport::GAPS) and reuses ProductGapReport::apply(), which gates on
+ * woo_reconciled_at and reads the woo_* mirror. The columns surface that
+ * reconciled truth: woo_image_count / woo_gtin / woo_category_count /
  * woo_reconciled_at. Stock dropped from the gap set (always set on Woo), so the
  * Hydrate stock action was removed; the remaining fix actions are unchanged.
+ *
+ * Quick task 260708-fyh — PASS B adds missing_brand: the Gap filter now offers
+ * 4 options (GAPS-driven) and a woo_brand_count 'Brand' column (danger when 0)
+ * joins the row. Resync re-pushes the product_brand link when a local brand_id
+ * exists; products with no local brand_id need a brand assigned first.
  */
 final class CatalogueGapsPage extends Page implements HasTable
 {
@@ -115,6 +120,16 @@ final class CatalogueGapsPage extends Page implements HasTable
 
                 TextColumn::make('woo_category_count')
                     ->label('Categories')
+                    ->badge()
+                    ->placeholder('—')
+                    ->color(fn (?int $state): string => $state === null
+                        ? 'gray'
+                        : ($state === 0 ? 'danger' : 'success')),
+
+                // Quick task 260708-fyh — Pass B: the reconciled product_brand
+                // term count (danger when 0 → the storefront Brand link is empty).
+                TextColumn::make('woo_brand_count')
+                    ->label('Brand')
                     ->badge()
                     ->placeholder('—')
                     ->color(fn (?int $state): string => $state === null

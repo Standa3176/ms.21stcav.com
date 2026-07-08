@@ -12,6 +12,7 @@ use App\Domain\ProductAutoCreate\Services\EanSearchClient;
 use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooGtinPublisher;
 use App\Models\User;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -68,6 +69,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         {--limit=0 : Max products this run; 0 = unbounded}
         {--dry-run : Print counts + 20-row sample; do NOT write}
         {--resync : After backfill, run products:resync-to-woo on the SUCCESSFULLY UPDATED SKUs only (re-feeds Merchant Center)}
+        {--push-to-woo : After backfill, publish each updated SKU\'s EAN to its live Woo GTIN (global_unique_id) via WooGtinPublisher. Off by default.}
         {--no-confirm : Skip interactive y/N confirmations (use for cron / non-interactive runs)}
         {--icecat-fallback : DEPRECATED — alias of --ean-fallback for backwards compatibility. DEFAULT ON.}
         {--ean-fallback : Alias of --icecat-fallback. DEFAULT ON.}
@@ -88,6 +90,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         private readonly IcecatClient $icecat,
         private readonly EanSearchClient $eanSearch,
         private readonly AdCandidateScanner $adCandidates,
+        private readonly WooGtinPublisher $gtinPublisher,
     ) {
         parent::__construct();
     }
@@ -121,6 +124,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
         $limit = max(0, (int) $this->option('limit'));
         $dryRun = (bool) $this->option('dry-run');
         $resync = (bool) $this->option('resync');
+        $pushToWoo = (bool) $this->option('push-to-woo');
         $noConfirm = (bool) $this->option('no-confirm') || ! $this->input->isInteractive();
 
         // Icecat fallback resolution. The negative-only flag is the idiomatic
@@ -197,6 +201,28 @@ class BackfillMerchantFeedCommand extends BaseCommand
             }
         }
 
+        // --push-to-woo: publish ONLY the GTIN (global_unique_id) of each
+        // SUCCESSFULLY-updated SKU to its live Woo product via WooGtinPublisher.
+        // Brand/category still go via their existing paths (resync / product_brand).
+        // Flag-absent behaviour is byte-identical — this whole block is skipped.
+        if ($pushToWoo && $updatedSkus !== [] && ! $dryRun) {
+            $uniq = array_values(array_unique($updatedSkus));
+            $published = 0;
+            $collision = 0;
+            $skipped = 0;
+            foreach (Product::query()->whereIn('sku', $uniq)->get() as $p) {
+                switch ($this->gtinPublisher->publish($p, $p->ean)) {
+                    case 'published': $published++;
+                        break;
+                    case 'collision': $collision++;
+                        break;
+                    default: $skipped++;
+                        break;
+                }
+            }
+            $this->info("Pushed GTIN to Woo — {$published} published, {$collision} collision(s), {$skipped} skipped.");
+        }
+
         // --resync: only on SUCCESSFULLY UPDATED SKUs (never the candidate set).
         if ($resync && $updatedSkus !== []) {
             $uniq = array_values(array_unique($updatedSkus));
@@ -244,7 +270,7 @@ class BackfillMerchantFeedCommand extends BaseCommand
      * @param  array<int, string>  &$updatedSkus  populated with successfully-updated SKUs
      * @param  string  $provider  'ean_search' (default) or 'icecat' (A/B comparison via env)
      * @param  array<int, string>|null  $goldenSkus  golden-target narrowing list (260607-pys);
-     *                                              null when --skus override is in effect
+     *                                               null when --skus override is in effect
      */
     private function backfillEan(
         bool $dryRun,

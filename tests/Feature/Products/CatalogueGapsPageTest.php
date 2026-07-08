@@ -288,10 +288,12 @@ it('bulk fix action carries the correct command for each fix type', function (st
     'resync' => ['resync_bulk', 'products:resync-to-woo'],
 ]);
 
-it('Source-images bulk threads --push-to-woo into every dispatched job; EAN + Resync carry no options', function (string $bulkAction, string $command, array $expectedOptions): void {
-    // Quick task 260708-kg4 — the Source-images fix is now END-TO-END: the bulk
-    // path passes ['--push-to-woo' => true] so each job PUBLISHES the sourced
-    // gallery to Woo. EAN/Resync bulk fixes are UNCHANGED (no options).
+it('Source-images + Backfill-EAN bulk thread --push-to-woo into every dispatched job; Resync carries no options', function (string $bulkAction, string $command, array $expectedOptions): void {
+    // Quick task 260708-kg4 — the Source-images fix is END-TO-END: the bulk path
+    // passes ['--push-to-woo' => true] so each job PUBLISHES the sourced gallery.
+    // Quick task 260708-pw3 — the Backfill-EAN fix is now ALSO end-to-end: it
+    // threads ['--push-to-woo' => true] so each job PUBLISHES the backfilled EAN
+    // to the live Woo GTIN (global_unique_id). Resync bulk is UNCHANGED (no options).
     config()->set('services.woo.maintenance_fix_batch_limit', 2);
     config()->set('services.woo.maintenance_fix_max_per_run', 1000);
     Queue::fake();
@@ -311,7 +313,7 @@ it('Source-images bulk threads --push-to-woo into every dispatched job; EAN + Re
     });
 })->with([
     'source images → --push-to-woo' => ['source_images_bulk', 'products:source-images', ['--push-to-woo' => true]],
-    'backfill EAN → no options' => ['backfill_ean_bulk', 'products:backfill-merchant-feed', []],
+    'backfill EAN → --push-to-woo' => ['backfill_ean_bulk', 'products:backfill-merchant-feed', ['--push-to-woo' => true]],
     'resync → no options' => ['resync_bulk', 'products:resync-to-woo', []],
 ]);
 

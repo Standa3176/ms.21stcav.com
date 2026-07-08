@@ -174,8 +174,9 @@ final class CatalogueGapsPage extends Page implements HasTable
                     'heroicon-o-bars-3-bottom-left',
                     'primary',
                     'products:backfill-merchant-feed',
-                    'Runs products:backfill-merchant-feed --skus=<sku>. Backfills EAN/brand/category from supplier_db (+ EAN provider fallback). May cost per lookup.',
+                    'Runs products:backfill-merchant-feed --skus=<sku> --push-to-woo. Backfills EAN/brand/category from supplier_db (+ EAN provider fallback), then PUBLISHES the EAN to the live Woo product\'s GTIN (global_unique_id) — with WC 9.x duplicate-GTIN handling. May cost per lookup.',
                     fn (Product $record): bool => $record->ean === null || trim((string) $record->ean) === '',
+                    ['--push-to-woo' => true],
                 ),
                 $this->fixAction(
                     'resync',
@@ -189,7 +190,7 @@ final class CatalogueGapsPage extends Page implements HasTable
             ])
             ->bulkActions([
                 $this->bulkFixAction('source_images_bulk', 'Source images', 'heroicon-o-photo', 'products:source-images', ['--push-to-woo' => true]),
-                $this->bulkFixAction('backfill_ean_bulk', 'Backfill EAN', 'heroicon-o-bars-3-bottom-left', 'products:backfill-merchant-feed'),
+                $this->bulkFixAction('backfill_ean_bulk', 'Backfill EAN', 'heroicon-o-bars-3-bottom-left', 'products:backfill-merchant-feed', ['--push-to-woo' => true]),
                 $this->bulkFixAction('resync_bulk', 'Resync to Woo', 'heroicon-o-arrow-path', 'products:resync-to-woo'),
             ]);
     }

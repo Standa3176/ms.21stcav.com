@@ -415,6 +415,17 @@ if ((bool) config('agents.seo_batch_schedule_enabled', true)) {
         ->description('Phase 12 SEOAGT-05 — nightly SEO agent batch (04:30 Europe/London)');
 }
 
+// Quick task 260708-b4f — products:reconcile-woo-maintenance nightly 04:30 London.
+// READ-ONLY paged Woo GET /products that mirrors each live product's real Woo
+// state (image count / EAN / category count / stock) into the local woo_*
+// columns for the Woo Maintenance dashboard. Slots off-peak AFTER the 03:xx
+// retention prunes + history:prune (04:00) and BEFORE the ~05:00 supplier /
+// SEO scans. withoutOverlapping() guards the ~47-page catalogue crawl from a
+// slow run colliding with the next night's fire. Never writes to Woo.
+Schedule::command('products:reconcile-woo-maintenance')
+    ->dailyAt('04:30')
+    ->withoutOverlapping();
+
 // Phase 8 Plan 05 (D-07) — agents:prune-archive annual on 1 Jan 02:00 Europe/London.
 // Exports AgentRun rows where completed_at < NOW() - INTERVAL 5 YEAR to
 // storage/app/agent-archives/agent-runs-{YYYY-MM-DD-HHmmss}.json.gz then

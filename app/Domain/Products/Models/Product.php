@@ -53,6 +53,14 @@ final class Product extends Model
         // 2026-05-30 — curated key/value attributes for WC "Additional Information"
         // tab + Flatsome theme spec table (drives storefront layout parity).
         'attributes_json',
+        // Quick task 260708-b4f — Woo maintenance reconciliation (Pass 1): each
+        // live product's REAL Woo state, mirrored nightly by
+        // products:reconcile-woo-maintenance for the Maintenance dashboard.
+        'woo_image_count',
+        'woo_gtin',
+        'woo_category_count',
+        'woo_stock_status',
+        'woo_reconciled_at',
     ];
 
     protected $casts = [
@@ -79,6 +87,10 @@ final class Product extends Model
         'completeness_computed_at' => 'datetime',
         'completeness_missing_fields' => 'array',
         'attributes_json' => 'array',
+        // Quick task 260708-b4f — Woo maintenance reconciliation casts.
+        'woo_image_count' => 'integer',
+        'woo_category_count' => 'integer',
+        'woo_reconciled_at' => 'datetime',
     ];
 
     public function variants(): HasMany

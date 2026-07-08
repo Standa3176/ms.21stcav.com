@@ -8,6 +8,7 @@ use App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use App\Foundation\Integration\Services\IntegrationLogger;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -149,8 +150,10 @@ it('implements ShouldQueue with sync-bulk queue', function (): void {
     $logger = app(IntegrationLogger::class);
     $listener = new HandleNewSupplierSku($logger);
 
-    expect($listener)->toBeInstanceOf(Illuminate\Contracts\Queue\ShouldQueue::class);
-    expect($listener->queue)->toBe('sync-bulk');
+    expect($listener)->toBeInstanceOf(ShouldQueue::class);
+    // Queued listeners have no onQueue()/public $queue; viaQueue() is the queue
+    // selector hook (avoids the PHP 8.4 public-$queue property collision).
+    expect($listener->viaQueue())->toBe('sync-bulk');
 });
 
 it('inactive skip rule does not short-circuit dispatch', function (): void {

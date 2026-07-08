@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\ProductAutoCreate\Services\ProductImageFetcher;
 use App\Foundation\Integration\Models\IntegrationEvent;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -53,11 +54,13 @@ it('returns the first validated tmp path when primary 404s and fallback 200s wit
     expect(file_exists($path))->toBeTrue();
     expect(filesize($path))->toBeGreaterThanOrEqual(5120);
 
-    // Two integration_events rows — one per attempted URL (primary fail + fallback[0] success).
-    // fallback[1] never queried because fallback[0] succeeded.
+    // 3 attempt rows: the primary (404 + text/html HEAD) logs a HEAD-inconclusive
+    // advisory event AND the GET failure; the fallback[0] logs its GET success.
+    // (HEAD is advisory since the rewrite — a non-image/non-200 HEAD is recorded
+    // then GET is retried.) fallback[1] never queried because fallback[0] won.
     expect(IntegrationEvent::where('channel', 'woo-auto-create')
         ->where('operation', 'like', 'image.fetch.attempt.%')
-        ->count())->toBe(2);
+        ->count())->toBe(3);
 
     expect(IntegrationEvent::where('operation', 'image.fetch.attempt.1')
         ->where('status', 'failed')->count())->toBe(1);
@@ -86,7 +89,11 @@ it('returns null when every URL in the chain 404s (caller uses placeholder)', fu
         ->count())->toBe(3);
 });
 
-it('rejects a URL whose HEAD returns Content-Type text/html (Pitfall P6-A)', function (): void {
+it('rejects a mislabelled text/html page at the GET size floor (Pitfall P6-A)', function (): void {
+    // HEAD Content-Type is now ADVISORY (the rewrite proceeds to GET even on a
+    // non-image HEAD, because many CDNs block HEAD / omit Content-Type). A small
+    // text/html trap page therefore falls through to the GET size-floor guard:
+    // it is below min_image_bytes and rejected with reason=size_below_floor.
     $html = file_get_contents(base_path('tests/Fixtures/ProductAutoCreate/tiny.html'));
 
     Http::fake([
@@ -98,9 +105,12 @@ it('rejects a URL whose HEAD returns Content-Type text/html (Pitfall P6-A)', fun
 
     expect($path)->toBeNull();
 
-    $event = IntegrationEvent::where('operation', 'image.fetch.attempt.1')->firstOrFail();
-    expect($event->status)->toBe('failed');
-    expect($event->response_body)->toMatchArray(['reason' => 'non_image_content_type']);
+    // The GET attempt is logged failed with the size-floor reason (a separate
+    // advisory HEAD 'success' row is also written first — assert on the failure).
+    $event = IntegrationEvent::where('operation', 'image.fetch.attempt.1')
+        ->where('status', 'failed')
+        ->firstOrFail();
+    expect($event->response_body)->toMatchArray(['reason' => 'size_below_floor']);
 });
 
 it('rejects a GET body below the min-size floor (Pitfall P6-A size guard — HTML error page)', function (): void {
@@ -147,7 +157,7 @@ it('rejects a GET body above the max-size ceiling (Pitfall P6-A DoS guard)', fun
 
 it('catches transport exceptions + falls through + logs reason=exception', function (): void {
     Http::fake(function () {
-        throw new \Illuminate\Http\Client\ConnectionException('simulated DNS failure');
+        throw new ConnectionException('simulated DNS failure');
     });
 
     $fetcher = app(ProductImageFetcher::class);
@@ -173,8 +183,10 @@ it('logs channel=woo-auto-create + per-attempt counter on every attempt', functi
         fallbackUrls: ['https://supplier.cdn.com/fallback.jpg'],
     );
 
+    // 3 rows: primary (404, no Content-Type) logs a HEAD-inconclusive advisory
+    // event + its GET failure; the fallback logs its GET success.
     $events = IntegrationEvent::where('channel', 'woo-auto-create')->get();
-    expect($events)->toHaveCount(2);
+    expect($events)->toHaveCount(3);
     expect($events->pluck('operation')->all())
         ->toContain('image.fetch.attempt.1')
         ->toContain('image.fetch.attempt.2');

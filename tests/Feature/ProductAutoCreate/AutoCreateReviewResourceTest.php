@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\Queue;
 
 use function Pest\Livewire\livewire;
 
+use Spatie\Activitylog\Models\Activity;
+
 /*
 |--------------------------------------------------------------------------
 | Phase 6 Plan 04 — AutoCreateReviewResource tests
@@ -107,7 +109,7 @@ it('approve action requires override_reason when score below threshold + logs ac
 
     Queue::assertPushed(PublishProductJob::class);
     expect(
-        \Spatie\Activitylog\Models\Activity::query()
+        Activity::query()
             ->where('description', 'auto_create.publish.low_completeness_override')
             ->exists()
     )->toBeTrue();
@@ -173,9 +175,11 @@ it('non-admin sales user cannot approve (authorize returns false)', function ():
 
     $this->actingAs($this->sales);
 
-    $component = livewire(ListAutoCreateReview::class);
-    // The action should be hidden / unauthorized for sales; call should fail silently.
-    $component->callTableAction('approve', $p, data: []);
+    // The approve action is authorization-hidden for sales (Filament now strictly
+    // asserts visibility in callTableAction, so assert the action is hidden rather
+    // than calling it). Nothing is dispatched because the action never mounts.
+    livewire(ListAutoCreateReview::class)
+        ->assertTableActionHidden('approve', $p);
 
     Queue::assertNotPushed(PublishProductJob::class);
 });

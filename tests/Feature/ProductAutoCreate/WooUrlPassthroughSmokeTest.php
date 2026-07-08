@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
+use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use App\Foundation\Integration\Services\IntegrationLogger;
@@ -110,7 +112,7 @@ it('URL pass-through: images[].src URL lands in the outbound request body verbat
 
     // Shadow-mode contract (Phase 1 FOUND-08) — SyncDiff captures the payload verbatim
     expect($result)->toMatchArray(['shadow_mode' => true]);
-    $diff = \App\Domain\Sync\Models\SyncDiff::first();
+    $diff = SyncDiff::first();
     expect($diff->method)->toBe('POST');
     expect($diff->endpoint)->toBe('/products');
 
@@ -170,7 +172,11 @@ it('URL pass-through: documented Woo response shape (id + uploads-path src) deco
         }))
         ->andReturn($documentedWooResponse);
 
-    $client = new WooClient(app(IntegrationLogger::class), $mockInner);
+    $client = new WooClient(
+        app(IntegrationLogger::class),
+        app(IntegrationCredentialResolver::class),
+        $mockInner,
+    );
 
     $response = $client->post('/products', [
         'name' => 'Test Product',
@@ -207,6 +213,6 @@ it('URL pass-through: empty images[] array is accepted (placeholder-image fallba
     ]);
 
     expect($result)->toMatchArray(['shadow_mode' => true]);
-    $diff = \App\Domain\Sync\Models\SyncDiff::first();
+    $diff = SyncDiff::first();
     expect($diff->payload['images'])->toBe([]);
 });

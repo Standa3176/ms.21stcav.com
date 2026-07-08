@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Jobs\ProcessAutoCreateImageJob;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use App\Domain\Sync\Models\SyncDiff;
+use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
+use App\Foundation\Integration\Services\IntegrationLogger;
 use Automattic\WooCommerce\Client as AutomatticClient;
 use Automattic\WooCommerce\HttpClient\Response as WooResponse;
 use Illuminate\Support\Facades\Context;
@@ -76,10 +80,12 @@ it('HAPPY PATH: fetches + processes + stores + PUTs to Woo + persists image_url 
     // (a) File written to public disk at the expected path
     expect(Storage::disk('public')->exists('auto-create-images/logitech-meetup-main.webp'))->toBeTrue();
 
-    // (b) WooClient recorded the PUT via the shadow-mode path — sync_diffs row
-    expect(\App\Domain\Sync\Models\SyncDiff::count())->toBe(1);
-    $diff = \App\Domain\Sync\Models\SyncDiff::first();
-    expect($diff->method)->toBe('PUT');
+    // (b) WooClient recorded the update via the shadow-mode path — sync_diffs row.
+    // WooClient::put() emits method=POST when services.woo.use_post_for_updates
+    // is true (the default) — Woo REST tunnels updates through POST.
+    expect(SyncDiff::count())->toBe(1);
+    $diff = SyncDiff::first();
+    expect($diff->method)->toBe('POST');
     expect($diff->endpoint)->toBe('/products/500');
     expect($diff->payload['images'])->toHaveCount(1);
     expect($diff->payload['images'][0]['src'])->toContain('logitech-meetup-main.webp');
@@ -119,7 +125,7 @@ it('FALLBACK PATH: all URLs 404 → placeholder URL + requires_manual_image_revi
     expect(Storage::disk('public')->exists('auto-create-images/dead-link-product-main.webp'))->toBeFalse();
 
     // (b) WooClient PUT used the placeholder URL
-    $diff = \App\Domain\Sync\Models\SyncDiff::first();
+    $diff = SyncDiff::first();
     expect($diff->payload['images'])->toHaveCount(1);
     expect($diff->payload['images'][0]['src'])->toBe('https://ops.meetingstore.co.uk/images/av-product-placeholder.webp');
 
@@ -192,8 +198,8 @@ it('SHADOW MODE: services.woo.write_enabled=false → PUT lands in sync_diffs, i
     );
     app()->call([$job, 'handle']);
 
-    // 1 sync_diff row from the shadow-mode PUT
-    expect(\App\Domain\Sync\Models\SyncDiff::where('method', 'PUT')->count())->toBe(1);
+    // 1 sync_diff row from the shadow-mode update (POST-tunnelled — see put()).
+    expect(SyncDiff::where('method', 'POST')->count())->toBe(1);
 
     // Product still has the image_url persisted locally (independent of Woo)
     $product->refresh();
@@ -209,7 +215,7 @@ it('FAILED HOOK: creates auto_create_failed Suggestion with evidence on final-re
 
     Context::add('correlation_id', (string) Str::uuid());
 
-    $exception = new \RuntimeException('Woo returned 500 after 3 retries');
+    $exception = new RuntimeException('Woo returned 500 after 3 retries');
     $job->failed($exception);
 
     $suggestion = Suggestion::where('kind', 'auto_create_failed')->firstOrFail();
@@ -220,7 +226,7 @@ it('FAILED HOOK: creates auto_create_failed Suggestion with evidence on final-re
         'supplier_image_url' => 'https://cdn.supplier.com/x.jpg',
         'fallback_count' => 1,
         'error' => 'Woo returned 500 after 3 retries',
-        'exception' => \RuntimeException::class,
+        'exception' => RuntimeException::class,
     ]);
 });
 
@@ -245,8 +251,10 @@ it('LIVE PATH: services.woo.write_enabled=true → Automattic client PUT with im
     $mockHttp->shouldReceive('getResponse')->andReturn(new WooResponse(200, [], ''));
     $mockInner->http = $mockHttp;
 
+    // WooClient::put() tunnels updates through the SDK's post() when
+    // services.woo.use_post_for_updates is true (default) — mock post().
     $capturedPayload = null;
-    $mockInner->shouldReceive('put')
+    $mockInner->shouldReceive('post')
         ->once()
         ->with('/products/900', Mockery::capture($capturedPayload))
         ->andReturn([
@@ -256,8 +264,9 @@ it('LIVE PATH: services.woo.write_enabled=true → Automattic client PUT with im
             ],
         ]);
 
-    app()->instance(\App\Domain\Sync\Services\WooClient::class, new \App\Domain\Sync\Services\WooClient(
-        app(\App\Foundation\Integration\Services\IntegrationLogger::class),
+    app()->instance(WooClient::class, new WooClient(
+        app(IntegrationLogger::class),
+        app(IntegrationCredentialResolver::class),
         $mockInner,
     ));
 
@@ -275,5 +284,5 @@ it('LIVE PATH: services.woo.write_enabled=true → Automattic client PUT with im
     expect($capturedPayload['images'][0])->toHaveKey('alt');
 
     // No sync_diffs (live path)
-    expect(\App\Domain\Sync\Models\SyncDiff::count())->toBe(0);
+    expect(SyncDiff::count())->toBe(0);
 });

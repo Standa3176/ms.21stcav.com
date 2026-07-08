@@ -57,7 +57,12 @@ it('replay_auto_create action dispatches ApplySuggestionJob for failed rows', fu
 
     $this->actingAs($this->admin);
 
+    // ListSuggestions' kind filter now defaults to new_product_opportunity
+    // (260707-gsy), so an auto_create_failed row is hidden until the kind filter
+    // selects it — set it before calling the action or the record isn't in the
+    // table and the action silently no-ops.
     livewire(ListSuggestions::class)
+        ->filterTable('kind', 'auto_create_failed')
         ->callTableAction('replay_auto_create', $s)
         ->assertHasNoTableActionErrors();
 

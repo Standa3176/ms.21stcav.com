@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Services\PriceCalculator;
-use App\Domain\Pricing\Services\PricingResolution;
 use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\ProductAutoCreate\Events\AutoCreateAttempted;
 use App\Domain\ProductAutoCreate\Events\AutoCreateFailed;
@@ -47,6 +47,19 @@ use Illuminate\Support\Str;
 
 beforeEach(function (): void {
     Context::add('correlation_id', (string) Str::uuid());
+
+    // Seed a wide open-ended default-tier rule (margin 40.00%) so the REAL
+    // RuleResolver + PriceCalculator resolve for every auto-created product
+    // regardless of buy price. RuleResolver/PriceCalculator are byte-identity
+    // locked (D-03 / TradePricingNoV1ModificationTest) so they MUST NOT be
+    // mocked — driving them with real pricing rules is the sanctioned path.
+    // For the happy-path product (supplier price 500 → 50000 buy pennies) this
+    // yields compute(50000, 4000) = 84000 = £840.00, matching the assertion.
+    PricingRule::factory()->defaultTier()->create([
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 4000,
+    ]);
 });
 
 /**
@@ -176,9 +189,13 @@ it('pre-POST slug probe regenerates candidate on Woo collision (P6-G option 1)',
 
     // First WooClient::get (slug probe) returns a collision; POST then observes
     // the regenerated -{sku} slug.
+    // ProductContentBuilder composes the SEO title as "{name} {category}", so
+    // the base slug is 'logitech-meetup-video-conferencing'. The pre-POST probe
+    // queries that slug; the seeded collision drives ensureSlugFreeOnWoo to
+    // append the sku ('-log-meetup'), which the POST payload assertion checks.
     $woo = Mockery::mock(WooClient::class);
-    $woo->shouldReceive('get')->with('/products', Mockery::subset(['slug' => 'logitech-meetup']))
-        ->andReturn([['id' => 200, 'slug' => 'logitech-meetup']]);
+    $woo->shouldReceive('get')->with('/products', Mockery::subset(['slug' => 'logitech-meetup-video-conferencing']))
+        ->andReturn([['id' => 200, 'slug' => 'logitech-meetup-video-conferencing']]);
     $woo->shouldReceive('post')->with(
         '/products',
         Mockery::on(fn ($payload) => str_contains((string) ($payload['slug'] ?? ''), '-log-meetup'))
@@ -291,18 +308,9 @@ it('happy path: fires AutoCreateSucceeded, persists Product.sell_price, chains i
     $taxonomy->shouldReceive('resolveBrand')->andReturn(10);
     $taxonomy->shouldReceive('resolveCategory')->andReturn(20);
 
-    // Pricing: resolution margin 4000 bps (40%) → compute returns a positive int.
-    $resolver = Mockery::mock(RuleResolver::class);
-    $resolver->shouldReceive('resolve')->andReturn(new PricingResolution(
-        marginBasisPoints: 4000,
-        source: 'default_tier',
-        matchedRuleId: 1,
-        overrideId: null,
-        chain: ['default_tier'],
-    ));
-    $calculator = Mockery::mock(PriceCalculator::class);
-    $calculator->shouldReceive('compute')->andReturn(84000); // £840.00
-
+    // Pricing: driven by the REAL RuleResolver + PriceCalculator (byte-identity
+    // locked — never mocked) against the default-tier rule seeded in beforeEach.
+    // buy 50000 pennies × margin 4000 bps × 20% VAT → 84000 pennies = £840.00.
     $woo = Mockery::mock(WooClient::class);
     $woo->shouldReceive('get')->andReturn([]);
     $woo->shouldReceive('post')->once()->andReturn([
@@ -310,8 +318,7 @@ it('happy path: fires AutoCreateSucceeded, persists Product.sell_price, chains i
         'slug' => 'happy-product',
     ]);
 
-    runCreateJob('HAPPY-01', $woo, $supplier, taxonomy: $taxonomy,
-        ruleResolver: $resolver, calculator: $calculator);
+    runCreateJob('HAPPY-01', $woo, $supplier, taxonomy: $taxonomy);
 
     $product = Product::where('sku', 'HAPPY-01')->first();
     expect($product)->not->toBeNull();

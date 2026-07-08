@@ -7,6 +7,7 @@ use App\Domain\Products\Filament\Resources\ProductResource;
 use App\Domain\Products\Models\Product;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Spatie\Activitylog\Models\Activity;
 
 /*
 |--------------------------------------------------------------------------
@@ -47,7 +48,7 @@ it('admin toggling an existing override updates in place (no duplicates)', funct
 
     ProductOverride::create([
         'product_id' => $product->id,
-        'margin_basis_points' => null,
+        'margin_basis_points' => 4000,
         'reason' => 'Existing row',
         'created_by_user_id' => $this->admin->id,
         'pin_title' => false,
@@ -96,7 +97,7 @@ it('saveFieldPins writes activity_log entry (D-12 audit trail)', function (): vo
     ProductResource::saveFieldPins($product, ['pin_title' => true]);
 
     // Spatie LogsActivity trait on ProductOverride captures pin_* diffs.
-    $activity = \Spatie\Activitylog\Models\Activity::query()
+    $activity = Activity::query()
         ->where('subject_type', ProductOverride::class)
         ->latest('id')
         ->first();

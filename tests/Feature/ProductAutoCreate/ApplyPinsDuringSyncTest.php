@@ -11,6 +11,7 @@ use App\Domain\Sync\Events\SupplierSkuMissing;
 use App\Domain\Sync\Events\SupplierStockChanged;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Audit\Services\Auditor;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
@@ -188,7 +189,7 @@ it('guard exception is swallowed + logged (no rethrow)', function (): void {
     $guard = Mockery::mock(ProductOverrideGuard::class);
     $guard->shouldReceive('revertIfPinned')
         ->once()
-        ->andThrow(new \RuntimeException('Simulated Woo PUT 500 failure'));
+        ->andThrow(new RuntimeException('Simulated Woo PUT 500 failure'));
 
     $listener = new ApplyPinsDuringSync($guard);
 
@@ -218,8 +219,9 @@ it('implements ShouldQueue with sync-bulk queue', function (): void {
     $guard = Mockery::mock(ProductOverrideGuard::class);
     $listener = new ApplyPinsDuringSync($guard);
 
-    expect($listener)->toBeInstanceOf(Illuminate\Contracts\Queue\ShouldQueue::class);
-    expect($listener->queue)->toBe('sync-bulk');
+    expect($listener)->toBeInstanceOf(ShouldQueue::class);
+    // Queued listeners have no onQueue()/public $queue; viaQueue() is the hook.
+    expect($listener->viaQueue())->toBe('sync-bulk');
 });
 
 it('EventServiceProvider binds all 3 events to ApplyPinsDuringSync handler methods', function (): void {

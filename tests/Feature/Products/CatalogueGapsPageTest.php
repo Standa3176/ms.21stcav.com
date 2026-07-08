@@ -159,6 +159,66 @@ it('resync row action dispatches products:resync-to-woo with the row SKU', funct
         ->assertHasNoTableActionErrors();
 });
 
+/**
+ * Four LIVE reconciled products that ALL carry the missing_images gap — so the
+ * page's default 'missing_images' filter shows every one of them and a bulk
+ * selection of all four survives Filament's re-resolution against the query.
+ *
+ * @return array<int, Product>
+ */
+function seedFourMissingImageProducts(): array
+{
+    return collect(range(1, 4))
+        ->map(fn (int $n): Product => ceyGapsProduct("GAB-BULK-{$n}", [
+            'woo_image_count' => 0,
+            'gallery_image_urls' => [],
+            'name' => "GAB bulk {$n}",
+        ]))
+        ->all();
+}
+
+it('bulk fix action caps the dispatched SKUs at the configured batch limit', function (): void {
+    // Quick task 260708-gab — with the batch limit set LOW, selecting MORE than
+    // the limit must dispatch only the first N SKUs (money-costing per-SKU calls
+    // + a synchronous ~30s web request → an accidental huge run is the hazard).
+    config()->set('services.woo.maintenance_fix_batch_limit', 2);
+    $this->actingAs(catalogueGapsUser('admin'));
+    $products = seedFourMissingImageProducts(); // 4 live products, all missing_images.
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->withArgs(function (string $command, array $options): bool {
+            return $command === 'products:resync-to-woo'
+                && isset($options['--skus'])
+                // Exactly 2 SKUs dispatched even though 4 were selected.
+                && count(array_filter(explode(',', (string) $options['--skus']))) === 2;
+        })
+        ->andReturn(0);
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->callTableBulkAction('resync_bulk', $products)
+        ->assertHasNoTableBulkActionErrors();
+});
+
+it('bulk fix action dispatches every selected SKU when the selection is within the batch limit', function (): void {
+    config()->set('services.woo.maintenance_fix_batch_limit', 10);
+    $this->actingAs(catalogueGapsUser('admin'));
+    $products = seedFourMissingImageProducts(); // 4 live products, limit 10 → no cap.
+
+    Artisan::shouldReceive('call')
+        ->once()
+        ->withArgs(function (string $command, array $options): bool {
+            return $command === 'products:resync-to-woo'
+                && isset($options['--skus'])
+                && count(array_filter(explode(',', (string) $options['--skus']))) === 4;
+        })
+        ->andReturn(0);
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->callTableBulkAction('resync_bulk', $products)
+        ->assertHasNoTableBulkActionErrors();
+});
+
 it('WooMaintenanceGapsWidget gap stats deep-link into the Catalogue Gaps page per gap', function (): void {
     $this->actingAs(catalogueGapsUser('admin'));
     Filament::setCurrentPanel(Filament::getPanel('admin'));

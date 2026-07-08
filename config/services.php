@@ -134,6 +134,10 @@ return [
         // env() inside config is the only legal place per 260606-c4o
         // EnvUsageTest guardrail — never read env() from the page directly.
         'storefront_url' => env('WOO_STOREFRONT_URL', 'https://meetingstore.co.uk'),
+
+        // 260708-gab — max products a single Catalogue Gaps BULK fix action processes (Source images / Backfill
+        // EAN cost per-SKU API calls; cap protects against an accidental huge run + a 30s web timeout).
+        'maintenance_fix_batch_limit' => (int) env('WOO_MAINTENANCE_FIX_BATCH_LIMIT', 25),
     ],
 
     'woocommerce' => [

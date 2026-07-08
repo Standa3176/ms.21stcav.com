@@ -264,7 +264,7 @@ class SuggestionResource extends Resource
                 // the table default-sorts on it DESC so the strongest
                 // opportunities (most competitors) surface first.
                 TextColumn::make('supporting_competitors')
-                    ->label('Comp')
+                    ->label('Competitor count')
                     ->badge()
                     ->color('info')
                     ->tooltip('Number of competitors currently tracking this SKU')

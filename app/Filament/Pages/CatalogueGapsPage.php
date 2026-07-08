@@ -246,21 +246,36 @@ final class CatalogueGapsPage extends Page implements HasTable
      * A bulk fix action: gather the selected SKUs into a CSV --skus option and
      * dispatch the same command once. Admin-gated, requiresConfirmation, same
      * try/catch → Notification shape.
+     *
+     * Quick task 260708-gab — the bulk actions are CAPPED at
+     * config('services.woo.maintenance_fix_batch_limit', 25) SKUs per run.
+     * Source images / Backfill EAN cost per-SKU API calls and the command runs
+     * synchronously inside the web request, so an accidental 600-SKU selection
+     * would burn money and blow past the ~30s web timeout. If the operator
+     * selects MORE than the limit, only the first N SKUs are dispatched and the
+     * notification says how many were capped. Per-row fixAction() is UNCHANGED.
      */
     private function bulkFixAction(string $name, string $label, string $icon, string $command): BulkAction
     {
+        $limit = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
+
         return BulkAction::make($name)
             ->label($label)
             ->icon($icon)
             ->requiresConfirmation()
-            ->modalDescription("Runs {$command} --skus=<selected SKUs> once for the selected products.")
+            ->modalDescription("Runs {$command} --skus=<selected SKUs> once for the selected products. Bulk runs are capped at {$limit} product(s) per click — if you select more, the first {$limit} are processed and you re-run for the rest.")
             ->visible(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
             ->authorize(fn (): bool => (bool) auth()->user()?->hasRole('admin'))
             ->action(function (Collection $records) use ($command, $label): void {
-                $csv = $records
+                $limit = max(1, (int) config('services.woo.maintenance_fix_batch_limit', 25));
+
+                $skus = $records
                     ->pluck('sku')
                     ->filter(fn ($sku): bool => $sku !== null && $sku !== '')
-                    ->implode(',');
+                    ->values();
+                $selected = $skus->count();
+                $batch = $skus->take($limit);
+                $csv = $batch->implode(',');
 
                 if ($csv === '') {
                     Notification::make()
@@ -275,13 +290,21 @@ final class CatalogueGapsPage extends Page implements HasTable
                     Log::info('CatalogueGapsPage: bulk fix action invoked', [
                         'command' => $command,
                         'skus' => $csv,
+                        'dispatched' => $batch->count(),
+                        'selected' => $selected,
+                        'limit' => $limit,
                         'actor_id' => auth()->id(),
                     ]);
                     Artisan::call($command, ['--skus' => $csv]);
 
+                    $title = "{$label} dispatched for ".$batch->count().' product(s)';
+                    if ($selected > $limit) {
+                        $title .= " (capped at {$limit} of {$selected} selected — run again for the rest)";
+                    }
+
                     Notification::make()
                         ->success()
-                        ->title("{$label} dispatched for ".$records->count().' product(s)')
+                        ->title($title)
                         ->send();
                 } catch (\Throwable $e) {
                     Notification::make()

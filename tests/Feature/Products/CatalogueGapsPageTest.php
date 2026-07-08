@@ -74,13 +74,14 @@ function ceyGapsProduct(string $sku, array $overrides = []): Product
         'woo_image_count' => 3,
         'woo_gtin' => 'GTIN-'.$sku,
         'woo_category_count' => 2,
+        'woo_brand_count' => 2,
         'woo_stock_status' => 'instock',
         'woo_reconciled_at' => now(),
     ], $overrides));
 }
 
 /**
- * @return array{R1: Product, R2: Product, R3: Product}
+ * @return array{R1: Product, R2: Product, R3: Product, R4: Product}
  */
 function seedCatalogueGapsMatrix(): array
 {
@@ -93,6 +94,8 @@ function seedCatalogueGapsMatrix(): array
         ]),
         'R2' => ceyGapsProduct('CEY-R2-NO-EAN', ['woo_gtin' => null, 'name' => 'BBB R2 no ean']),
         'R3' => ceyGapsProduct('CEY-R3-COMPLETE', ['name' => 'CCC R3 complete']),
+        // Quick task 260708-fyh — Pass B: reconciled, zero product_brand terms.
+        'R4' => ceyGapsProduct('CEY-R4-NO-BRAND', ['woo_brand_count' => 0, 'name' => 'DDD R4 no brand']),
     ];
 }
 
@@ -114,6 +117,16 @@ it('gap=missing_ean narrows to the null-gtin reconciled product only', function 
         ->filterTable('gap', 'missing_ean')
         ->assertCanSeeTableRecords([$m['R2']])
         ->assertCanNotSeeTableRecords([$m['R1'], $m['R3']]);
+});
+
+it('gap=missing_brand narrows to the zero-brand reconciled product only', function (): void {
+    $this->actingAs(catalogueGapsUser('admin'));
+    $m = seedCatalogueGapsMatrix();
+
+    Livewire::test(CatalogueGapsPage::class)
+        ->filterTable('gap', 'missing_brand')
+        ->assertCanSeeTableRecords([$m['R4']])
+        ->assertCanNotSeeTableRecords([$m['R1'], $m['R2'], $m['R3']]);
 });
 
 it('source-images row action dispatches products:source-images with the row SKU', function (): void {

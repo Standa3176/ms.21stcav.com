@@ -67,6 +67,7 @@ function ceyReconciledProduct(string $sku, array $overrides = []): Product
         'woo_image_count' => 3,
         'woo_gtin' => 'GTIN-'.$sku,
         'woo_category_count' => 2,
+        'woo_brand_count' => 2,
         'woo_stock_status' => 'instock',
         'woo_reconciled_at' => now(),
     ], $overrides));
@@ -81,13 +82,17 @@ function seedProductGapMatrix(): array
         'R1' => ceyReconciledProduct('CEY-R1-NO-IMAGES', ['woo_image_count' => 0]),
         'R2' => ceyReconciledProduct('CEY-R2-NO-EAN', ['woo_gtin' => null]),
         'R3' => ceyReconciledProduct('CEY-R3-NO-CATEGORY', ['woo_category_count' => 0]),
-        'R4' => ceyReconciledProduct('CEY-R4-COMPLETE'),
+        // Quick task 260708-fyh — Pass B: reconciled but zero product_brand
+        // terms on Woo → the missing_brand gap.
+        'R4' => ceyReconciledProduct('CEY-R4-NO-BRAND', ['woo_brand_count' => 0]),
+        'R5' => ceyReconciledProduct('CEY-R5-COMPLETE'),
         // UNRECONCILED — live on Woo but never reconciled, so its real Woo
         // state is unknown. Every woo_* is null; must NOT be counted in any gap.
-        'R5' => ceyReconciledProduct('CEY-R5-UNRECONCILED', [
+        'R6' => ceyReconciledProduct('CEY-R6-UNRECONCILED', [
             'woo_image_count' => null,
             'woo_gtin' => null,
             'woo_category_count' => null,
+            'woo_brand_count' => null,
             'woo_stock_status' => null,
             'woo_reconciled_at' => null,
         ]),
@@ -99,9 +104,9 @@ it('reports coverage: total live, reconciled, not_reconciled and last_reconciled
 
     $counts = app(ProductGapReport::class)->counts();
 
-    // R1..R5 are all live (publish + woo id). R5 is live but unreconciled.
-    expect($counts['total'])->toBe(5);
-    expect($counts['reconciled'])->toBe(4);
+    // R1..R6 are all live (publish + woo id). R6 is live but unreconciled.
+    expect($counts['total'])->toBe(6);
+    expect($counts['reconciled'])->toBe(5);
     expect($counts['not_reconciled'])->toBe(1);
     expect($counts['last_reconciled_at'])->not->toBeNull();
 });
@@ -111,14 +116,25 @@ it('reports exactly one reconciled product per gap (unreconciled excluded)', fun
 
     $gaps = app(ProductGapReport::class)->counts()['gaps'];
 
-    // Only the 3 reconciled gaps; brand + stock dropped from the gap set.
-    expect($gaps)->toHaveKeys(['missing_images', 'missing_ean', 'missing_category']);
+    // The 4 reconciled gaps (Pass B added missing_brand); stock stays dropped.
+    expect($gaps)->toHaveKeys(['missing_images', 'missing_ean', 'missing_category', 'missing_brand']);
     expect($gaps['missing_images'])->toBe(1);
     expect($gaps['missing_ean'])->toBe(1);
     expect($gaps['missing_category'])->toBe(1);
-    // R5 (unreconciled, all woo_* null) is NOT counted despite null gtin etc.
-    expect($gaps)->not->toHaveKey('missing_brand');
+    expect($gaps['missing_brand'])->toBe(1);
+    // R6 (unreconciled, all woo_* null) is NOT counted despite null brand etc.
     expect($gaps)->not->toHaveKey('missing_stock_status');
+});
+
+it('reports the reconciled zero-brand product as missing_brand (unreconciled + branded excluded)', function (): void {
+    $matrix = seedProductGapMatrix();
+
+    $report = app(ProductGapReport::class);
+    $ids = $report->apply($report->liveBase(), 'missing_brand')->pluck('id')->all();
+
+    // Only R4 (reconciled, woo_brand_count=0). R5 (branded) and R6
+    // (unreconciled, null brand) are excluded.
+    expect($ids)->toBe([$matrix['R4']->id]);
 });
 
 it('apply(liveBase(), missing_images) narrows to the reconciled zero-image product only', function (): void {
@@ -127,7 +143,7 @@ it('apply(liveBase(), missing_images) narrows to the reconciled zero-image produ
     $report = app(ProductGapReport::class);
     $ids = $report->apply($report->liveBase(), 'missing_images')->pluck('id')->all();
 
-    // Only R1 (reconciled, woo_image_count=0). R5 is also zero-ish but
+    // Only R1 (reconciled, woo_image_count=0). R6 is also zero-ish but
     // UNRECONCILED (woo_reconciled_at NULL) so the apply() gate excludes it.
     expect($ids)->toBe([$matrix['R1']->id]);
 });
@@ -139,7 +155,7 @@ it('does NOT flag an unreconciled product as any gap', function (): void {
 
     foreach (array_keys(ProductGapReport::GAPS) as $gap) {
         $ids = $report->apply($report->liveBase(), $gap)->pluck('id')->all();
-        expect($ids)->not->toContain($matrix['R5']->id);
+        expect($ids)->not->toContain($matrix['R6']->id);
     }
 });
 

@@ -12,10 +12,12 @@ declare(strict_types=1);
 |   status = 'publish' AND woo_product_id IS NOT NULL   (liveBase()).
 |
 | The five maintainable gaps:
-|   missing_images       — gallery_image_urls NULL or empty JSON array
-|                          (driver-portable: SQLite json_array_length /
-|                           MariaDB JSON_LENGTH, mirroring
-|                           AutoCreateHealthPage::emptyImagesExpr)
+|   missing_images       — gallery_image_urls NULL or empty (260708-akz:
+|                          plain string compare NULL/'[]'/'' — Laravel's
+|                          array cast stores [] as the literal '[]', so this
+|                          matches the old JSON_LENGTH=0 verdict with no JSON
+|                          function; the counts() aggregate + apply() share
+|                          the same EMPTY_GALLERY_SQL predicate)
 |   missing_ean          — ean NULL or TRIM(ean) = ''
 |   missing_stock_status — stock_status NULL or TRIM(stock_status) = ''
 |   missing_brand        — brand_id NULL
@@ -131,6 +133,26 @@ it('apply(liveBase(), missing_images) narrows to the empty-gallery live product 
     // Only P1 (empty gallery, live). DRAFT/NOWOO also have empty galleries
     // but are excluded by liveBase(), proving scope wins over gap predicate.
     expect($ids)->toBe([$matrix['P1']->id]);
+});
+
+it('does NOT flag a live product that has a non-empty gallery as missing_images', function (): void {
+    // 260708-akz guard: the EMPTY_GALLERY_SQL predicate matches ONLY the
+    // literal '[]'/''/NULL — a populated gallery (['http://x/img.jpg']) must
+    // NOT be counted, exactly as the old JSON_LENGTH=0 check did.
+    Cache::flush();
+    $populated = w2wLiveProduct('AKZ-HAS-IMAGES', [
+        'gallery_image_urls' => ['http://x/img.jpg'],
+    ]);
+
+    $report = app(ProductGapReport::class);
+
+    // Not surfaced by the drill-down predicate.
+    $ids = $report->apply($report->liveBase(), 'missing_images')->pluck('id')->all();
+    expect($ids)->not->toContain($populated->id);
+
+    // And not counted by the single-aggregate counts().
+    Cache::flush();
+    expect($report->counts()['gaps']['missing_images'])->toBe(0);
 });
 
 it('renders the Maintenance Overview page for an admin', function (): void {

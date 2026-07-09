@@ -177,3 +177,68 @@ it('Case 8: testConnection returns ok with valid token + non-empty array respons
 
     expect($result->ok)->toBeTrue();
 });
+
+/*
+|--------------------------------------------------------------------------
+| Quick task 260709-db5 — base-part-number retry on a region-suffixed miss
+|--------------------------------------------------------------------------
+|
+| Region-localized SKUs (HP 'B5NH6AA#ABU' UK, '#ABB', '#AC3', '#UUZ', …) are
+| listed in EAN databases under the BASE part number ('B5NH6AA'), not the
+| localized code. When the full-term lookup misses AND the term carries a '#',
+| the client retries ONCE with everything before the first '#'. Plain terms
+| (no '#') behave exactly as before — a single query, no retry.
+*/
+
+it('Case 9: suffixed miss retries the base part number and recovers the GTIN', function (): void {
+    // Full localized code is not listed; the base part number is.
+    Http::fake(function ($request) {
+        if (str_contains($request->url(), 'search=B5NH6AA%23ABU')) {
+            return Http::response([], 200); // localized code → no match
+        }
+
+        return Http::response([
+            ['ean' => '0195697115905', 'name' => 'HP B5NH6AA Keyboard'],
+        ], 200); // base part number → match
+    });
+
+    $result = makeEanSearchClient()->lookupGtinByMpn(null, 'B5NH6AA#ABU');
+
+    expect($result)->toBe('0195697115905');
+    Http::assertSentCount(2); // full term missed, base was queried
+});
+
+it('Case 10: plain search term with a match — one request, no retry', function (): void {
+    Http::fake([
+        'api.ean-search.org/*' => Http::response([
+            ['ean' => '4548736112144', 'name' => 'Sony FW-50EZ20L'],
+        ], 200),
+    ]);
+
+    $result = makeEanSearchClient()->lookupGtinByMpn('Sony', 'FW-50EZ20L');
+
+    expect($result)->toBe('4548736112144');
+    Http::assertSentCount(1); // no '#', so no retry
+});
+
+it('Case 11: plain search term with no match — null, one request (no retry)', function (): void {
+    Http::fake([
+        'api.ean-search.org/*' => Http::response([], 200),
+    ]);
+
+    $result = makeEanSearchClient()->lookupGtinByMpn('Sony', 'NOPE-123');
+
+    expect($result)->toBeNull();
+    Http::assertSentCount(1); // no '#', so no retry even on a miss
+});
+
+it('Case 12: suffixed term where both full and base miss — null, two requests', function (): void {
+    Http::fake([
+        'api.ean-search.org/*' => Http::response([], 200),
+    ]);
+
+    $result = makeEanSearchClient()->lookupGtinByMpn(null, 'B5NH6AA#ABU');
+
+    expect($result)->toBeNull();
+    Http::assertSentCount(2); // full term + base both queried, both missed
+});

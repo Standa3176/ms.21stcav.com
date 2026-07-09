@@ -69,6 +69,31 @@ class EanSearchClient
             return null;
         }
 
+        $ean = $this->queryBarcode($brand, $mpn);
+
+        // Region-localized SKUs (HP '#ABU' UK, '#ABB', '#AC3', '#UUZ', …) — EAN
+        // databases list the GTIN under the BASE part number, not the localized
+        // code. Retry ONCE with the suffix stripped (everything before the FIRST
+        // '#'). Only '#' is stripped; '/' and spaces are real part-number chars
+        // (e.g. CONVBDC/SDI/HDMI12G) and are left intact.
+        if ($ean === null && str_contains($mpn, '#')) {
+            $base = trim((string) strstr($mpn, '#', true));
+            if ($base !== '' && $base !== $mpn) {
+                $ean = $this->queryBarcode($brand, $base);
+            }
+        }
+
+        return $ean;
+    }
+
+    /**
+     * One EAN-search barcode-search query for a single search term. Returns the
+     * first valid GTIN (brand-matched where possible) or null. Logging happens
+     * here so every attempt — full term AND base retry — lands in
+     * integration_events.
+     */
+    private function queryBarcode(string $brand, string $search): ?string
+    {
         $creds = $this->credentials();
         if ($creds === null) {
             return null;
@@ -78,7 +103,7 @@ class EanSearchClient
             'token' => $creds['token'],
             'op' => 'barcode-search',
             'format' => 'json',
-            'search' => $mpn,
+            'search' => $search,
             'language' => 'en',
         ];
 

@@ -12,7 +12,7 @@ use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Str;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 

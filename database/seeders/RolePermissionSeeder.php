@@ -483,6 +483,31 @@ class RolePermissionSeeder extends Seeder
                     'view_competitor_ftp_feed',
                     'view_any_competitor::ftp::feed',
                     'view_competitor::ftp::feed',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 9 Plan 05 (TRDE-04 D-10) — customer_group CRUD.
+                    // These are ALSO granted via givePermissionTo at step ~231,
+                    // but syncPermissions() below REPLACES the whole set, so they
+                    // MUST be listed here to SURVIVE the sync (otherwise the D-10
+                    // matrix is silently wiped in prod). All 5 for pricing_manager.
+                    // ═══════════════════════════════════════════════════════════
+                    'view_any_customer_group',
+                    'view_customer_group',
+                    'create_customer_group',
+                    'update_customer_group',
+                    'delete_customer_group',
+                    // ═══════════════════════════════════════════════════════════
+                    // Phase 11 Plan 03 (D-04) — Quote perms. Same clobber risk as
+                    // customer_group above: granted via givePermissionTo at step
+                    // ~247 but wiped by this syncPermissions() unless listed here.
+                    // pricing_manager: all EXCEPT delete/revert (D-04 SoD).
+                    // ═══════════════════════════════════════════════════════════
+                    'view_any_quote',
+                    'view_quote',
+                    'create_quote',
+                    'update_quote',
+                    'approve_quote',
+                    'mark_accepted_quote',
+                    'mark_rejected_quote',
                 ]);
             })
             ->pluck('name')
@@ -525,6 +550,17 @@ class RolePermissionSeeder extends Seeder
                             'view_any_dashboard_snapshot',
                             'view_dashboard::snapshot',
                             'view_any_dashboard::snapshot',
+                            // Phase 9 Plan 05 (TRDE-04 D-10) — sales view-only on
+                            // customer_group. Granted via givePermissionTo at step
+                            // ~232 but wiped by this syncPermissions() unless
+                            // listed here (both are view_% so they pass the gate).
+                            'view_any_customer_group',
+                            'view_customer_group',
+                            // Phase 11 Plan 03 (D-04) — sales VIEW quote perms
+                            // (the non-view quote perms bypass the view_% gate via
+                            // the outer orWhereIn branch below).
+                            'view_any_quote',
+                            'view_quote',
                         ])
                         ->where('name', 'like', 'view_%');
                 })
@@ -532,18 +568,28 @@ class RolePermissionSeeder extends Seeder
                 // Sales also needs create/update/delete on THEIR OWN user_saved_filter
                 // rows (policy enforces ownership + admin override). This branch sits
                 // OUTSIDE the view_% read-only gate so the CRUD perms actually land.
-                ->orWhereIn('name', [
-                    'view_user_saved_filter',
-                    'view_any_user_saved_filter',
-                    'create_user_saved_filter',
-                    'update_user_saved_filter',
-                    'delete_user_saved_filter',
-                    'view_user::saved::filter',
-                    'view_any_user::saved::filter',
-                    'create_user::saved::filter',
-                    'update_user::saved::filter',
-                    'delete_user::saved::filter',
-                ]);
+                    ->orWhereIn('name', [
+                        'view_user_saved_filter',
+                        'view_any_user_saved_filter',
+                        'create_user_saved_filter',
+                        'update_user_saved_filter',
+                        'delete_user_saved_filter',
+                        'view_user::saved::filter',
+                        'view_any_user::saved::filter',
+                        'create_user::saved::filter',
+                        'update_user::saved::filter',
+                        'delete_user::saved::filter',
+                        // Phase 11 Plan 03 (D-04) — sales WRITE quote perms. These are
+                        // NOT view_% so they must live in this OUTER orWhereIn branch
+                        // (outside the read-only gate) to actually land. Granted via
+                        // givePermissionTo at step ~256 but wiped by this
+                        // syncPermissions() unless listed here. Sales: create/update +
+                        // markAccepted/markRejected (NOT approve/revert/delete — D-04 SoD).
+                        'create_quote',
+                        'update_quote',
+                        'mark_accepted_quote',
+                        'mark_rejected_quote',
+                    ]);
             })
             ->pluck('name')
             ->all();

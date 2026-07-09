@@ -20,13 +20,8 @@ beforeEach(function () {
     Queue::fake();
 
     // Stub SupplierClient so fetchAllProducts returns an empty feed — no HTTP.
-    $supplierStub = new class
-    {
-        public function fetchAllProducts(): array
-        {
-            return [];
-        }
-    };
+    $supplierStub = Mockery::mock(SupplierClient::class);
+    $supplierStub->shouldReceive('fetchAllProducts')->andReturn([]);
     $this->app->instance(SupplierClient::class, $supplierStub);
 
     // Stub WooProductIterator to yield nothing.

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Sync\Exceptions\RateLimitExceededException;
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
@@ -16,6 +17,11 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['services.woo.write_enabled' => true]);
+    // These backoff tests mock the SDK's put() verb directly. Production
+    // routes put() through POST when services.woo.use_post_for_updates is true
+    // (the default — WP-REST treats POST/PUT identically for updates). Pin the
+    // flag off here so put() dispatches to $sdk->put() and the put() mocks match.
+    config(['services.woo.use_post_for_updates' => false]);
     // correlation_id column is VARCHAR(36) — use a plain UUID, no prefix.
     Context::add('correlation_id', (string) Str::uuid());
 });
@@ -25,7 +31,7 @@ beforeEach(function () {
  */
 function rateLimitTestClient($mockInner): WooClient
 {
-    return new class (app(IntegrationLogger::class), $mockInner) extends WooClient {
+    return new class (app(IntegrationLogger::class), app(IntegrationCredentialResolver::class), $mockInner) extends WooClient {
         /** @var int total usleep microseconds requested */
         public int $sleptMicros = 0;
         public array $sleptSamples = [];

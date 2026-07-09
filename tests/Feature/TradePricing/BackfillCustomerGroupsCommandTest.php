@@ -65,11 +65,14 @@ function buildBackfillReceipt(string $email, string $role = 'wholesale_customer'
 }
 
 it('signature is b2b:backfill-customer-groups with --live flag', function (): void {
-    Artisan::call('list', ['namespace' => 'b2b']);
-    $output = Artisan::output();
+    // `list` prints command names but NOT per-option help; `help` shows the
+    // full definition including the --live option and its "Commit writes"
+    // description. Assert against `help` output.
+    Artisan::call('help', ['command_name' => 'b2b:backfill-customer-groups']);
+    $help = Artisan::output();
 
-    expect($output)->toContain('b2b:backfill-customer-groups');
-    expect($output)->toContain('Commit writes');
+    expect($help)->toContain('--live');
+    expect($help)->toContain('Commit writes');
 });
 
 it('dry-run mode counts users that WOULD be updated but performs zero saves', function (): void {

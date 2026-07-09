@@ -25,13 +25,9 @@ beforeEach(function (): void {
 
 function stubSupplierClientEmpty(): void
 {
-    app()->instance(SupplierClient::class, new class
-    {
-        public function fetchAllProducts(): array
-        {
-            return [];
-        }
-    });
+    $supplier = Mockery::mock(SupplierClient::class);
+    $supplier->shouldReceive('fetchAllProducts')->andReturn([]);
+    app()->instance(SupplierClient::class, $supplier);
 
     app()->instance(WooProductIterator::class, new class
     {
@@ -46,13 +42,9 @@ function stubSupplierClientEmpty(): void
 
 function stubSupplierClientThrowingJwt(): void
 {
-    app()->instance(SupplierClient::class, new class
-    {
-        public function fetchAllProducts(): array
-        {
-            throw new JwtRefreshFailedException('bad creds');
-        }
-    });
+    $supplier = Mockery::mock(SupplierClient::class);
+    $supplier->shouldReceive('fetchAllProducts')->andThrow(new JwtRefreshFailedException('bad creds'));
+    app()->instance(SupplierClient::class, $supplier);
 
     app()->instance(WooProductIterator::class, new class
     {

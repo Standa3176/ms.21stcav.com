@@ -20,15 +20,9 @@ beforeEach(function () {
 
 function resumeStub(array $pages, array $feed = []): void
 {
-    app()->instance(SupplierClient::class, new class($feed)
-    {
-        public function __construct(private array $feed) {}
-
-        public function fetchAllProducts(): array
-        {
-            return $this->feed;
-        }
-    });
+    $supplier = Mockery::mock(SupplierClient::class);
+    $supplier->shouldReceive('fetchAllProducts')->andReturn($feed);
+    app()->instance(SupplierClient::class, $supplier);
 
     app()->instance(WooProductIterator::class, new class($pages)
     {

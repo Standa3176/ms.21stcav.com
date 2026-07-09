@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use App\Foundation\Integration\Services\IntegrationLogger;
@@ -34,7 +35,7 @@ it('get() returns the Automattic client payload as an array', function () {
             ['id' => 2, 'sku' => 'SKU-B', 'price' => '149.50'],
         ]);
 
-    $client = new WooClient(app(IntegrationLogger::class), $mockInner);
+    $client = new WooClient(app(IntegrationLogger::class), app(IntegrationCredentialResolver::class), $mockInner);
     $result = $client->get('products', ['per_page' => 100]);
 
     expect($result)->toBeArray()
@@ -52,7 +53,7 @@ it('get() writes an integration_events row with channel=woo + method=GET + statu
     $mockInner->http = $mockHttp;
     $mockInner->shouldReceive('get')->once()->andReturn([]);
 
-    (new WooClient(app(IntegrationLogger::class), $mockInner))
+    (new WooClient(app(IntegrationLogger::class), app(IntegrationCredentialResolver::class), $mockInner))
         ->get('products', ['per_page' => 100, 'page' => 1]);
 
     $events = IntegrationEvent::all();
@@ -80,7 +81,7 @@ it('get() propagates exceptions from the client but records a failed integration
         new HttpClientException('Internal Server Error', 500, new WooRequest(), new WooResponse(500, [], ''))
     );
 
-    expect(fn () => (new WooClient(app(IntegrationLogger::class), $mockInner))->get('products'))
+    expect(fn () => (new WooClient(app(IntegrationLogger::class), app(IntegrationCredentialResolver::class), $mockInner))->get('products'))
         ->toThrow(HttpClientException::class);
 
     $event = IntegrationEvent::first();
@@ -96,10 +97,13 @@ it('WooClient constructor types $inner as ?Automattic\\WooCommerce\\Client', fun
     $refl = new ReflectionMethod(WooClient::class, '__construct');
     $params = $refl->getParameters();
 
-    // Params: [IntegrationLogger $logger, ?AutomatticClient $inner = null]
-    expect($params)->toHaveCount(2);
+    // Params: [IntegrationLogger $logger, IntegrationCredentialResolver $resolver, ?AutomatticClient $inner = null]
+    expect($params)->toHaveCount(3);
 
-    $innerParam = $params[1];
+    expect($params[1]->getType())->not->toBeNull()
+        ->and($params[1]->getType()->getName())->toBe(IntegrationCredentialResolver::class);
+
+    $innerParam = $params[2];
     $type = $innerParam->getType();
 
     expect($type)->not->toBeNull()

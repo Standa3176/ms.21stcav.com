@@ -189,6 +189,16 @@ class RetagProductsOnWooCommand extends BaseCommand
             // NOT an expected exit path.
             $pageGuard = 0;
             $maxPageGuard = 50;
+            // Processed-id dedup across page=1 iterations. In LIVE mode the ?brand=N
+            // filter set shrinks after each PUT (products move off the source brand),
+            // so the loop drained naturally. In DRY-RUN there are NO PUTs → the set
+            // never shrank → the loop spun to the 50-guard, re-emitting the same
+            // products up to 50× (phantom would_retag rows, brand-cleanup-followups
+            // #6). Tracking every Woo product id we've already handled lets us break
+            // the instant a page=1 read introduces no new ids — clean drain in BOTH
+            // modes. (Also guards LIVE if a failed PUT leaves a product on the source.)
+            /** @var array<int, true> $processedIds */
+            $processedIds = [];
             while (true) {
                 try {
                     $response = $this->woo->get('products', [
@@ -228,7 +238,22 @@ class RetagProductsOnWooCommand extends BaseCommand
                     break;
                 }
 
-                foreach ($response as $row) {
+                // Keep only rows carrying a Woo product id we haven't handled yet.
+                // If a full page repeats (dry-run, or a live PUT that failed to move
+                // a product off the source brand) → $newRows is empty → clean break.
+                $newRows = array_filter($response, function ($row) use ($processedIds): bool {
+                    if (! is_array($row)) {
+                        $row = json_decode((string) json_encode($row), true);
+                    }
+                    $id = is_array($row) ? (int) ($row['id'] ?? 0) : 0;
+
+                    return $id > 0 && ! isset($processedIds[$id]);
+                });
+                if ($newRows === []) {
+                    break;
+                }
+
+                foreach ($newRows as $row) {
                     // stdClass→array cast — commit 9581de8 pattern.
                     if (! is_array($row)) {
                         $row = json_decode((string) json_encode($row), true);
@@ -241,6 +266,8 @@ class RetagProductsOnWooCommand extends BaseCommand
                     if ($wooProductId <= 0) {
                         continue;
                     }
+                    // Mark handled so a repeated page=1 read drains to a clean break.
+                    $processedIds[$wooProductId] = true;
                     $sku = (string) ($row['sku'] ?? '');
 
                     // Extract current brand IDs from the brands[] array.
@@ -285,6 +312,7 @@ class RetagProductsOnWooCommand extends BaseCommand
                             $hitLimit = true;
                             break;
                         }
+
                         continue;
                     }
 
@@ -306,6 +334,7 @@ class RetagProductsOnWooCommand extends BaseCommand
                             $hitLimit = true;
                             break;
                         }
+
                         continue;
                     }
 
@@ -333,6 +362,7 @@ class RetagProductsOnWooCommand extends BaseCommand
                             $hitLimit = true;
                             break;
                         }
+
                         continue;
                     }
 

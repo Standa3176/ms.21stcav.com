@@ -18,13 +18,14 @@ use Filament\Forms\Components\Tabs;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
+use Filament\Resources\Resource;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
-use Filament\Resources\Resource;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 /**
  * Phase 2 Plan 02-04 — D-01 expansion Product Resource.
@@ -151,6 +152,7 @@ class ProductResource extends Resource
                                         Toggle::make('override_pins.pin_slug')->label('Pin slug'),
                                         Toggle::make('override_pins.pin_brand')->label('Pin brand'),
                                         Toggle::make('override_pins.pin_category')->label('Pin category'),
+                                        Toggle::make('override_pins.pin_price')->label('Pin price'),
                                     ]),
                                 ])
                                 ->afterStateHydrated(function ($component, ?Product $record): void {
@@ -203,7 +205,7 @@ class ProductResource extends Resource
                         'publish' => 'Live',
                         'draft' => 'Pending',
                         'private' => 'Hidden',
-                        default => \Illuminate\Support\Str::headline((string) $state),
+                        default => Str::headline((string) $state),
                     })
                     ->color(fn ($state): string => match ($state) {
                         'publish' => 'success',

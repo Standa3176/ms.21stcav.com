@@ -10,7 +10,7 @@ use App\Domain\Products\Models\Product;
 /**
  * Phase 6 Plan 04 — FieldPinManager (AUTO-10, AUTO-11 D-10, D-12).
  *
- * Thin service owning the 8 pin_* toggle upsert path. Lives in
+ * Thin service owning the 9 pin_* toggle upsert path. Lives in
  * ProductAutoCreate so that the Products layer doesn't need a Deptrac
  * allow for Pricing (ProductOverride is a Pricing-layer model).
  *
@@ -36,10 +36,11 @@ final class FieldPinManager
         'pin_slug',
         'pin_brand',
         'pin_category',
+        'pin_price',
     ];
 
     /**
-     * Load current pin state for a product — returns an 8-key bool array.
+     * Load current pin state for a product — returns a 9-key bool array.
      * Used by the Filament form's afterStateHydrated to populate the toggles.
      *
      * @return array<string, bool>
@@ -56,7 +57,7 @@ final class FieldPinManager
     }
 
     /**
-     * Upsert the ProductOverride row with the 8 pin_* booleans from form state.
+     * Upsert the ProductOverride row with the 9 pin_* booleans from form state.
      *
      * Authorisation check (defence-in-depth on top of Filament's canEdit gate):
      * if the active user cannot `update` ProductOverride, this is a silent

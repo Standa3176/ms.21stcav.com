@@ -311,18 +311,16 @@ it('Case I: drain-queue pagination (always page=1) → 101 PUTs across 3 sequent
     ];
     $page1Drain = [$batch1, $batch2, []]; // final drain → empty signals done
 
-    $stub = new class([
-        'brandsByPage' => [
-            1 => [
-                ['id' => 10, 'name' => 'Poly', 'count' => 500],     // canonical (count wins)
-                ['id' => 11, 'name' => 'poly', 'count' => 101],     // source
-            ],
-        ],
-        'productsBrand11Queue' => $page1Drain,
-    ]) extends WooClient {
+    $stub = new class(['brandsByPage' => [1 => [['id' => 10, 'name' => 'Poly', 'count' => 500],     // canonical (count wins)
+        ['id' => 11, 'name' => 'poly', 'count' => 101],     // source
+    ], ], 'productsBrand11Queue' => $page1Drain, ]) extends WooClient
+    {
         public array $getCalls = [];
+
         public array $putCalls = [];
+
         public array $brandsByPage;
+
         public array $productsBrand11Queue;
 
         public function __construct(array $config)
@@ -428,23 +426,16 @@ it('Case J: idempotent re-run after retag → all products already_canonical, ZE
 
 it('Case K: status=any captures pending+draft products that publish-only would skip', function (): void {
     // Stub returns all 3 products under status=any; returns just the 1 publish row under any other status.
-    $stub = new class([
-        'brandsByPage' => [
-            1 => [
-                ['id' => 20, 'name' => 'Crestron', 'count' => 80],
-                ['id' => 21, 'name' => 'crestron', 'count' => 3],
-            ],
-        ],
-        'allProducts' => [
-            ['id' => 7001, 'sku' => 'K-publish',  'status' => 'publish', 'brands' => [['id' => 21]]],
-            ['id' => 7002, 'sku' => 'K-pending1', 'status' => 'pending', 'brands' => [['id' => 21]]],
-            ['id' => 7003, 'sku' => 'K-pending2', 'status' => 'pending', 'brands' => [['id' => 21]]],
-        ],
-    ]) extends WooClient {
+    $stub = new class(['brandsByPage' => [1 => [['id' => 20, 'name' => 'Crestron', 'count' => 80], ['id' => 21, 'name' => 'crestron', 'count' => 3]]], 'allProducts' => [['id' => 7001, 'sku' => 'K-publish', 'status' => 'publish', 'brands' => [['id' => 21]]], ['id' => 7002, 'sku' => 'K-pending1', 'status' => 'pending', 'brands' => [['id' => 21]]], ['id' => 7003, 'sku' => 'K-pending2', 'status' => 'pending', 'brands' => [['id' => 21]]]]]) extends WooClient
+    {
         public array $getCalls = [];
+
         public array $putCalls = [];
+
         public array $brandsByPage;
+
         public array $allProducts;
+
         public int $drainCalls = 0;
 
         public function __construct(array $config)
@@ -510,18 +501,14 @@ it('Case L: 200-product source drains across multiple page=1 reads, safety break
         $batch2[] = ['id' => 80000 + $i, 'sku' => "L-{$i}", 'brands' => [['id' => 31]]];
     }
 
-    $stub = new class([
-        'brandsByPage' => [
-            1 => [
-                ['id' => 30, 'name' => 'LG', 'count' => 800],
-                ['id' => 31, 'name' => 'lg', 'count' => 200],
-            ],
-        ],
-        'drainQueue' => [$batch1, $batch2, []],
-    ]) extends WooClient {
+    $stub = new class(['brandsByPage' => [1 => [['id' => 30, 'name' => 'LG', 'count' => 800], ['id' => 31, 'name' => 'lg', 'count' => 200]]], 'drainQueue' => [$batch1, $batch2, []]]) extends WooClient
+    {
         public array $getCalls = [];
+
         public array $putCalls = [];
+
         public array $brandsByPage;
+
         public array $drainQueue;
 
         public function __construct(array $config)
@@ -560,6 +547,84 @@ it('Case L: 200-product source drains across multiple page=1 reads, safety break
     // No safety break fired — 200 / 100 = 2 drain iterations, well under the 50-iteration backstop.
     expect(Activity::query()->where('description', 'brands.retag_safety_break')->count())->toBe(0);
     expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(200);
+});
+
+it('Case M: DRY-RUN over a non-draining source emits exactly N plan rows (processed-id dedup, no 50-guard)', function (): void {
+    // Regression (brand-cleanup-followups #6): in dry-run there are NO PUTs, so a
+    // real Woo ?brand=N filter set never shrinks — the always-page-1 loop would
+    // re-read the SAME products until the 50-iteration safety break, emitting each
+    // product up to 50× (phantom would_retag rows). This stub models exactly that:
+    // EVERY page=1 read for brand=41 returns the SAME 3 products (unlike the
+    // draining bindRetagWooStub). With processed-id dedup the loop must break as
+    // soon as a page introduces no new ids → exactly 3 plan rows, no safety break.
+    $sameThree = [
+        ['id' => 41001, 'sku' => 'M-1', 'brands' => [['id' => 41]]],
+        ['id' => 41002, 'sku' => 'M-2', 'brands' => [['id' => 41]]],
+        ['id' => 41003, 'sku' => 'M-3', 'brands' => [['id' => 41]]],
+    ];
+
+    $stub = new class(['brandsByPage' => [1 => [['id' => 40, 'name' => 'Sony', 'count' => 500],   // canonical (count wins)
+        ['id' => 41, 'name' => 'sony', 'count' => 3],      // source
+    ], ], 'sameThree' => $sameThree, ]) extends WooClient
+    {
+        public array $getCalls = [];
+
+        public array $putCalls = [];
+
+        public array $brandsByPage;
+
+        public array $sameThree;
+
+        public function __construct(array $config)
+        {
+            $this->brandsByPage = $config['brandsByPage'];
+            $this->sameThree = $config['sameThree'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                return $this->brandsByPage[(int) ($query['page'] ?? 1)] ?? [];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 41) {
+                // NON-draining: dry-run issues no PUTs so the real filter set never
+                // shrinks — always return the same 3 products.
+                return $this->sameThree;
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', ['--dry-run' => true]);
+
+    expect($exit)->toBe(0);
+    expect($stub->putCalls)->toBe([]); // dry-run never PUTs
+
+    $output = Artisan::output();
+
+    // Exactly 3 would_retag decision lines — NOT 3 × 50 = 150 phantom repeats.
+    expect(substr_count($output, 'would_retag woo='))->toBe(3);
+
+    // Drained via processed-id dedup, NOT the 50-iteration safety backstop.
+    expect(Activity::query()->where('description', 'brands.retag_safety_break')->count())->toBe(0);
+
+    // Only 2 GETs against brand=41: first read (3 new ids) + second read (all
+    // already processed → clean break). Far below the 50-guard.
+    $brand41Gets = array_values(array_filter(
+        $stub->getCalls,
+        static fn (array $c): bool => $c['endpoint'] === 'products' && ($c['query']['brand'] ?? null) === 41,
+    ));
+    expect(count($brand41Gets))->toBe(2);
 });
 
 /**

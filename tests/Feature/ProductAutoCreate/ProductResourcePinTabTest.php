@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Pricing\Models\ProductOverride;
+use App\Domain\ProductAutoCreate\Services\FieldPinManager;
 use App\Domain\Products\Filament\Resources\ProductResource;
 use App\Domain\Products\Models\Product;
 use App\Models\User;
@@ -87,6 +88,26 @@ it('sales role cannot save pins (policy denies update)', function (): void {
 
     // Authorisation failure means no row was written.
     expect(ProductOverride::where('product_id', $product->id)->exists())->toBeFalse();
+});
+
+it('admin saving pin_price=true persists ProductOverride.pin_price and hydrates back', function (): void {
+    // Quick 260709-vvj — pin_price is now the 9th pin toggle. The ProductOverride
+    // model already had pin_price fillable+cast (gy0); this test proves the
+    // FieldPinManager save loop (which iterates PIN_COLUMNS) now round-trips it.
+    $this->actingAs($this->admin);
+
+    $product = Product::factory()->create();
+
+    ProductResource::saveFieldPins($product, ['pin_price' => true]);
+
+    $override = ProductOverride::where('product_id', $product->id)->first();
+    expect($override)->not->toBeNull();
+    expect($override->pin_price)->toBeTrue();
+
+    // Load path (afterStateHydrated → FieldPinManager::loadPinsFor) hydrates it back.
+    $pins = app(FieldPinManager::class)->loadPinsFor($product);
+    expect($pins)->toHaveKey('pin_price');
+    expect($pins['pin_price'])->toBeTrue();
 });
 
 it('saveFieldPins writes activity_log entry (D-12 audit trail)', function (): void {

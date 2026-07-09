@@ -43,7 +43,13 @@ it('freshOnly() returns only FRESH supplier rows; SILENT excluded; sentinel neve
 
     app(SupplierFreshnessResolver::class)->forget();
 
-    $ids = SupplierOfferSnapshot::query()->freshOnly()->pluck('supplier_id')->all();
+    // 260709-m3p — the caller now resolves the Sync freshness resolver and
+    // passes the fresh ids into the scope (Products model no longer reaches
+    // into the Sync service). Behaviour is byte-identical to the prior
+    // no-arg scope that resolved internally.
+    $freshIds = app(SupplierFreshnessResolver::class)->freshSupplierIds()->all();
+
+    $ids = SupplierOfferSnapshot::query()->freshOnly($freshIds)->pluck('supplier_id')->all();
 
     expect($ids)->toBe(['FRESH']);
     expect($ids)->not->toContain('SILENT');

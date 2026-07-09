@@ -31,8 +31,8 @@ declare(strict_types=1);
 | happens (mirrors WooGalleryPublisherTest).
 */
 
+use App\Domain\ProductAutoCreate\Services\WooGtinPublisher;
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Services\WooGtinPublisher;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 

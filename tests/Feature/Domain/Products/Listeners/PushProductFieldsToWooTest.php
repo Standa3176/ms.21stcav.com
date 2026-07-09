@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\ProductAutoCreate\Listeners\PushProductFieldsToWoo;
 use App\Domain\Products\Events\ProductFieldsChangedEvent;
-use App\Domain\Products\Listeners\PushProductFieldsToWoo;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooProductWriter;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -152,7 +152,7 @@ it('Case I: status=error → throws RuntimeException with the reason embedded', 
     );
 
     expect(fn () => app(PushProductFieldsToWoo::class)->handle($event))
-        ->toThrow(\RuntimeException::class, '5xx upstream');
+        ->toThrow(RuntimeException::class, '5xx upstream');
 });
 
 it('Case J: Product::find returns null (deleted before handle) → writer NEVER called', function (): void {
@@ -174,7 +174,7 @@ it('Case J: Product::find returns null (deleted before handle) → writer NEVER 
  * Bind an anonymous-subclass WooProductWriter stub with canned return value.
  *
  * @param  array{status:string, fields_pushed:array<int,string>, http_status:?int, reason:?string}  $return
- * @return object  the bound stub with public $calls array.
+ * @return object the bound stub with public $calls array.
  */
 function bindStubWriter(array $return): object
 {

@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Products\Services;
+namespace App\Domain\ProductAutoCreate\Services;
 
-use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\Products\Models\Product;
 use Illuminate\Support\Facades\Log;
 

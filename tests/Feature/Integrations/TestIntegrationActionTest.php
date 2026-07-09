@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\CRM\Services\BitrixClient;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Enums\IntegrationTestStatus;
 use App\Domain\Integrations\Filament\Actions\TestIntegrationAction;

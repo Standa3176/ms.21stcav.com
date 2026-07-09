@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Services;
 
-use App\Domain\Agents\Clients\ClaudeClient;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use Prism\Prism\ValueObjects\Media\Image;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 

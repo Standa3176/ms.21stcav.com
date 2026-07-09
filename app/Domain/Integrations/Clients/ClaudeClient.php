@@ -2,16 +2,19 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Agents\Clients;
+namespace App\Domain\Integrations\Clients;
 
+use App\Domain\Agents\Clients\ClaudeResponse;
 use App\Domain\Agents\Services\CostCalculator;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Support\Facades\Context;
+use Prism\Prism\Contracts\Message;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Facades\Prism;
+use Prism\Prism\Tool;
 
 /**
  * Phase 8 Plan 02 (AGNT-07) — sole wrapper around prism-php/prism for Anthropic
@@ -57,9 +60,9 @@ class ClaudeClient
     ) {}
 
     /**
-     * @param  array<int, \Prism\Prism\Contracts\Message>  $messages  UserMessage/AssistantMessage/ToolResultMessage chain
-     * @param  array<int, \Prism\Prism\Tool>  $tools     Optional Prism tool definitions (Plan 03 ToolBus wraps these)
-     * @param  ?string  $model     Override default model — usually null; agents lock to claude-sonnet-4-6
+     * @param  array<int, Message>  $messages  UserMessage/AssistantMessage/ToolResultMessage chain
+     * @param  array<int, Tool>  $tools  Optional Prism tool definitions (Plan 03 ToolBus wraps these)
+     * @param  ?string  $model  Override default model — usually null; agents lock to claude-sonnet-4-6
      */
     public function generate(
         string $systemPrompt,

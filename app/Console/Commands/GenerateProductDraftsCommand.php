@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Console\Concerns\NormalisesEan;
-use App\Domain\Agents\Clients\ClaudeClient;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Concerns\PrefersRealSupplierRow;

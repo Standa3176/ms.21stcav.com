@@ -32,8 +32,8 @@ declare(strict_types=1);
 */
 
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
+use App\Domain\ProductAutoCreate\Services\WooBrandPublisher;
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Services\WooBrandPublisher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

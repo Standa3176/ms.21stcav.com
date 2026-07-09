@@ -31,8 +31,16 @@ use App\Domain\Agents\Events\AgentRunStarted;
 use App\Domain\Agents\Exceptions\GuardrailViolationException;
 use App\Domain\Agents\Jobs\RunSeoAgentJob;
 use App\Domain\Agents\Models\AgentRun;
+use App\Domain\Agents\Services\AgentRegistry;
+use App\Domain\Agents\Services\BudgetGuard;
+use App\Domain\Agents\Services\GuardrailEngine;
+use App\Domain\Agents\Services\PromptRenderer;
+use App\Domain\Agents\Services\SeoAgentResultMapper;
+use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -47,7 +55,7 @@ beforeEach(function () {
     Context::add('correlation_id', (string) Str::uuid());
     Event::fake([AgentRunStarted::class, AgentRunCompleted::class, AgentRunFailed::class]);
     config()->set('prism.providers.anthropic.api_key', 'sk-test-fake-key');
-    \Illuminate\Support\Facades\Cache::flush();
+    Cache::flush();
 });
 
 it('P12-B — guardrail-blocked run writes ONE agent_guardrail_blocked Suggestion + ZERO seo_content_patch', function () {
@@ -78,7 +86,7 @@ it('P12-B — guardrail-blocked run writes ONE agent_guardrail_blocked Suggestio
     ]);
 
     $product = Product::factory()->create([
-        'sku' => 'BLOCKED-' . Str::random(4),
+        'sku' => 'BLOCKED-'.Str::random(4),
         'name' => 'Test Camera',
         'long_description' => 'Old long description.',
         'auto_create_status' => 'pending_review',
@@ -87,13 +95,13 @@ it('P12-B — guardrail-blocked run writes ONE agent_guardrail_blocked Suggestio
 
     try {
         (new RunSeoAgentJob(productId: $product->id))->handle(
-            registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-            budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-            toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-            guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-            client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-            promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-            mapper: app(\App\Domain\Agents\Services\SeoAgentResultMapper::class),
+            registry: app(AgentRegistry::class),
+            budgetGuard: app(BudgetGuard::class),
+            toolBus: app(ToolBus::class),
+            guardrailEngine: app(GuardrailEngine::class),
+            client: app(ClaudeClient::class),
+            promptRenderer: app(PromptRenderer::class),
+            mapper: app(SeoAgentResultMapper::class),
         );
         $caught = null;
     } catch (GuardrailViolationException $e) {

@@ -27,8 +27,8 @@ declare(strict_types=1);
 | one-line call to this tested publisher.
 */
 
+use App\Domain\ProductAutoCreate\Services\WooGalleryPublisher;
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Services\WooGalleryPublisher;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 

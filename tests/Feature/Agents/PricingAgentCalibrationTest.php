@@ -29,10 +29,11 @@ declare(strict_types=1);
  */
 
 use App\Domain\Agents\Agents\PricingAgent;
-use App\Domain\Agents\Clients\ClaudeClient;
+use App\Domain\Agents\Clients\ClaudeResponse;
 use App\Domain\Agents\Models\AgentRun;
 use App\Domain\Agents\Services\PromptRenderer;
 use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Str;
 use Prism\Prism\Enums\FinishReason as PrismFinishReason;
@@ -85,7 +86,7 @@ beforeEach(function () {
  *
  * @return ?array<string, mixed>
  */
-function extractFinalProposeMarginBandArgs(\App\Domain\Agents\Clients\ClaudeResponse $response): ?array
+function extractFinalProposeMarginBandArgs(ClaudeResponse $response): ?array
 {
     $proposeCalls = collect($response->steps ?? [])
         ->flatMap(fn ($step) => $step->toolCalls ?? [])

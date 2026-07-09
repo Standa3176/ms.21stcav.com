@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Sync\Console\Commands;
 
 use App\Console\Commands\BaseCommand;
+use App\Domain\Products\Models\SupplierFreshnessSnapshot;
+use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Models\Supplier;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -52,7 +53,7 @@ final class CheckStaleSuppliersCommand extends BaseCommand
 
         try {
             // ─── 1. Discover distinct supplier_ids from supplier_offer_snapshots ───
-            $discovered = DB::table('supplier_offer_snapshots')
+            $discovered = SupplierOfferSnapshot::query()
                 ->selectRaw('supplier_id, MAX(supplier_name) AS supplier_name')
                 ->whereNotNull('supplier_id')
                 ->where('supplier_id', '!=', '')
@@ -133,13 +134,16 @@ final class CheckStaleSuppliersCommand extends BaseCommand
                 $this->warn('[dry-run] — would TRUNCATE supplier_freshness_snapshots + INSERT '
                     .count($rows).' row(s).');
             } else {
-                DB::transaction(function () use ($rows): void {
-                    DB::table('supplier_freshness_snapshots')->truncate();
+                // Facade-free transaction (SYNC-04 deny): drive the connection
+                // via the Eloquent model rather than the DB facade. Identical
+                // SQL — TRUNCATE then chunked INSERT — wrapped atomically.
+                SupplierFreshnessSnapshot::query()->getConnection()->transaction(function () use ($rows): void {
+                    SupplierFreshnessSnapshot::query()->truncate();
                     if ($rows !== []) {
                         // Realistic supplier count is well under 50; chunking is
                         // future-proofing against pathological growth.
                         foreach (array_chunk($rows, 500) as $chunk) {
-                            DB::table('supplier_freshness_snapshots')->insert($chunk);
+                            SupplierFreshnessSnapshot::query()->insert($chunk);
                         }
                     }
                 });

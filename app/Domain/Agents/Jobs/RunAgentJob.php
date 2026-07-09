@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Agents\Jobs;
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Agents\Enums\AgentRunStatus;
 use App\Domain\Agents\Events\AgentRunCompleted;
 use App\Domain\Agents\Events\AgentRunFailed;
@@ -20,6 +19,7 @@ use App\Domain\Agents\Services\GuardrailEngine;
 use App\Domain\Agents\Services\PromptRenderer;
 use App\Domain\Agents\Services\ToolBus;
 use App\Domain\Agents\ValueObjects\SuggestionDraft;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;

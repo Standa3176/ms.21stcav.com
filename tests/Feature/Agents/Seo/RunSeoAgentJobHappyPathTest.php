@@ -26,8 +26,16 @@ use App\Domain\Agents\Events\AgentRunFailed;
 use App\Domain\Agents\Events\AgentRunStarted;
 use App\Domain\Agents\Jobs\RunSeoAgentJob;
 use App\Domain\Agents\Models\AgentRun;
+use App\Domain\Agents\Services\AgentRegistry;
+use App\Domain\Agents\Services\BudgetGuard;
+use App\Domain\Agents\Services\GuardrailEngine;
+use App\Domain\Agents\Services\PromptRenderer;
+use App\Domain\Agents\Services\SeoAgentResultMapper;
+use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -47,13 +55,13 @@ beforeEach(function () {
     // so the resolver returns a non-empty payload (the value itself is unused
     // because Prism::fake intercepts the request).
     config()->set('prism.providers.anthropic.api_key', 'sk-test-fake-key');
-    \Illuminate\Support\Facades\Cache::flush();
+    Cache::flush();
 });
 
 function makeSeoEligibleProduct(array $overrides = []): Product
 {
     return Product::factory()->create(array_merge([
-        'sku' => 'SEO-AGENT-E2E-' . Str::random(4),
+        'sku' => 'SEO-AGENT-E2E-'.Str::random(4),
         'name' => 'Logitech MeetUp',
         'short_description' => 'A camera',
         'long_description' => '',
@@ -108,13 +116,13 @@ it('Fixture 1 — happy path with AGENT_WRITE_ENABLED=true: one seo_content_patc
     $product = makeSeoEligibleProduct();
 
     (new RunSeoAgentJob(productId: $product->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\SeoAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(SeoAgentResultMapper::class),
     );
 
     $run = AgentRun::query()->where('kind', 'seo')->latest('started_at')->first();
@@ -138,13 +146,13 @@ it('Fixture 2 — shadow mode AGENT_WRITE_ENABLED=false: AgentRun persists, ZERO
     $product = makeSeoEligibleProduct();
 
     (new RunSeoAgentJob(productId: $product->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\SeoAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(SeoAgentResultMapper::class),
     );
 
     $run = AgentRun::query()->where('kind', 'seo')->latest('started_at')->first();
@@ -163,13 +171,13 @@ it('Fixture 3 — eligibility re-check: product no longer pending_review exits w
     $product = makeSeoEligibleProduct(['auto_create_status' => 'published']);
 
     (new RunSeoAgentJob(productId: $product->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\SeoAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(SeoAgentResultMapper::class),
     );
 
     // No AgentRun row created — eligibility re-check fired before AgentRun::create

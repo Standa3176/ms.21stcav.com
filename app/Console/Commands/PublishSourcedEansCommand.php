@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\ProductAutoCreate\Services\WooGtinPublisher;
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Services\WooGtinPublisher;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 /**

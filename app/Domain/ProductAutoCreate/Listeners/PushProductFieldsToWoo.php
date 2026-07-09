@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Products\Listeners;
+namespace App\Domain\ProductAutoCreate\Listeners;
 
 use App\Domain\Products\Events\ProductFieldsChangedEvent;
 use App\Domain\Products\Models\Product;

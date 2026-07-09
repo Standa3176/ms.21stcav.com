@@ -49,26 +49,29 @@ final class SupplierOfferSnapshot extends Model
     /**
      * Quick task 260608-g8x — canonical "exclude stale-supplier rows" filter.
      *
-     * Filters down to rows whose `supplier_id` is in the resolver's
-     * fresh-supplier set. Three downstream consumers (AdCandidateScanner,
+     * Filters down to rows whose `supplier_id` is in the supplied fresh-supplier
+     * set. Three downstream consumers (AdCandidateScanner,
      * CompetitorPositionScanner.cheapestSupplierName, SupplierDbSyncCommand
      * buy-price selector) BYPASS this scope when their constructor flag is
      * false (back-compat with operator override).
      *
-     * Cached per-request via the singleton resolver — calling `freshOnly()`
-     * 1000 times in a request triggers AT MOST one classification rebuild.
+     * 260709-m3p — the freshness resolution is now performed by the CALLER
+     * (which resolves App\Domain\Sync\Services\SupplierFreshnessResolver and
+     * passes `->freshSupplierIds()->all()` in) rather than the model reaching
+     * into the Sync service via `app(...)`. This inverts the Products→Sync
+     * dependency (a Products MODEL must not depend on a Sync SERVICE) while
+     * keeping the filtering behaviour byte-identical. Callers already hold the
+     * singleton resolver, so the per-request classification cache is unaffected.
      *
      * Empty-whereIn safety: when zero suppliers are fresh, we render a
      * string sentinel ('__NO_FRESH_SUPPLIERS__') rather than letting
      * Eloquent silently drop the constraint. The 16-char string never
      * matches a real supplier_id (which is numeric in the supplier feed).
+     *
+     * @param  array<int, string>  $freshIds  supplier_ids the resolver classified 'fresh'
      */
-    public function scopeFreshOnly(Builder $q): Builder
+    public function scopeFreshOnly(Builder $q, array $freshIds): Builder
     {
-        $freshIds = app(\App\Domain\Sync\Services\SupplierFreshnessResolver::class)
-            ->freshSupplierIds()
-            ->all();
-
         return $q->whereIn(
             'supplier_id',
             $freshIds === [] ? ['__NO_FRESH_SUPPLIERS__'] : $freshIds,

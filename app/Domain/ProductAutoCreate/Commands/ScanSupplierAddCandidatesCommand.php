@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Sync\Commands;
+namespace App\Domain\ProductAutoCreate\Commands;
 
 use App\Console\Commands\BaseCommand;
 use App\Domain\Pricing\Services\PricingOpsReport;

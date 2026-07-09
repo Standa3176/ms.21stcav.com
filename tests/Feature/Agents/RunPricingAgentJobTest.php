@@ -26,8 +26,16 @@ declare(strict_types=1);
 
 use App\Domain\Agents\Events\AgentRunCompleted;
 use App\Domain\Agents\Events\AgentRunStarted;
+use App\Domain\Agents\Jobs\RunAgentJob;
 use App\Domain\Agents\Jobs\RunPricingAgentJob;
 use App\Domain\Agents\Models\AgentRun;
+use App\Domain\Agents\Services\AgentRegistry;
+use App\Domain\Agents\Services\BudgetGuard;
+use App\Domain\Agents\Services\GuardrailEngine;
+use App\Domain\Agents\Services\PricingAgentResultMapper;
+use App\Domain\Agents\Services\PromptRenderer;
+use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
@@ -97,13 +105,13 @@ it('Fixture 1 — happy path: AGENT_WRITE_ENABLED=true merges enrichment into Su
     $suggestion = makePricingMarginChangeSuggestion();
 
     (new RunPricingAgentJob(suggestionId: $suggestion->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\PricingAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(PricingAgentResultMapper::class),
     );
 
     // AgentRun row created + finalised
@@ -144,13 +152,13 @@ it('Fixture 2 — shadow mode: AGENT_WRITE_ENABLED=false persists AgentRun but s
     $suggestion = makePricingMarginChangeSuggestion();
 
     (new RunPricingAgentJob(suggestionId: $suggestion->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\PricingAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(PricingAgentResultMapper::class),
     );
 
     // AgentRun forensics PERSISTED (admin can still see what the agent would have proposed)
@@ -180,14 +188,14 @@ it('Fixture 3 — InvalidArgumentException when triggered for a non-margin_chang
     ]);
 
     expect(fn () => (new RunPricingAgentJob(suggestionId: $suggestion->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\PricingAgentResultMapper::class),
-    ))->toThrow(\InvalidArgumentException::class, 'PricingAgent only enriches margin_change suggestions');
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(PricingAgentResultMapper::class),
+    ))->toThrow(InvalidArgumentException::class, 'PricingAgent only enriches margin_change suggestions');
 
     // No AgentRun should have been created — guard fires before AgentRun::create
     expect(AgentRun::query()->where('triggering_suggestion_id', $suggestion->id)->exists())->toBeFalse();
@@ -200,13 +208,13 @@ it('Fixture 4 — re-run on the same suggestion: latest-wins overwrite + both ru
     // Run 1 — confidence 50, band 1900-2100
     fakePricingAgentResponse(proposedBps: 2000, confidence: 50, bandMin: 1900, bandMax: 2100);
     (new RunPricingAgentJob(suggestionId: $suggestion->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\PricingAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(PricingAgentResultMapper::class),
     );
 
     $firstRun = AgentRun::query()->where('triggering_suggestion_id', $suggestion->id)->orderByDesc('started_at')->firstOrFail();
@@ -214,13 +222,13 @@ it('Fixture 4 — re-run on the same suggestion: latest-wins overwrite + both ru
     // Run 2 — confidence 78, band 1980-2080
     fakePricingAgentResponse(proposedBps: 2030, confidence: 78, bandMin: 1980, bandMax: 2080);
     (new RunPricingAgentJob(suggestionId: $suggestion->id))->handle(
-        registry: app(\App\Domain\Agents\Services\AgentRegistry::class),
-        budgetGuard: app(\App\Domain\Agents\Services\BudgetGuard::class),
-        toolBus: app(\App\Domain\Agents\Services\ToolBus::class),
-        guardrailEngine: app(\App\Domain\Agents\Services\GuardrailEngine::class),
-        client: app(\App\Domain\Agents\Clients\ClaudeClient::class),
-        promptRenderer: app(\App\Domain\Agents\Services\PromptRenderer::class),
-        mapper: app(\App\Domain\Agents\Services\PricingAgentResultMapper::class),
+        registry: app(AgentRegistry::class),
+        budgetGuard: app(BudgetGuard::class),
+        toolBus: app(ToolBus::class),
+        guardrailEngine: app(GuardrailEngine::class),
+        client: app(ClaudeClient::class),
+        promptRenderer: app(PromptRenderer::class),
+        mapper: app(PricingAgentResultMapper::class),
     );
 
     $secondRun = AgentRun::query()
@@ -243,7 +251,7 @@ it('is a SIBLING of RunAgentJob (NOT a subclass) — Path A invariant per RESEAR
     $reflection = new ReflectionClass(RunPricingAgentJob::class);
     $parent = $reflection->getParentClass();
     // Either no parent class OR parent is not RunAgentJob — both confirm sibling pattern
-    expect($parent === false || $parent->getName() !== \App\Domain\Agents\Jobs\RunAgentJob::class)->toBeTrue(
+    expect($parent === false || $parent->getName() !== RunAgentJob::class)->toBeTrue(
         'RunPricingAgentJob MUST be a sibling, not a subclass — RESEARCH §A9 invariant'
     );
 });

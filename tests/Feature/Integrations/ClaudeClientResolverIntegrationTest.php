@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Domain\Agents\Clients\ClaudeClient;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Models\IntegrationCredential;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;

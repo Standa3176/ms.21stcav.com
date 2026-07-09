@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\Integrations\Filament\Actions;
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\CRM\Services\BitrixClient;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Enums\IntegrationTestStatus;
 use App\Domain\Integrations\Models\IntegrationCredential;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Integrations\Services\IntegrationTestResult;
+use App\Domain\ProductAutoCreate\Services\EanSearchClient;
+use App\Domain\ProductAutoCreate\Services\IcecatClient;
+use App\Domain\ProductAutoCreate\Services\WebImageSearchClient;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooClient;
 use Filament\Notifications\Notification;
@@ -78,10 +81,10 @@ class TestIntegrationAction
             IntegrationCredentialKind::AnthropicApi => app(ClaudeClient::class)->testConnection(),
             IntegrationCredentialKind::LangfuseObservability => self::testLangfuse(),
             IntegrationCredentialKind::SupplierDb => self::testSupplierDb(),
-            IntegrationCredentialKind::Icecat => app(\App\Domain\ProductAutoCreate\Services\IcecatClient::class)->testConnection(),
-            IntegrationCredentialKind::EanSearch => app(\App\Domain\ProductAutoCreate\Services\EanSearchClient::class)->testConnection(),
-            IntegrationCredentialKind::ImageSearch => app(\App\Domain\ProductAutoCreate\Services\WebImageSearchClient::class)->testConnection(),
-            default => IntegrationTestResult::failed('Unknown kind: ' . ($record->kind?->value ?? 'null'), 0),
+            IntegrationCredentialKind::Icecat => app(IcecatClient::class)->testConnection(),
+            IntegrationCredentialKind::EanSearch => app(EanSearchClient::class)->testConnection(),
+            IntegrationCredentialKind::ImageSearch => app(WebImageSearchClient::class)->testConnection(),
+            default => IntegrationTestResult::failed('Unknown kind: '.($record->kind?->value ?? 'null'), 0),
         };
     }
 
@@ -93,7 +96,7 @@ class TestIntegrationAction
             $creds = app(IntegrationCredentialResolver::class)
                 ->for(IntegrationCredentialKind::LangfuseObservability);
 
-            $response = Http::timeout(10)->get(rtrim($creds['host'], '/') . '/api/public/health');
+            $response = Http::timeout(10)->get(rtrim($creds['host'], '/').'/api/public/health');
             $latency = (int) round((microtime(true) - $start) * 1000);
 
             if ($response->successful()) {

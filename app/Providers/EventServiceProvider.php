@@ -18,16 +18,17 @@ use App\Domain\CRM\Listeners\PushQuoteToBitrix;
 use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Listeners\PushPriceChangeToWoo;
 use App\Domain\Pricing\Listeners\RecomputePriceListener;
-use App\Domain\Products\Events\ProductFieldsChangedEvent;
-use App\Domain\Products\Listeners\PushProductFieldsToWoo;
-use App\Domain\Quotes\Events\QuoteApproved;
 use App\Domain\ProductAutoCreate\Listeners\ApplyPinsDuringSync;
 use App\Domain\ProductAutoCreate\Listeners\HandleNewSupplierSku;
+use App\Domain\ProductAutoCreate\Listeners\PushProductFieldsToWoo;
 use App\Domain\ProductAutoCreate\Listeners\RecomputeCompletenessOnSupplierChange;
+use App\Domain\Products\Events\ProductFieldsChangedEvent;
+use App\Domain\Quotes\Events\QuoteApproved;
 use App\Domain\Sync\Events\NewSupplierSkuDetected;
 use App\Domain\Sync\Events\SupplierPriceChanged;
 use App\Domain\Sync\Events\SupplierSkuMissing;
 use App\Domain\Sync\Events\SupplierStockChanged;
+use App\Domain\TradePricing\Listeners\UpdateCustomerGroupOnUserRoleChange;
 use App\Domain\Webhooks\Events\CustomerRegistered;
 use App\Domain\Webhooks\Events\OrderReceived;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
@@ -134,7 +135,7 @@ class EventServiceProvider extends ServiceProvider
         // of `b2b:backfill-customer-groups` in Plan 09-06).
         CustomerRegistered::class => [
             HandleCustomerRegistered::class,
-            \App\Domain\TradePricing\Listeners\UpdateCustomerGroupOnUserRoleChange::class,
+            UpdateCustomerGroupOnUserRoleChange::class,
         ],
 
         // Phase 5 Plan 03 Task 2 — DispatchMarginAnalyserJob debounces via

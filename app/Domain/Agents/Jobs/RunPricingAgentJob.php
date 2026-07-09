@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Agents\Jobs;
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Agents\Enums\AgentRunStatus;
 use App\Domain\Agents\Events\AgentRunCompleted;
 use App\Domain\Agents\Events\AgentRunFailed;
@@ -19,6 +18,7 @@ use App\Domain\Agents\Services\GuardrailEngine;
 use App\Domain\Agents\Services\PricingAgentResultMapper;
 use App\Domain\Agents\Services\PromptRenderer;
 use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
+use Prism\Prism\ValueObjects\ToolCall;
 
 /**
  * Phase 10 Plan 04 — Path A SIBLING of Phase 8 RunAgentJob (RESEARCH §Pattern 1).
@@ -64,7 +65,7 @@ use Prism\Prism\ValueObjects\Messages\UserMessage;
  */
 final class RunPricingAgentJob implements ShouldQueue
 {
-    use Queueable, InteractsWithQueue, SerializesModels;
+    use InteractsWithQueue, Queueable, SerializesModels;
 
     /** No retries — agent failures are terminal per Phase 8 CONTEXT D-02. */
     public int $tries = 1;
@@ -297,7 +298,7 @@ final class RunPricingAgentJob implements ShouldQueue
     {
         if (is_object($obj)) {
             // Prism v0.100.1 ToolCall stores arguments via arguments() method.
-            if ($obj instanceof \Prism\Prism\ValueObjects\ToolCall && $name === 'arguments') {
+            if ($obj instanceof ToolCall && $name === 'arguments') {
                 return $obj->arguments();
             }
 

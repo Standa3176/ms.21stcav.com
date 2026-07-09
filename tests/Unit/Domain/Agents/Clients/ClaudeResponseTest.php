@@ -9,9 +9,9 @@ declare(strict_types=1);
  * tests/Feature/Agents/ClaudeClientTest.php and uses RefreshDatabase).
  */
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Agents\Clients\ClaudeResponse;
 use App\Domain\Agents\Enums\FinishReason;
+use App\Domain\Integrations\Clients\ClaudeClient;
 
 it('maps Prism FinishReason::Stop to local FinishReason::EndTurn', function () {
     expect(ClaudeResponse::mapFinishReason('Stop'))->toBe(FinishReason::EndTurn);

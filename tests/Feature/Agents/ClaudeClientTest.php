@@ -14,10 +14,10 @@ declare(strict_types=1);
  * the HTTP shape and BudgetGuard records actuals post-flight.
  */
 
-use App\Domain\Agents\Clients\ClaudeClient;
 use App\Domain\Agents\Clients\ClaudeResponse;
 use App\Domain\Agents\Enums\FinishReason;
 use App\Domain\Agents\Services\CostCalculator;
+use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use Illuminate\Support\Facades\Context;
 use Prism\Prism\Enums\FinishReason as PrismFinishReason;
@@ -111,7 +111,7 @@ it('CostCalculator::compute returns 5 pence for 10000 prompt + 2000 completion t
 it('CostCalculator throws on unknown model', function () {
     $calc = app(CostCalculator::class);
     expect(fn () => $calc->compute(100, 50, 'unknown-model-xyz'))
-        ->toThrow(\RuntimeException::class, 'No pricing configured for model: unknown-model-xyz');
+        ->toThrow(RuntimeException::class, 'No pricing configured for model: unknown-model-xyz');
 });
 
 it('Q2 retirement — mliviu79 shim populates Context langfuse_trace_id OR ClaudeResponse falls back to null', function () {

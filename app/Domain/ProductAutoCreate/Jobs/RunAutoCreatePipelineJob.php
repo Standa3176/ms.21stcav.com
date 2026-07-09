@@ -24,10 +24,20 @@ use Throwable;
  * bulk-action path. Runs the full chain (generate-drafts → assign-taxonomy →
  * source-images → auto-publish) on the operator-selected SKU list.
  *
- * Uses the default queue so it's picked up by the existing Horizon supervisor
- * (no new supervisor config required). tries=1: per-SKU idempotency lives
+ * Runs on the `sync-bulk` Horizon queue (512MB, 1800s worker timeout, single
+ * worker). It was previously on `default` (256MB, 120s worker timeout), whose
+ * supervisor silently SIGKILLed any batch running past 2 minutes — an hour-scale
+ * Claude+Woo run needs sync-bulk's memory + time, and serializing it (one worker)
+ * stops it competing with other bulk work. tries=1: per-SKU idempotency lives
  * inside the chained commands themselves; a job-level retry would re-spend
  * Claude money on already-drafted SKUs.
+ *
+ * ShouldBeUnique + uniqueFor=1800: the unique lock prevents a concurrent
+ * duplicate run of the same SKU set (protects Claude/Woo spend), and the
+ * bounded uniqueFor (matching the sync-bulk worker timeout = the real max
+ * runtime) means a crashed/OOM'd/SIGKILL'd worker's lock auto-expires instead
+ * of blocking re-dispatch of the identical SKUs forever. Mirrors the codebase's
+ * own RecomputePriceJob (ShouldBeUnique + uniqueFor + onQueue('sync-bulk')).
  */
 final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
 {
@@ -38,7 +48,9 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 3600;
+    public int $timeout = 1800;
+
+    public int $uniqueFor = 1800;
 
     /**
      * @param  array<int,string>  $skus
@@ -49,7 +61,7 @@ final class RunAutoCreatePipelineJob implements ShouldBeUnique, ShouldQueue
         private readonly bool $autoPublish,
         private readonly int $triggeredByUserId,
     ) {
-        $this->onQueue('default');
+        $this->onQueue('sync-bulk');
     }
 
     public function uniqueId(): string

@@ -187,11 +187,26 @@ final class CatalogueGapsPage extends Page implements HasTable
                     'Runs products:resync-to-woo --skus=<sku>. Re-pushes tags + regular_price + attributes to the existing Woo product. Safe to repeat.',
                     fn (Product $record): bool => true,
                 ),
+                // Quick task 260709-gj2 — brand-ONLY push: assigns the product_brand
+                // term to the live Woo product for products that ALREADY carry a local
+                // brand_id (no price/tag/attribute side-effects, unlike Resync). This
+                // command IS the push (no --push-to-woo option). Products with NO local
+                // brand_id need Backfill brand first (products:backfill-merchant-feed).
+                $this->fixAction(
+                    'publish_brand',
+                    'Publish brand',
+                    'heroicon-o-tag',
+                    'warning',
+                    'products:publish-sourced-brands',
+                    'Runs products:publish-sourced-brands --skus=<sku>. Assigns the product_brand term to the live Woo product for a product that already has a brand — clearing the storefront Brand-link gap. Products with no local brand need Backfill brand first.',
+                    fn (Product $record): bool => true,
+                ),
             ])
             ->bulkActions([
                 $this->bulkFixAction('source_images_bulk', 'Source images', 'heroicon-o-photo', 'products:source-images', ['--push-to-woo' => true]),
                 $this->bulkFixAction('backfill_ean_bulk', 'Backfill EAN', 'heroicon-o-bars-3-bottom-left', 'products:backfill-merchant-feed', ['--push-to-woo' => true]),
                 $this->bulkFixAction('resync_bulk', 'Resync to Woo', 'heroicon-o-arrow-path', 'products:resync-to-woo'),
+                $this->bulkFixAction('publish_brand_bulk', 'Publish brand', 'heroicon-o-tag', 'products:publish-sourced-brands'),
             ]);
     }
 

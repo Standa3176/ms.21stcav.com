@@ -22,11 +22,12 @@ final class RunCatalogueGapFixJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    /** Defence-in-depth: this job runs an artisan command by NAME — only ever these three. */
+    /** Defence-in-depth: this job runs an artisan command by NAME — only ever these. */
     public const ALLOWED_COMMANDS = [
         'products:source-images',
         'products:backfill-merchant-feed',
         'products:resync-to-woo',
+        'products:publish-sourced-brands',
     ];
 
     public int $tries = 1;      // per-SKU API calls cost money — never auto-retry a whole batch.

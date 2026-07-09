@@ -286,6 +286,8 @@ it('bulk fix action carries the correct command for each fix type', function (st
     'source images' => ['source_images_bulk', 'products:source-images'],
     'backfill EAN' => ['backfill_ean_bulk', 'products:backfill-merchant-feed'],
     'resync' => ['resync_bulk', 'products:resync-to-woo'],
+    // Quick task 260709-gj2 — the brand-only push.
+    'publish brand' => ['publish_brand_bulk', 'products:publish-sourced-brands'],
 ]);
 
 it('Source-images + Backfill-EAN bulk thread --push-to-woo into every dispatched job; Resync carries no options', function (string $bulkAction, string $command, array $expectedOptions): void {
@@ -315,6 +317,9 @@ it('Source-images + Backfill-EAN bulk thread --push-to-woo into every dispatched
     'source images → --push-to-woo' => ['source_images_bulk', 'products:source-images', ['--push-to-woo' => true]],
     'backfill EAN → --push-to-woo' => ['backfill_ean_bulk', 'products:backfill-merchant-feed', ['--push-to-woo' => true]],
     'resync → no options' => ['resync_bulk', 'products:resync-to-woo', []],
+    // Quick task 260709-gj2 — the Publish-brand bulk carries NO options (this
+    // command IS the push — no --push-to-woo needed).
+    'publish brand → no options' => ['publish_brand_bulk', 'products:publish-sourced-brands', []],
 ]);
 
 it('WooMaintenanceGapsWidget gap stats deep-link into the Catalogue Gaps page per gap', function (): void {

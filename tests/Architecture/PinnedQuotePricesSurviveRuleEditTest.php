@@ -10,6 +10,12 @@ use App\Domain\Quotes\Services\QuoteLineWriter;
 use App\Domain\TradePricing\Models\CustomerGroup;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
+// File-wide RefreshDatabase (matching sibling Architecture DB-tests, e.g.
+// PinnedFieldsSurviveSyncTest) so the in-memory DB is migrated BEFORE the test
+// body runs. The per-test chained `->uses(RefreshDatabase::class)` form does not
+// migrate in time and yields `no such table: customer_groups`.
+uses(RefreshDatabase::class);
+
 /*
 |==============================================================================
 | Phase 11 — SHIP GATE — PinnedQuotePricesSurviveRuleEditTest (QUOT-02)
@@ -175,4 +181,4 @@ it('PHASE 11 SHIP GATE — QuoteLine prices survive PricingRule mutation byte-id
         QuoteLineImmutableException::class,
         'unit_price_pence_at_quote',  // assert the column name appears in the message
     );
-})->uses(RefreshDatabase::class);
+});

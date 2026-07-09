@@ -72,10 +72,11 @@ it('PriceCalculator has no Eloquent / events / logging / HTTP / mail', function 
 it('PriceCalculator reads config only for rounding_mode, exactly once per public method', function (): void {
     $source = strippedPriceCalculatorSource();
 
-    // compute() + stripVat() each read rounding_mode once → at most 2 config() calls.
+    // compute() + stripVat() + addVat() each read rounding_mode once → at most 3 config() calls.
+    // (addVat() was added in the ex-VAT fix, commit 5804484 — a legitimate third pure public method.)
     expect(substr_count($source, 'config('))->toBeLessThanOrEqual(
-        2,
-        'PriceCalculator should read config at most twice (rounding_mode in compute + stripVat); found more',
+        3,
+        'PriceCalculator should read config at most three times (rounding_mode in compute + stripVat + addVat); found more',
     );
 
     // And every config() read MUST be pricing.rounding_mode — not app.name or similar.
@@ -134,17 +135,19 @@ it('PriceCalculator has no float type leak', function (): void {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// Test 5 — round() called at most twice (compute + stripVat)
+// Test 5 — round() called at most three times (compute + stripVat + addVat)
 // ══════════════════════════════════════════════════════════════════════════════
 
-it('PriceCalculator applies round() at most twice (once per public method)', function (): void {
+it('PriceCalculator applies round() at most three times (once per public method)', function (): void {
     $source = strippedPriceCalculatorSource();
     $roundCount = substr_count($source, 'round(');
 
+    // Three pure public methods now: compute() + stripVat() + addVat() (addVat added
+    // in the ex-VAT fix, commit 5804484). Each rounds exactly once at its return boundary.
     expect($roundCount)->toBeLessThanOrEqual(
-        2,
-        "PriceCalculator must call round() at most twice — compute() + stripVat(). Found: {$roundCount}. "
-            .'Pitfall 5 warns about compound rounding — multiple round() calls reintroduce drift.',
+        3,
+        "PriceCalculator must call round() at most three times — compute() + stripVat() + addVat(). Found: {$roundCount}. "
+            .'Pitfall 5 warns about compound rounding — multiple round() calls per method reintroduce drift.',
     );
 
     expect($roundCount)->toBeGreaterThan(

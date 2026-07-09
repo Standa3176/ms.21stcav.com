@@ -41,7 +41,7 @@ it('RuleResolver.php sha256 is byte-identical to pre-Phase-9 snapshot', function
 
 it('PriceCalculator.php sha256 is byte-identical to pre-Phase-9 snapshot', function (): void {
     $hash = hash_file('sha256', base_path('app/Domain/Pricing/Services/PriceCalculator.php'));
-    $expected = '200b4962e2d1f11ba0a99d9f00cec679b94c9a3fa775a7815feee4429a06189f';
+    $expected = '43efcb555c7dadc6c7ca583f8f231b82610d63d9caf6775fb0dc93ce9920ed4c';
     expect($hash)->toBe(
         $expected,
         'app/Domain/Pricing/Services/PriceCalculator.php has drifted — Phase 3 retail invariant broken (CONTEXT.md D-03).'

@@ -134,7 +134,7 @@ parameters:
     # to App\Domain\ProductAutoCreate\Services\FieldPinManager. Service-layer
     # indirection means Products does NOT import ProductOverride directly.
     # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
-    Products:     [Foundation, ProductAutoCreate]
+    Products:     [Foundation, ProductAutoCreate, WpDirectDb]  # 260709: +WpDirectDb operator-approved sanctioned pattern — read-only app-DB reads (csv_parse_errors / category_audit_findings), no WP/Woo writes
     # Phase 3 (Plans 03-01..03-05): Pricing layer cross-domain allow-list.
     #   - Foundation: DomainEvent, Auditor, IntegrationLogger, BaseCommand (all Pricing services extend these)
     #   - Products: Product + ProductVariant (RuleResolver + PriceRecomputer read buy_price / brand_id / category_id)
@@ -189,7 +189,7 @@ parameters:
     #   - Webhooks: OrderReceived event + WebhookReceipt (Plan 05-03 IncrementSkuSalesCount)
     #   - Alerting: AlertRecipient lookup for stale-feed notification (Plan 05-04b COMP-11).
     # Explicitly NOT allowed: CRM, Sync (write path), Feeds.
-    Competitor:   [Foundation, Pricing, Products, Suggestions, Webhooks, Alerting]
+    Competitor:   [Foundation, Pricing, Products, Suggestions, Webhooks, Alerting, WpDirectDb]  # 260709: +WpDirectDb operator-approved sanctioned pattern — read-only app-DB metrics/driver-probe reads (supplier_sku_cache / driver detection), no WP/Woo writes
     # Phase 09.1 Plan 01 — Sync allow-list extended with Integrations because
     # WooClient + SupplierClient now resolve credentials via
     # IntegrationCredentialResolver (D-07). One-way arrow: Integrations does
@@ -221,7 +221,7 @@ parameters:
     # BitrixClient now resolves webhook_url via IntegrationCredentialResolver
     # (D-07). One-way arrow: Integrations does NOT depend on CRM.
     CRM:          [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes, Pricing, Integrations]
-    Suggestions:  [Foundation]
+    Suggestions:  [Foundation, WpDirectDb]  # 260709: +WpDirectDb operator-approved sanctioned pattern — read-only app-DB reads (suggestions table), no WP/Woo writes
     Alerting:     [Foundation]
     Feeds:        [Foundation]
     # Phase 6 Plan 03 — ProductAutoCreate layer cross-domain allow-list.
@@ -239,7 +239,7 @@ parameters:
     # Explicitly NOT allowed: CRM, Competitor, Feeds. NewProductOpportunityApplier
     # MOVED to ProductAutoCreate in Plan 06-03 (RESEARCH Q4 option b) so
     # Competitor is no longer in the allow-list — one-way arrow preserved.
-    ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks]
+    ProductAutoCreate: [Foundation, Products, Pricing, Sync, Suggestions, Alerting, Webhooks, Integrations]  # 260709: +Integrations operator-approved sanctioned pattern — credential-resolver (enrichment clients resolve creds via IntegrationCredentialResolver + return IntegrationTestResult)
     # Phase 7 Plan 02 — Dashboard aggregates metrics from every prior domain
     # (one-way arrow: other domains MUST NOT depend on Dashboard).
     # MIRRORS deptrac.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
@@ -356,7 +356,7 @@ parameters:
     #     their actual credential lookup
     #   - The action is a Filament UI primitive — UI layers naturally pull
     #     from many domains (mirrors Http allow-list pattern)
-    Integrations: [Foundation, Sync, CRM, Agents]
+    Integrations: [Foundation, Sync, CRM, Agents, ProductAutoCreate]  # 260709: +ProductAutoCreate operator-approved sanctioned pattern — credential-resolver reverse arrow (TestIntegrationAction dispatches to enrichment clients' testConnection())
     Foundation:   []
     # Phase 8 Plan 01 — Http allow-list extended with Agents so Plan 04's
     # future Filament AgentRunResource (under app/Filament if added) and

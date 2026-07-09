@@ -70,7 +70,11 @@ it('TradePricing layer registered in BOTH depfile.yaml and deptrac.yaml with the
     }
 });
 
-it('TradePricing collector regex points at app/Domain/TradePricing/.* in both YAMLs', function (): void {
+it('TradePricing collector covers app/Domain/TradePricing/.* but excludes its Filament subdir in both YAMLs', function (): void {
+    // 260709: TradePricing's collector was converted from a plain `directory`
+    // collector to a `bool` collector that MUST match app/Domain/TradePricing/.*
+    // and MUST_NOT match app/Domain/TradePricing/Filament/.* — domain-embedded
+    // Filament is presentation and belongs to the Http layer, not the domain layer.
     foreach (['depfile.yaml', 'deptrac.yaml'] as $yamlPath) {
         $config = Yaml::parseFile(base_path($yamlPath));
         $params = $config['parameters'] ?? $config['deptrac'] ?? $config;
@@ -84,8 +88,9 @@ it('TradePricing collector regex points at app/Domain/TradePricing/.* in both YA
         }
 
         expect($tradeLayer)->not->toBeNull();
-        expect($tradeLayer['collectors'][0]['type'] ?? null)->toBe('directory');
-        expect($tradeLayer['collectors'][0]['regex'] ?? null)->toBe('app/Domain/TradePricing/.*');
+        expect($tradeLayer['collectors'][0]['type'] ?? null)->toBe('bool');
+        expect($tradeLayer['collectors'][0]['must'][0]['regex'] ?? null)->toBe('app/Domain/TradePricing/.*');
+        expect($tradeLayer['collectors'][0]['must_not'][0]['regex'] ?? null)->toBe('app/Domain/TradePricing/Filament/.*');
     }
 });
 

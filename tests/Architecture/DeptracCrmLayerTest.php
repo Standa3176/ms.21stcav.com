@@ -12,15 +12,24 @@ use Symfony\Component\Process\Process;
 | Plan 04-05 Task 3. Enforces Phase 4's architectural boundary at
 | architectural-test time:
 |
-|   CRM → [Foundation, Sync, Alerting, Webhooks, Suggestions] allowed.
-|   CRM → Pricing / Products / Competitor / Feeds  BANNED.
+|   CRM → [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents,
+|          Quotes, Pricing, Integrations] allowed.
+|   CRM → Products / Competitor / Feeds  BANNED.
+|
+|   (Pricing was ADDED to CRM's allow-list in Phase 11 Plan 04 —
+|   PushQuoteToBitrixDealJob calls PriceCalculator::stripVat. The negative
+|   violator below therefore imports a Products class, which remains BANNED,
+|   so it still proves the CRM domain rule fires on a genuine cross-domain
+|   read for non-Filament code. 260709: before this repoint the negative was
+|   passing only because of the 8 ambient Filament violations — masking the
+|   fact that its old Pricing token had become allowed.)
 |
 |   1. Positive: the current codebase passes `vendor/bin/deptrac analyse`
 |      (exit 0). Plans 04-01..04-05 produce clean CRM code.
 |
 |   2. Negative: plant a deliberate violator inside app/Domain/CRM/Services/*
-|      that imports `App\Domain\Pricing\Services\PriceCalculator` (a Phase 3
-|      class NOT in CRM's allow-list). The CRM ruleset MUST flag this as a
+|      that imports `App\Domain\Products\Models\Product` (a Products class
+|      NOT in CRM's allow-list). The CRM ruleset MUST flag this as a
 |      violation (exit non-zero). Cleanup happens BEFORE assertions so a
 |      failed assertion never leaves the violator on disk.
 |
@@ -54,7 +63,7 @@ it('CRM domain has zero cross-domain import violations (positive)', function () 
     );
 });
 
-it('catches a deliberate Pricing import from CRM (negative)', function () {
+it('catches a deliberate Products import from CRM (negative)', function () {
     $deptracEntry = base_path('vendor/qossmic/deptrac-shim/deptrac');
     if (! file_exists($deptracEntry)) {
         test()->markTestSkipped('deptrac-shim not found — install dev dependencies.');
@@ -67,11 +76,12 @@ it('catches a deliberate Pricing import from CRM (negative)', function () {
         mkdir($violatorDir, 0755, true);
     }
 
-    // DELIBERATE VIOLATION — CRM must not import Pricing (NOT in CRM's allow-list
-    // [Foundation, Sync, Alerting, Webhooks, Suggestions]). Same pattern as
-    // DeptracSyncLayerTest + DeptracPricingLayerTest negative tests: import a
-    // REAL class (Phase 3 PriceCalculator) so deptrac resolves the symbol
-    // rather than marking it uncovered.
+    // DELIBERATE VIOLATION — CRM must not import Products (NOT in CRM's allow-list
+    // [Foundation, Sync, Alerting, Webhooks, Suggestions, Agents, Quotes, Pricing,
+    // Integrations]). Same pattern as DeptracSyncLayerTest + DeptracPricingLayerTest
+    // negative tests: import a REAL class (Products\Models\Product) so deptrac
+    // resolves the symbol rather than marking it uncovered. Products (not Pricing)
+    // is used because Pricing joined CRM's allow-list in Phase 11 Plan 04.
     file_put_contents($violatorFile, <<<'PHP'
 <?php
 
@@ -79,17 +89,17 @@ declare(strict_types=1);
 
 namespace App\Domain\CRM\Services;
 
-use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\Products\Models\Product;
 
 /**
- * DELIBERATE VIOLATION — CRM must not import Pricing (Plan 04-05 Task 3 negative test).
+ * DELIBERATE VIOLATION — CRM must not import Products (Plan 04-05 Task 3 negative test).
  * Created at runtime by DeptracCrmLayerTest, unlinked on assertion.
  */
 final class __CrmDeptracViolator
 {
-    public function bad(PriceCalculator $calc): string
+    public function bad(Product $product): string
     {
-        return (string) $calc::class;
+        return (string) $product::class;
     }
 }
 PHP);
@@ -106,10 +116,10 @@ PHP);
     @unlink($violatorFile);
 
     // Authoritative assertion: Deptrac MUST exit non-zero when a CRM class
-    // imports Pricing. Exit code is the CI-gating signal; stdout capture
+    // imports Products. Exit code is the CI-gating signal; stdout capture
     // through deptrac-shim is unreliable on Windows PHP so we do not rely on it.
     expect($exitCode)->not->toBe(
         0,
-        'Deptrac did NOT flag a deliberate Pricing import from CRM — the CRM allow-list is not firing.'
+        'Deptrac did NOT flag a deliberate Products import from CRM — the CRM allow-list is not firing.'
     );
 });

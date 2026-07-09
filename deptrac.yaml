@@ -6,36 +6,78 @@ parameters:
   layers:
     - name: Products
       collectors:
-        - type: directory
-          regex: app/Domain/Products/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Products/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Products/Filament/.*
     - name: Pricing
       collectors:
-        - type: directory
-          regex: app/Domain/Pricing/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Pricing/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Pricing/Filament/.*
     - name: Competitor
       collectors:
-        - type: directory
-          regex: app/Domain/Competitor/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Competitor/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Competitor/Filament/.*
     - name: Sync
       collectors:
-        - type: directory
-          regex: app/Domain/Sync/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Sync/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Sync/Filament/.*
     - name: Webhooks
       collectors:
         - type: directory
           regex: app/Domain/Webhooks/.*
     - name: CRM
       collectors:
-        - type: directory
-          regex: app/Domain/CRM/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/CRM/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/CRM/Filament/.*
     - name: Suggestions
       collectors:
-        - type: directory
-          regex: app/Domain/Suggestions/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Suggestions/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Suggestions/Filament/.*
     - name: Alerting
       collectors:
-        - type: directory
-          regex: app/Domain/Alerting/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Alerting/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Alerting/Filament/.*
     - name: Feeds
       collectors:
         - type: directory
@@ -44,8 +86,14 @@ parameters:
     # + future jobs/listeners/appliers in Plans 06-02..06-06).
     - name: ProductAutoCreate
       collectors:
-        - type: directory
-          regex: app/Domain/ProductAutoCreate/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/ProductAutoCreate/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/ProductAutoCreate/Filament/.*
     # Phase 7 Plan 01 scaffolded Dashboard models/policies; Plan 02 activates the
     # SnapshotAggregator + widgets which aggregate across Sync + CRM + Competitor
     # + Products + Suggestions + Alerting. Plan 07-06 finalises with
@@ -73,8 +121,14 @@ parameters:
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     - name: Agents
       collectors:
-        - type: directory
-          regex: app/Domain/Agents/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Agents/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Agents/Filament/.*
     # Phase 9 Plan 01 — E1 Trade Customer Pricing decorator domain (TRDE-01).
     # Allow-list locked at [Foundation, Pricing, Products]: TradeRuleResolver
     # decorates v1 Pricing\RuleResolver, reads Products for brand/category,
@@ -85,8 +139,14 @@ parameters:
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     - name: TradePricing
       collectors:
-        - type: directory
-          regex: app/Domain/TradePricing/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/TradePricing/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/TradePricing/Filament/.*
     # Phase 11 Plan 01 — E2 Quote Request → Bitrix Deal Flow (QUOT-01..08).
     # Allow-list per CONTEXT.md §Decisions Claude's Discretion:
     #   [Foundation, Products, Pricing, TradePricing, Suggestions, CRM, Webhooks].
@@ -101,8 +161,14 @@ parameters:
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     - name: Quotes
       collectors:
-        - type: directory
-          regex: app/Domain/Quotes/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Quotes/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Quotes/Filament/.*
     # Phase 09.1 Plan 01 — Integration Connections Admin domain.
     # Single polymorphic credential store + resolver service consumed by
     # WooClient (Sync), SupplierClient (Sync), BitrixClient (CRM),
@@ -111,8 +177,14 @@ parameters:
     # MIRRORS depfile.yaml — dual-config-sync (Phase 5 Plan 05-05 lesson).
     - name: Integrations
       collectors:
-        - type: directory
-          regex: app/Domain/Integrations/.*
+        - type: bool
+          must:
+            - type: directory
+              regex: app/Domain/Integrations/.*
+          must_not:
+            # 260709: Filament is presentation (moved to the Http layer) — exclude here.
+            - type: directory
+              regex: app/Domain/Integrations/Filament/.*
     - name: Foundation
       collectors:
         - type: directory
@@ -121,6 +193,12 @@ parameters:
       collectors:
         - type: directory
           regex: app/Http/.*
+        # 260709: Filament resources are presentation — they may read across domains,
+        # exactly as this Http layer already permits (see the Http allow-list below).
+        # Domain-embedded Filament (app/Domain/*/Filament/*) belongs to this presentation
+        # layer, NOT to its domain layer (each domain layer excludes its own Filament subdir).
+        - type: directory
+          regex: app/Domain/.*/Filament/.*
     # SYNC-04 — Plan 02-05 — ban direct DB facade use from Sync domain (WP direct-DB-write prohibition).
     # Sync must write to Woo via REST only (WooClient); the local mirror goes via Eloquent models.
     # Any `DB::` facade use in app/Domain/Sync/* trips the `-WpDirectDb` deny rule below.
@@ -394,4 +472,13 @@ parameters:
     # app/Filament if scaffolded there) can reach into the Quotes domain.
     # The arrow stays one-way: Quotes itself does NOT have Http in its
     # allow-list.
-    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents, TradePricing, Quotes]
+    # 260709 — domain-embedded Filament (app/Domain/*/Filament/*) is now part of this
+    # Http presentation layer (see the second Http collector above). Two tokens added so
+    # the moved Filament resources pass — each is a presentation read on app-own data:
+    #   - Integrations: IntegrationCredentialResource reads its own Integrations\Models\
+    #     IntegrationCredential + IntegrationCredentialKind/IntegrationTestStatus enums
+    #     (the resource that administers the credential store — display/config UI).
+    #   - WpDirectDb: SuggestionResource + Quotes\ApproveQuoteAction use the DB:: facade
+    #     for read-only app-DB queries / a local transactional boundary. The SYNC-04
+    #     WP-direct-write ban is on the Sync domain only (Sync keeps '-WpDirectDb').
+    Http:         [Foundation, Products, Pricing, Competitor, Sync, Webhooks, CRM, Suggestions, Alerting, Feeds, ProductAutoCreate, Dashboard, Cutover, Agents, TradePricing, Quotes, Integrations, WpDirectDb]

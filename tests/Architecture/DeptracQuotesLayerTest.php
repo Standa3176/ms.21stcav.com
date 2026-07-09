@@ -78,7 +78,11 @@ it('Quotes layer registered in BOTH depfile.yaml and deptrac.yaml with the QUOT 
     }
 });
 
-it('Quotes collector regex points at app/Domain/Quotes/.* in both YAMLs', function (): void {
+it('Quotes collector covers app/Domain/Quotes/.* but excludes its Filament subdir in both YAMLs', function (): void {
+    // 260709: Quotes's collector was converted from a plain `directory` collector
+    // to a `bool` collector that MUST match app/Domain/Quotes/.* and MUST_NOT match
+    // app/Domain/Quotes/Filament/.* — domain-embedded Filament is presentation and
+    // belongs to the Http layer, not the domain layer.
     foreach (['depfile.yaml', 'deptrac.yaml'] as $yamlPath) {
         $config = Yaml::parseFile(base_path($yamlPath));
         $params = $config['parameters'] ?? $config['deptrac'] ?? $config;
@@ -92,8 +96,9 @@ it('Quotes collector regex points at app/Domain/Quotes/.* in both YAMLs', functi
         }
 
         expect($quotesLayer)->not->toBeNull();
-        expect($quotesLayer['collectors'][0]['type'] ?? null)->toBe('directory');
-        expect($quotesLayer['collectors'][0]['regex'] ?? null)->toBe('app/Domain/Quotes/.*');
+        expect($quotesLayer['collectors'][0]['type'] ?? null)->toBe('bool');
+        expect($quotesLayer['collectors'][0]['must'][0]['regex'] ?? null)->toBe('app/Domain/Quotes/.*');
+        expect($quotesLayer['collectors'][0]['must_not'][0]['regex'] ?? null)->toBe('app/Domain/Quotes/Filament/.*');
     }
 });
 

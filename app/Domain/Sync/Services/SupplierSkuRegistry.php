@@ -6,7 +6,7 @@ namespace App\Domain\Sync\Services;
 
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
-use Illuminate\Support\Facades\DB;
+use App\Domain\Products\Models\SupplierSkuCache;
 
 /**
  * Local membership registry for sourceable supplier SKUs — backs the
@@ -62,7 +62,7 @@ class SupplierSkuRegistry
             throw new \RuntimeException("Feed scan failed: {$err}");
         }
 
-        DB::table(self::TABLE)->truncate();
+        SupplierSkuCache::query()->truncate();
 
         /** @var array<int, array{sku: string}> $buffer */
         $buffer = [];
@@ -77,14 +77,14 @@ class SupplierSkuRegistry
                 $seen[$k] = true;
                 $buffer[] = ['sku' => mb_substr($k, 0, 191)];
                 if (count($buffer) >= self::CHUNK_SIZE) {
-                    DB::table(self::TABLE)->insertOrIgnore($buffer);
+                    SupplierSkuCache::query()->insertOrIgnore($buffer);
                     $inserted += count($buffer);
                     $buffer = [];
                 }
             }
         }
         if ($buffer !== []) {
-            DB::table(self::TABLE)->insertOrIgnore($buffer);
+            SupplierSkuCache::query()->insertOrIgnore($buffer);
             $inserted += count($buffer);
         }
 

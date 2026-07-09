@@ -2,13 +2,11 @@
 
 declare(strict_types=1);
 
-use App\Domain\Cutover\Services\DivergenceScanner;
-use App\Domain\Cutover\Services\WooFieldComparator;
 use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooFieldComparator;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
-use App\Foundation\Audit\Services\Auditor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 
@@ -35,7 +33,7 @@ beforeEach(function (): void {
     $this->wooResponses = [];
     $this->mockWoo = new class($this->wooResponses) extends WooClient
     {
-        /** @var array<string, array|\Throwable> */
+        /** @var array<string, array|Throwable> */
         public array $responses;
 
         public function __construct(array &$responses)
@@ -47,7 +45,7 @@ beforeEach(function (): void {
         {
             $sku = $query['sku'] ?? '__unknown__';
             $entry = $this->responses[$sku] ?? [];
-            if ($entry instanceof \Throwable) {
+            if ($entry instanceof Throwable) {
                 throw $entry;
             }
 

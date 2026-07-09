@@ -8,7 +8,6 @@ use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Compose the post-supplier-sync digest payload — replaces the legacy WP
@@ -79,7 +78,8 @@ final class SupplierSyncDigestComposer
      */
     private function priceChanges(CarbonImmutable $start): array
     {
-        $rows = DB::table('product_price_snapshots as today')
+        $rows = ProductPriceSnapshot::query()
+            ->from('product_price_snapshots as today')
             ->join('product_price_snapshots as prev', function ($join) {
                 $join->on('today.product_id', '=', 'prev.product_id')
                     ->whereRaw('prev.recorded_at = (SELECT MAX(recorded_at) FROM product_price_snapshots WHERE product_id = today.product_id AND recorded_at < today.recorded_at)');
@@ -112,7 +112,8 @@ final class SupplierSyncDigestComposer
      */
     private function stockChanges(CarbonImmutable $start): array
     {
-        $rows = DB::table('product_price_snapshots as today')
+        $rows = ProductPriceSnapshot::query()
+            ->from('product_price_snapshots as today')
             ->join('product_price_snapshots as prev', function ($join) {
                 $join->on('today.product_id', '=', 'prev.product_id')
                     ->whereRaw('prev.recorded_at = (SELECT MAX(recorded_at) FROM product_price_snapshots WHERE product_id = today.product_id AND recorded_at < today.recorded_at)');

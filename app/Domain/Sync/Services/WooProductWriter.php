@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
-use App\Domain\Cutover\Services\WooFieldComparator;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooFieldComparator;
 
 /**
  * Quick task 260611-s2d — single source of truth for MS→Woo PUT payload

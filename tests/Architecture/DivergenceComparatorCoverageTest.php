@@ -61,7 +61,7 @@ test('WooFieldComparator covers all 13 expected fields', function (): void {
     ];
 
     $source = (string) file_get_contents(
-        base_path('app/Domain/Cutover/Services/WooFieldComparator.php')
+        base_path('app/Domain/Products/Services/WooFieldComparator.php')
     );
 
     // Strip comments so the docblock enumeration of these fields doesn't

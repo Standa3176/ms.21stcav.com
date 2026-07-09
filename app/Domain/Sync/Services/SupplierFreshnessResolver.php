@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
+use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Models\Supplier;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -37,7 +37,8 @@ use Illuminate\Support\Facades\Schema;
  * Driver-aware days-since SQL:
  *   MySQL  — DATEDIFF(CURDATE(), MAX(recorded_at))
  *   SQLite — CAST(julianday('now','start of day') - julianday(MAX(recorded_at)) AS INTEGER)
- * resolved via DB::connection()->getDriverName().
+ * resolved via the SupplierOfferSnapshot model connection's getDriverName()
+ * (facade-free — SYNC-04 bans the Illuminate DB facade from the Sync layer).
  */
 final class SupplierFreshnessResolver
 {
@@ -217,12 +218,12 @@ final class SupplierFreshnessResolver
         // Driver-aware date math: MySQL DATEDIFF vs SQLite julianday.
         $observed = []; // supplier_id => [latest:?string, days_since:?int, name:?string]
         if (Schema::hasTable('supplier_offer_snapshots')) {
-            $driver = DB::connection()->getDriverName();
+            $driver = SupplierOfferSnapshot::query()->getConnection()->getDriverName();
             $daysExpr = $driver === 'sqlite'
                 ? "CAST(julianday('now','start of day') - julianday(MAX(recorded_at)) AS INTEGER)"
                 : 'DATEDIFF(CURDATE(), MAX(recorded_at))';
 
-            $rows = DB::table('supplier_offer_snapshots')
+            $rows = SupplierOfferSnapshot::query()
                 ->selectRaw(
                     "supplier_id, MAX(recorded_at) AS latest_recorded_at, {$daysExpr} AS days_since, MAX(supplier_name) AS supplier_name"
                 )

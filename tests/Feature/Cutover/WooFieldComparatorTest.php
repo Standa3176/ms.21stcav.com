@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-use App\Domain\Cutover\Services\WooFieldComparator;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooFieldComparator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);

@@ -6,6 +6,7 @@ namespace App\Domain\Cutover\Services;
 
 use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooFieldComparator;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Audit\Services\Auditor;

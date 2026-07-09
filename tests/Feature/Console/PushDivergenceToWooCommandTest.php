@@ -3,8 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Cutover\Services\DivergenceScanner;
-use App\Domain\Cutover\Services\WooFieldComparator;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Services\WooFieldComparator;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Facades\Artisan;
@@ -420,7 +420,7 @@ function makeDiffRow(int $productId, string $field, mixed $laravel, mixed $live,
  * @param  array<int, array<string, mixed>>  $getResponses  woo_id keyed map of GET responses.
  * @param  array<int, int>  $throwPutFor  woo_ids whose PUT should throw.
  * @param  array<int, int>  $throwGet404For  woo_ids whose GET should throw 404-ish.
- * @return object  the bound stub with public $getCalls + $putCalls.
+ * @return object the bound stub with public $getCalls + $putCalls.
  */
 function bindDivergenceStub(array $getResponses, array $throwPutFor = [], array $throwGet404For = []): object
 {

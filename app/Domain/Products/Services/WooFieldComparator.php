@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Domain\Cutover\Services;
+namespace App\Domain\Products\Services;
 
 use App\Domain\Products\Models\Product;
 

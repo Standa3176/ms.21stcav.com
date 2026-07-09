@@ -20,12 +20,27 @@ use App\Domain\Agents\Services\CostCalculator;
 use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
 use Prism\Prism\Enums\FinishReason as PrismFinishReason;
 use Prism\Prism\Facades\Prism;
 use Prism\Prism\Testing\TextStepFake;
 use Prism\Prism\Text\ResponseBuilder;
 use Prism\Prism\ValueObjects\Messages\UserMessage;
 use Prism\Prism\ValueObjects\Usage;
+
+beforeEach(function (): void {
+    // Bucket 2 — ClaudeClient resolves the Anthropic api_key via
+    // IntegrationCredentialResolver; without a DB row or the env fallback it
+    // throws IntegrationCredentialMissingException. Provision the env fallback
+    // (mirrors ClaudeClientResolverIntegrationTest). Prism::fake intercepts the
+    // real HTTP so the value is inert.
+    config()->set('prism.providers.anthropic.api_key', 'test-key');
+
+    // IntegrationLogger auto-attaches correlation_id from Context when it
+    // persists the anthropic integration_events row; the column is NOT NULL, so
+    // seed a value for the generate()-based round-trip tests.
+    Context::add('correlation_id', (string) Str::uuid());
+});
 
 it('round-trips a Prism::fake() response into a ClaudeResponse with cost in pence', function () {
     Prism::fake([

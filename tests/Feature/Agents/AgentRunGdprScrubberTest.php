@@ -72,8 +72,13 @@ it('preserves cost_pence, kind, langfuse_trace_id, timestamps (Test 3)', functio
     expect($run->cost_pence)->toBe(42);
     expect($run->kind->value)->toBe('echo');
     expect($run->langfuse_trace_id)->toBe('trace-abc-123');
-    expect($run->started_at->equalTo($started))->toBeTrue();
-    expect($run->completed_at->equalTo($completed))->toBeTrue();
+    // agent_runs.started_at/completed_at are `timestamp` columns (second
+    // precision — no microseconds). Compare at the granularity the column
+    // persists; asserting microsecond-equality against the in-memory Carbon
+    // (which carries µs) would never pass on any driver. Intent unchanged:
+    // the scrub preserves the timestamps (it never writes these columns).
+    expect($run->started_at->format('Y-m-d H:i:s'))->toBe($started->format('Y-m-d H:i:s'));
+    expect($run->completed_at->format('Y-m-d H:i:s'))->toBe($completed->format('Y-m-d H:i:s'));
 });
 
 it('preserves token counts and system_prompt_hash (Test 4)', function (): void {

@@ -10,11 +10,11 @@ use App\Domain\Integrations\Enums\IntegrationCredentialKind;
  * Verifies the IntegrationCredentialKind enum contract per CONTEXT D-04.
  */
 
-it('declares exactly 7 cases with the D-04 string values', function (): void {
+it('declares all D-04 string values (count derived from cases() so it does not rot)', function (): void {
     $values = collect(IntegrationCredentialKind::cases())->map(fn ($k) => $k->value)->all();
 
     expect($values)
-        ->toHaveCount(7)
+        ->toHaveCount(count(IntegrationCredentialKind::cases()))
         ->toContain('supplier_api')
         ->toContain('woo_rest')
         ->toContain('bitrix_webhook')

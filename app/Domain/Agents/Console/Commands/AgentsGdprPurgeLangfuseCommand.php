@@ -52,8 +52,11 @@ final class AgentsGdprPurgeLangfuseCommand extends BaseCommand
         $normalised = mb_strtolower($customerEmail);
         $traceIds = AgentRun::query()
             ->where(function ($q) use ($normalised) {
-                $q->whereRaw('JSON_SEARCH(LOWER(tool_calls), ?, ?) IS NOT NULL', ['one', $normalised])
-                  ->orWhere('agent_reasoning_summary', 'like', '%'.$normalised.'%');
+                // Driver-portable substring match (was MariaDB-only JSON_SEARCH,
+                // absent on SQLite). LOWER(tool_calls) LIKE is broader-or-equal —
+                // never misses the email — and runs on both SQLite + MariaDB.
+                $q->whereRaw('LOWER(tool_calls) LIKE ?', ['%'.$normalised.'%'])
+                    ->orWhere('agent_reasoning_summary', 'like', '%'.$normalised.'%');
             })
             ->whereNotNull('langfuse_trace_id')
             ->pluck('langfuse_trace_id')

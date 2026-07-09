@@ -51,6 +51,13 @@ beforeEach(function () {
     // post-flight log row satisfies the NOT NULL constraint.
     Context::add('correlation_id', (string) Str::uuid());
 
+    // Bucket 2 — ClaudeClient resolves the Anthropic api_key via
+    // IntegrationCredentialResolver; without a DB row or the env fallback it
+    // throws IntegrationCredentialMissingException before the fixture can run.
+    // Provision the env fallback (mirrors ClaudeClientResolverIntegrationTest);
+    // Prism::fake intercepts the real HTTP so the value is inert.
+    config()->set('prism.providers.anthropic.api_key', 'test-key');
+
     // Render the real PricingAgent system prompt so calibration runs against the
     // shipped Blade view (not a hand-rolled string). PromptRenderer hashes the
     // output; the prompt-hash determinism test (PricingAgentPromptHashTest)

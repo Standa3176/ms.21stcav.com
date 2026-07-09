@@ -57,13 +57,16 @@ final class AgentRunGdprScrubber
         $hashFull = hash('sha256', $normalised);
         $hashPrefix = substr($hashFull, 0, 12);
 
-        // MySQL JSON_SEARCH path on the JSON column + LIKE fallback on the text
-        // column. Both predicates are intentionally OR'd so a hit on either
-        // surface causes the row to be picked up + scrubbed.
+        // Driver-portable substring match on the tool_calls JSON (stored as text)
+        // + LIKE on the reasoning summary. Both predicates are intentionally OR'd
+        // so a hit on either surface causes the row to be picked up + scrubbed.
+        // NOTE: was MariaDB-only JSON_SEARCH — absent on SQLite (test DB), so the
+        // query threw on the test harness. LOWER(tool_calls) LIKE is a broader-or-
+        // equal match (never misses the email) and runs on both SQLite + MariaDB.
         $candidates = AgentRun::query()
             ->where(function ($q) use ($normalised) {
-                $q->whereRaw('JSON_SEARCH(LOWER(tool_calls), ?, ?) IS NOT NULL', ['one', $normalised])
-                  ->orWhere('agent_reasoning_summary', 'like', '%'.$normalised.'%');
+                $q->whereRaw('LOWER(tool_calls) LIKE ?', ['%'.$normalised.'%'])
+                    ->orWhere('agent_reasoning_summary', 'like', '%'.$normalised.'%');
             })
             ->get();
 

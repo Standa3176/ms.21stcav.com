@@ -39,6 +39,7 @@ use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Prism\Prism\Enums\FinishReason as PrismFinishReason;
 use Prism\Prism\Facades\Prism;
@@ -52,6 +53,22 @@ beforeEach(function () {
     // IntegrationLogger reads it back when persisting the anthropic
     // integration_events row — satisfies the NOT NULL constraint.
     Context::add('correlation_id', (string) Str::uuid());
+
+    // Bucket 2 — ClaudeClient resolves the Anthropic api_key via
+    // IntegrationCredentialResolver; without a DB row or the env fallback the
+    // resolver throws IntegrationCredentialMissingException. Provision the env
+    // fallback (mirrors ClaudeClientResolverIntegrationTest). Prism::fake still
+    // intercepts the actual HTTP, so the key value is inert.
+    config()->set('prism.providers.anthropic.api_key', 'test-key');
+
+    // Bucket 3 — fixtures below call handle() directly. handle() fires
+    // AgentRunStarted/AgentRunCompleted, whose real ShouldQueue Notify*
+    // listeners would try to serialize in-test ("Serialization of Closure is
+    // not allowed"). Fake the queue so the listeners are recorded, not
+    // serialized. Prod listener deps are container-resolved/serializable — this
+    // is purely a test-env artifact. Fixture 1 additionally Event::fakes the two
+    // events it asserts on; this Queue::fake is complementary + harmless there.
+    Queue::fake();
 });
 
 function makePricingMarginChangeSuggestion(array $evidenceOverrides = []): Suggestion

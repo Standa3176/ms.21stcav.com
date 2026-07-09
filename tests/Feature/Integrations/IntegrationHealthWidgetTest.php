@@ -11,7 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('SnapshotAggregator::computeIntegrationHealth returns all 5 kinds (Test 3.8)', function (): void {
+it('SnapshotAggregator::computeIntegrationHealth returns all integration kinds (Test 3.8)', function (): void {
     IntegrationCredential::factory()->kind(IntegrationCredentialKind::SupplierApi)->create([
         'last_test_status' => IntegrationTestStatus::Ok,
         'last_test_at' => now(),
@@ -25,7 +25,7 @@ it('SnapshotAggregator::computeIntegrationHealth returns all 5 kinds (Test 3.8)'
     $aggregator = app(SnapshotAggregator::class);
     $health = $aggregator->computeIntegrationHealth();
 
-    expect($health)->toHaveCount(5);
+    expect($health)->toHaveCount(count(IntegrationCredentialKind::cases()));
     foreach (IntegrationCredentialKind::cases() as $kind) {
         expect($health)->toHaveKey($kind->value);
         expect($health[$kind->value])->toHaveKeys(['status', 'last_test_at']);
@@ -66,7 +66,10 @@ it('IntegrationHealthWidget reads dashboard_snapshots metric_key=integration_hea
     $reflection->setAccessible(true);
     $stats = $reflection->invoke($widget);
 
-    expect($stats)->toHaveCount(5, 'Widget must render 5 tiles — one per integration kind');
+    expect($stats)->toHaveCount(
+        count(IntegrationCredentialKind::cases()),
+        'Widget must render one tile per integration kind'
+    );
 });
 
 it('SnapshotAggregator::computeAll includes integration_health metric_key (D-15 wiring)', function (): void {
@@ -74,5 +77,5 @@ it('SnapshotAggregator::computeAll includes integration_health metric_key (D-15 
     $all = $aggregator->computeAll();
 
     expect($all)->toHaveKey('integration_health');
-    expect($all['integration_health'])->toBeArray()->toHaveCount(5);
+    expect($all['integration_health'])->toBeArray()->toHaveCount(count(IntegrationCredentialKind::cases()));
 });

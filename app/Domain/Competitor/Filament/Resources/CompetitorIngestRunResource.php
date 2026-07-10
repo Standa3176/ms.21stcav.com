@@ -39,6 +39,9 @@ class CompetitorIngestRunResource extends Resource
 
     protected static ?int $navigationSort = 70;
 
+    // 260710-pdw — explicit nav label for deterministic casing.
+    protected static ?string $navigationLabel = 'Competitor Ingest Runs';
+
     protected static ?string $pluralModelLabel = 'Competitor Ingest Runs';
 
     protected static ?string $modelLabel = 'Competitor Ingest Run';

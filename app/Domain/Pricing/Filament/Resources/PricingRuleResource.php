@@ -52,7 +52,8 @@ class PricingRuleResource extends Resource
     // in Catalogue at sort 30 (after Products@10 + Customer Groups@20).
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 30;
+    // 260710-pdw — de-collided within Settings (was 30). Now 70.
+    protected static ?int $navigationSort = 70;
 
     protected static ?string $recordTitleAttribute = 'id';
 

@@ -49,7 +49,11 @@ class CrmFieldMappingResource extends Resource
     // moved to dedicated 'CRM & Bitrix' group at sort 10.
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 10;
+    // 260710-pdw — explicit correct-casing label (was auto-humanized 'Crm Field Mappings').
+    protected static ?string $navigationLabel = 'CRM Field Mappings';
+
+    // 260710-pdw — de-collided within Settings (was 10). Now 30.
+    protected static ?int $navigationSort = 30;
 
     protected static ?string $recordTitleAttribute = 'woo_field';
 

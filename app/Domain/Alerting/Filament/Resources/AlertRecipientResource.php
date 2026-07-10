@@ -32,7 +32,8 @@ class AlertRecipientResource extends Resource
     // in Admin group at sort 20 (after Integration Credentials@10).
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 20;
+    // 260710-pdw — de-collided within Settings (was 20). Now 50.
+    protected static ?int $navigationSort = 50;
 
     protected static ?string $navigationLabel = 'Alert Recipients';
 

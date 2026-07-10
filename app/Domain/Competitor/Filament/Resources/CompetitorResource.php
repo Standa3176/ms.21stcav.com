@@ -54,7 +54,10 @@ class CompetitorResource extends Resource
 
     protected static ?string $slug = 'competitors';
 
-    protected static ?int $navigationSort = 10;
+    // 260710-pdw — de-collided within Settings (was 10, colliding with
+    // IntegrationCredentials + CRM Field Mappings). Now 20; the FTP/CSV children
+    // sort beneath this parent item.
+    protected static ?int $navigationSort = 20;
 
     /**
      * Quick task 260504-ev5 — gray informational total-count badge.

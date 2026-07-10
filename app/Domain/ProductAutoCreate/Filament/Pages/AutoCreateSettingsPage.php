@@ -46,7 +46,8 @@ class AutoCreateSettingsPage extends Page implements HasForms
     // Skip Rules) for the auto-create-product workflow surface.
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 30;
+    // 260710-pdw — de-collided within Settings (was 30, colliding with PricingRule). Now 60.
+    protected static ?int $navigationSort = 60;
 
     protected static ?string $navigationLabel = 'Auto-Create Settings';
 

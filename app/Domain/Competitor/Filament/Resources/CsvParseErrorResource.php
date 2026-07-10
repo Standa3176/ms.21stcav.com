@@ -48,6 +48,9 @@ class CsvParseErrorResource extends Resource
 
     protected static ?int $navigationSort = 80;
 
+    // 260710-pdw — explicit correct-casing nav label (was auto-humanized 'Csv Parse Errors').
+    protected static ?string $navigationLabel = 'CSV Parse Errors';
+
     protected static ?string $pluralModelLabel = 'CSV Parse Errors';
 
     protected static ?string $modelLabel = 'CSV Parse Error';

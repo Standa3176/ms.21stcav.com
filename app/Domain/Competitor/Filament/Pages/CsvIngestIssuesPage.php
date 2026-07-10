@@ -63,7 +63,9 @@ class CsvIngestIssuesPage extends Page implements HasTable
 
     protected static ?string $navigationParentItem = 'Competitor Feeds';
 
-    protected static ?int $navigationSort = 50;
+    // 260710-pdw — de-collided among the Competitor Feeds children (was 50,
+    // colliding with FTP Credentials@50). Now 55.
+    protected static ?int $navigationSort = 55;
 
     protected static ?string $navigationLabel = 'CSV Ingest Issues';
 

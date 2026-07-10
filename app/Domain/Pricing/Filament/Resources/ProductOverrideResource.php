@@ -37,7 +37,8 @@ class ProductOverrideResource extends Resource
     // slot under Catalogue at sort 40 (after Pricing Rules@30).
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 40;
+    // 260710-pdw — de-collided within Settings (was 40). Now 80.
+    protected static ?int $navigationSort = 80;
 
     protected static ?string $recordTitleAttribute = 'id';
 

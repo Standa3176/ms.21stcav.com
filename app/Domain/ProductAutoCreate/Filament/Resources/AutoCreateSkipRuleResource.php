@@ -55,7 +55,8 @@ class AutoCreateSkipRuleResource extends Resource
     // of the auto-create flow — moved to 'WooCommerce' group at sort 40.
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 40;
+    // 260710-pdw — de-collided within Settings (was 40). Now 100.
+    protected static ?int $navigationSort = 100;
 
     protected static ?string $navigationLabel = 'Auto-Create Skip Rules';
 

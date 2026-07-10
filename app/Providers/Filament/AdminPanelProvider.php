@@ -52,6 +52,10 @@ class AdminPanelProvider extends PanelProvider
             ->id('admin')
             ->path('admin')
             ->login()
+            // 260710-pdw — basic product identity: sidebar/login brand text +
+            // browser-tab favicon (public/favicon.ico ships in the repo).
+            ->brandName('MeetingStore Ops')
+            ->favicon(asset('favicon.ico'))
             // violet-800 — deliberate B2B-operational tone (vs vibrant violet-600 SaaS-trial vibe).
             // Color::hex() generates the 50..950 shade ramp from the seed colour; Filament uses
             // the lighter shades for hover/active surfaces and the darker ones for ring/focus.
@@ -84,13 +88,19 @@ class AdminPanelProvider extends PanelProvider
             // WooCommerce / CRM & Bitrix / Admin / "FTP & CSV" groups are gone.
             //   Operations  — daily ambient (Home, Notifications, Horizon)
             //   Catalogue   — Products, Quotes, Price History
+            //   Woo Maint.  — admin maintenance pages (Maintenance Overview, Catalogue Gaps)
             //   Review      — human triage (Auto-Create, Suggestions, Agents)
             //   Competitors — Competitor Prices + Analysis (daily intel only)
             //   Sync & CRM  — operational logs (Sync Runs, Import Issues, CRM Push Log)
             //   Settings — everything set-once (rare-touch, collapsed)
+            // 260710-pdw — 'Woo Maintenance' registered explicitly (was orphaned:
+            // WooMaintenanceOverviewPage + CatalogueGapsPage set the group but it
+            // was never listed, so it dangled last in an uncontrolled slot). Now
+            // pinned right after Catalogue.
             ->navigationGroups([
                 'Operations',
                 'Catalogue',
+                'Woo Maintenance',
                 'Review',
                 'Competitors',
                 'Sync & CRM',
@@ -207,11 +217,12 @@ class AdminPanelProvider extends PanelProvider
             // Phase 9 Plan 05 — TradePricing customer_groups CRUD under "Pricing" nav group.
             ->discoverResources(in: app_path('Domain/TradePricing/Filament/Resources'), for: 'App\\Domain\\TradePricing\\Filament\\Resources')
             // Phase 11 Plan 03 — Quotes domain Filament Resource (QuoteResource +
-            // QuoteLinesRelationManager + 4 state-machine Actions). Adds new
-            // "Sales" navigation group (first member; future v1.x can add
-            // CustomerResource + InvoiceResource here per CONTEXT.md Claude's
-            // Discretion). Per-domain Resource discovery follows the same
-            // pattern as Phase 4 CRM + Phase 5 Competitor + Phase 8 Agents.
+            // QuoteLinesRelationManager + 4 state-machine Actions). QuoteResource
+            // lives in the "Catalogue" navigation group (navigationGroup='Catalogue',
+            // sort 20) — NOT a separate "Sales" group (260710-pdw: corrected a stale
+            // comment that claimed it added a 'Sales' group). Per-domain Resource
+            // discovery follows the same pattern as Phase 4 CRM + Phase 5 Competitor
+            // + Phase 8 Agents.
             ->discoverResources(in: app_path('Domain/Quotes/Filament/Resources'), for: 'App\\Domain\\Quotes\\Filament\\Resources')
             ->middleware([
                 EncryptCookies::class,

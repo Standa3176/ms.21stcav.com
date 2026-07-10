@@ -145,8 +145,10 @@ use App\Domain\Sync\Commands\SyncSupplierFeedDatesCommand;
 use App\Domain\Sync\Commands\WooImportProductsCommand;
 use App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand;
 use App\Domain\Sync\Models\ImportIssue;
+use App\Domain\Sync\Models\Supplier;
 use App\Domain\Sync\Models\SyncRun;
 use App\Domain\Sync\Policies\ImportIssuePolicy;
+use App\Domain\Sync\Policies\SupplierPolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
@@ -467,6 +469,10 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(ProductException::class, ProductExceptionPolicy::class);
         Gate::policy(SyncRun::class, SyncRunPolicy::class);
         Gate::policy(ImportIssue::class, ImportIssuePolicy::class);
+        // 260710-pdw — additive RBAC/Shield consistency for auto-discovered
+        // Supplier metadata (mirrors SyncRunPolicy). SupplierResource inline
+        // hasAnyRole write-gating is unchanged; this policy is additive.
+        Gate::policy(Supplier::class, SupplierPolicy::class);
 
         // ── Phase 3 Plan 01: Pricing domain policies ─────────────────────
         // Gates PricingRule + ProductOverride writes to admin + pricing_manager.

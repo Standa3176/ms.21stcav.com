@@ -47,9 +47,10 @@ class CustomerGroupResource extends Resource
 
     protected static ?string $navigationGroup = 'Settings';
 
-    // I-01 — distinct from PricingRuleResource::$navigationSort (now 30).
+    // I-01 — distinct from PricingRuleResource::$navigationSort (now 70).
     // Reflection-based test in CustomerGroupResourceNavigationSortTest fails CI on collision.
-    protected static ?int $navigationSort = 25;
+    // 260710-pdw — de-collided within Settings (was 25). Now 110.
+    protected static ?int $navigationSort = 110;
 
     protected static ?string $recordTitleAttribute = 'name';
 

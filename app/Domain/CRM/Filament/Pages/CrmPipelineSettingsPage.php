@@ -41,7 +41,8 @@ class CrmPipelineSettingsPage extends Page implements HasForms
     // moved to dedicated 'CRM & Bitrix' group at sort 40.
     protected static ?string $navigationGroup = 'Settings';
 
-    protected static ?int $navigationSort = 40;
+    // 260710-pdw — de-collided within Settings (was 40). Now 90.
+    protected static ?int $navigationSort = 90;
 
     protected static ?string $navigationLabel = 'CRM Pipeline Settings';
 

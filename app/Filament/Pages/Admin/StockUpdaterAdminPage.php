@@ -28,7 +28,8 @@ final class StockUpdaterAdminPage extends Page
 
     protected static ?string $navigationLabel = 'Stock Updater Actions';
 
-    protected static ?int $navigationSort = 50;
+    // 260710-pdw — de-collided within Settings (was 50). Now 120 (last in group).
+    protected static ?int $navigationSort = 120;
 
     protected static ?string $title = 'Stock Updater Actions';
 

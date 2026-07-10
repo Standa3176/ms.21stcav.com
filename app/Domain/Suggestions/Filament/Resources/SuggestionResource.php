@@ -512,6 +512,15 @@ class SuggestionResource extends Resource
                     // products:refresh-brands-to-add) via brandFilterOptions().
                     ->options(fn (): array => self::brandFilterOptions())
                     ->searchable()
+                    // Quick task 260710-obl — without this, the ->searchable()
+                    // dropdown falls back to Filament 3's default optionsLimit of
+                    // 50, so the (alphabetically sorted, >50-entry) cached brand
+                    // list stopped rendering partway through the "C"s in the
+                    // un-searched scroll view. The option list is a cheap cached
+                    // static array (the JSON scan was removed in 260703-qc0), so a
+                    // generous fixed cap well above the realistic distinct-brand
+                    // ceiling is safe to render.
+                    ->optionsLimit(1000)
                     ->query(function (Builder $query, array $data): Builder {
                         $value = $data['value'] ?? null;
 

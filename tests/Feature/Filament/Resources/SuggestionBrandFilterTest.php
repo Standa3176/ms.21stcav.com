@@ -3,10 +3,12 @@
 declare(strict_types=1);
 
 use App\Domain\Competitor\Models\Competitor;
+use App\Domain\Suggestions\Filament\Resources\SuggestionResource;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
 
@@ -86,4 +88,34 @@ it('competitor=AVPartsmaster narrows to the single matching suggestion', functio
         ->filterTable('competitor', 'AVPartsmaster')
         ->assertCanSeeTableRecords([$this->s2])
         ->assertCanNotSeeTableRecords([$this->s1, $this->s3]);
+});
+
+/*
+| Quick task 260710-obl — the Brand SelectFilter is ->searchable() but had no
+| ->optionsLimit(), so Filament 3 capped the un-searched scroll dropdown at its
+| default of 50 options. With >50 distinct alphabetically-sorted brands the list
+| stopped partway through the "C"s. A functional filterTable() test can't catch
+| this (it sets the value directly and ignores the render limit), so we pin the
+| configured limit on the booted table filter instead.
+*/
+it('brand filter option limit clears the seeded brand count (no default-50 cap)', function (): void {
+    $this->actingAs(brandFilterAdmin());
+
+    // Seed 61 distinct pending new_product_opportunity brands (Brand-000..Brand-060),
+    // well above Filament's default optionsLimit of 50. Reuse the existing Ballicom
+    // competitor so the sightings fixture shape stays valid.
+    for ($i = 0; $i <= 60; $i++) {
+        $suffix = str_pad((string) $i, 3, '0', STR_PAD_LEFT);
+        seedBrandSuggestion('OBL-'.$suffix, 'Brand-'.$suffix, false, 'Ballicom');
+    }
+
+    // The distinct-brand option list is cached (5-min TTL, pre-warmed by
+    // products:refresh-brands-to-add); clear it so the seeded brands are visible.
+    Cache::forget(SuggestionResource::BRAND_FILTER_OPTIONS_CACHE_KEY);
+
+    $limit = Livewire::test(ListSuggestions::class)
+        ->instance()->getTable()->getFilter('brand')->getOptionsLimit();
+
+    // > the 61 seeded brands, and > Filament's default 50.
+    expect($limit)->toBeGreaterThanOrEqual(61);
 });

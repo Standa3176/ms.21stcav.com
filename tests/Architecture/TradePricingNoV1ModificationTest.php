@@ -32,7 +32,13 @@ use App\Domain\Products\Models\Product;
 
 it('RuleResolver.php sha256 is byte-identical to pre-Phase-9 snapshot', function (): void {
     $hash = hash_file('sha256', base_path('app/Domain/Pricing/Services/RuleResolver.php'));
-    $expected = '3b711b4ac5c41dd7f1ea314436316a976eff1a96c099d1e3159c572ddbfb4e6c';
+    // 260710-efw — v1 byte-lock INTENTIONALLY re-pinned. The original lock predated trade
+    // rules sharing the pricing_rules table; RuleResolver's 4 retail layers now carry
+    // ->whereNull('customer_group_id') so v1 retail/anonymous resolution stays trade-free
+    // (no customer-group rule can leak a trade-discounted price to the public). This is the
+    // minimal correctness patch; retail behaviour is unchanged (retail rules are null-group).
+    // The PriceCalculator pin below is UNCHANGED.
+    $expected = 'd40af7e7ff07f20424fcd9203f5d89058b0b13d27b98ca810767889bd6a32a23';
     expect($hash)->toBe(
         $expected,
         'app/Domain/Pricing/Services/RuleResolver.php has drifted — Phase 3 retail invariant broken (CONTEXT.md D-03).'

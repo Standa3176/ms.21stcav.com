@@ -75,11 +75,11 @@ it('shadow-mode writes to sync_diffs with provider=bitrix-quote when QUOTE_BITRI
     $client->shouldNotReceive('dealAdd');
     $client->shouldNotReceive('dealUpdate');
     $client->shouldNotReceive('dealProductRowsSet');
-    $deduper = Mockery::mock(EntityDeduper::class);
-    $deduper->shouldNotReceive('findOrCreateContact');
-
     app()->instance(BitrixClient::class, $client);
-    app()->instance(EntityDeduper::class, $deduper);
+    // EntityDeduper is final and cannot be Mockery-mocked; resolve the real
+    // service. In shadow mode it is never invoked, so the shouldNotReceive
+    // guard on the (mocked) BitrixClient above is what enforces "not called".
+    $deduper = app(EntityDeduper::class);
 
     $job = new PushQuoteToBitrixDealJob($quote->id, 'corr-shadow-001');
     $job->handle($client, app(\App\Domain\Pricing\Services\PriceCalculator::class), $deduper);
@@ -266,9 +266,10 @@ it('builds line items array with RESEARCH §11 verified DealProductRows shape', 
     ]);
 
     $client = Mockery::mock(BitrixClient::class);
-    $deduper = Mockery::mock(EntityDeduper::class);
     app()->instance(BitrixClient::class, $client);
-    app()->instance(EntityDeduper::class, $deduper);
+    // EntityDeduper is final and cannot be Mockery-mocked; resolve the real
+    // service from the container — its BitrixClient dep is the mock bound above.
+    $deduper = app(EntityDeduper::class);
 
     $job = new PushQuoteToBitrixDealJob($quote->id, 'corr-shape-001');
     $job->handle($client, app(\App\Domain\Pricing\Services\PriceCalculator::class), $deduper);

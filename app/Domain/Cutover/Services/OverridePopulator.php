@@ -116,11 +116,14 @@ class OverridePopulator
                     ->first();
 
                 if ($override === null) {
-                    // Create with pins set. margin_basis_points is nullable by
-                    // design (Phase 3 Plan 01 — overrides without margin change
-                    // are valid, they just carry pin semantics).
+                    // Create with pins set. margin_basis_points is NOT NULL with
+                    // no DB default (create_product_overrides migration:
+                    // `$t->integer('margin_basis_points')`), so a pin-only override
+                    // MUST supply it explicitly or `cutover:populate-overrides --live`
+                    // crashes on MySQL strict. 0 = "no margin change, pins only",
+                    // matching the FieldPinManager pins-only convention.
                     $attrs = array_merge(
-                        ['product_id' => $productId],
+                        ['product_id' => $productId, 'margin_basis_points' => 0],
                         array_fill_keys(array_keys($pinsToSet), true),
                     );
                     ProductOverride::create($attrs);

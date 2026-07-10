@@ -28,7 +28,7 @@ beforeEach(function (): void {
 /** A test-only BitrixClient that hard-fails if sdk() is invoked in shadow mode. */
 function noSdkBitrixClient(): BitrixClient
 {
-    return new class(app(IntegrationLogger::class)) extends BitrixClient
+    return new class(app(IntegrationLogger::class), app(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class)) extends BitrixClient
     {
         private function sdk(): never
         {

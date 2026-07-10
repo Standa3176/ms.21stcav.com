@@ -25,7 +25,7 @@ beforeEach(function () {
 
 function stubSupplierClientAndIterator(array $supplierFeed, array $pages): void
 {
-    app()->instance(SupplierClient::class, new class($supplierFeed)
+    app()->instance(SupplierClient::class, new class($supplierFeed) extends SupplierClient
     {
         public function __construct(private array $feed) {}
 

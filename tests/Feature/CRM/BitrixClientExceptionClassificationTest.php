@@ -34,11 +34,11 @@ beforeEach(function (): void {
  */
 function throwingBitrixClient(\Throwable $error): BitrixClient
 {
-    return new class($error, app(IntegrationLogger::class)) extends BitrixClient
+    return new class($error, app(IntegrationLogger::class), app(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class)) extends BitrixClient
     {
-        public function __construct(private readonly \Throwable $error, IntegrationLogger $logger)
+        public function __construct(private readonly \Throwable $error, IntegrationLogger $logger, \App\Domain\Integrations\Services\IntegrationCredentialResolver $resolver)
         {
-            parent::__construct($logger);
+            parent::__construct($logger, $resolver);
         }
 
         public function dealAdd(array $fields, ?string $correlationId = null): string

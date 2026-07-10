@@ -8,6 +8,7 @@ use App\Domain\Pricing\Services\AdCandidateScanner;
 use App\Domain\ProductAutoCreate\Services\EanSearchClient;
 use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\ProductAutoCreate\Services\WooGtinPublisher;
 use App\Domain\Products\Models\Product;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -639,6 +640,7 @@ function bindEanStub(array $eanMap, ?array $eanLookupGtinMap = null, ?array $ice
         app(IcecatClient::class),
         app(EanSearchClient::class),
         app(AdCandidateScanner::class),
+        app(WooGtinPublisher::class),
         $eanMap,
     ) extends BackfillMerchantFeedCommand
     {
@@ -648,10 +650,11 @@ function bindEanStub(array $eanMap, ?array $eanLookupGtinMap = null, ?array $ice
             IcecatClient $icecat,
             EanSearchClient $eanSearch,
             AdCandidateScanner $adCandidates,
+            WooGtinPublisher $gtinPublisher,
             /** @var array<string, string> */
             private array $eanMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates, $gtinPublisher);
         }
 
         protected function lookupSupplierEans(array $candidateSkus): array
@@ -750,6 +753,7 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
         $icecatFake,
         $eanSearchFake,
         app(AdCandidateScanner::class),
+        app(WooGtinPublisher::class),
         $mfrMap,
     ) extends BackfillMerchantFeedCommand
     {
@@ -759,10 +763,11 @@ function bindBrandStub(array $mfrMap, array $resolveBrandMap, array $allBrands):
             IcecatClient $icecat,
             EanSearchClient $eanSearch,
             AdCandidateScanner $adCandidates,
+            WooGtinPublisher $gtinPublisher,
             /** @var array<string, string> */
             private array $mfrMap,
         ) {
-            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates);
+            parent::__construct($resolver, $taxonomy, $icecat, $eanSearch, $adCandidates, $gtinPublisher);
         }
 
         protected function lookupSupplierManufacturers(array $candidateSkus): array

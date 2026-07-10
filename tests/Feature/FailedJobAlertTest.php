@@ -162,8 +162,8 @@ it('admin role CAN viewAny + create AlertRecipient', function () {
     expect($user->can('create', AlertRecipient::class))->toBeTrue();
 });
 
-it('config/failed-job-monitor.php has notifiable=null (T-05-06 package listener suppressed)', function () {
-    expect(config('failed-job-monitor.notifiable'))->toBeNull();
+it('config/failed-job-monitor.php has notifiable=NullNotifiable (T-05-06 package listener suppressed)', function () {
+    expect(config('failed-job-monitor.notifiable'))->toBe(\App\Domain\Alerting\Notifiables\NullNotifiable::class);
     expect(config('failed-job-monitor.channels'))->toBe(['mail']);
 });
 

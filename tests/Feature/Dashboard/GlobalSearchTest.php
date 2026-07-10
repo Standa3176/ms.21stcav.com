@@ -68,8 +68,7 @@ it('declares getGlobalSearchResultUrl on all 6 Resources', function () use ($res
 it('uses HasExportableTable trait on all 6 Resources', function () use ($resources): void {
     foreach ($resources as $resource) {
         $traits = class_uses_recursive($resource);
-        expect($traits)->toHaveKey(\App\Filament\Concerns\HasExportableTable::class,
-            "{$resource} must use HasExportableTable trait");
+        expect($traits)->toHaveKey(\App\Filament\Concerns\HasExportableTable::class);
     }
 });
 

@@ -52,6 +52,7 @@ it('accepts provider=bitrix for shadow-mode writes', function (): void {
 });
 
 it('indexes the provider column for Phase 7 divergence scans', function (): void {
-    $indexes = DB::select('SHOW INDEX FROM sync_diffs WHERE Column_name = ?', ['provider']);
-    expect(count($indexes))->toBeGreaterThanOrEqual(1);
+    $indexes = collect(\Schema::getIndexes('sync_diffs'))
+        ->filter(fn ($i) => in_array('provider', $i['columns'], true));
+    expect($indexes->count())->toBeGreaterThanOrEqual(1);
 });

@@ -95,7 +95,9 @@ it('supporting_competitors column renders the evidence count for new_product_opp
         ->assertCanSeeTableRecords([$suggestion]);
 });
 
-it('running the NewProductOpportunityApplier directly returns the Phase 5 stub shape (logged + idempotent)', function (): void {
+it('running the NewProductOpportunityApplier directly dispatches CreateWooProductJob (Phase 6 live shape)', function (): void {
+    Queue::fake();
+
     $suggestion = Suggestion::create([
         'kind' => 'new_product_opportunity',
         'status' => Suggestion::STATUS_APPROVED,
@@ -105,10 +107,13 @@ it('running the NewProductOpportunityApplier directly returns the Phase 5 stub s
         'proposed_at' => now(),
     ]);
 
-    $applier = app(\App\Domain\Competitor\Appliers\NewProductOpportunityApplier::class);
+    $applier = app(\App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier::class);
     $result = $applier->apply($suggestion);
 
-    expect($result['phase_5_stub'] ?? null)->toBeTrue();
+    expect($result['phase_6_live'] ?? null)->toBeTrue();
     expect($result['sku'] ?? null)->toBe('DIRECT-APPLY');
-    expect($result['applier'] ?? null)->toContain('NewProductOpportunityApplier');
+    expect($result['dispatched_job_class'] ?? null)
+        ->toBe(\App\Domain\ProductAutoCreate\Jobs\CreateWooProductJob::class);
+
+    Queue::assertPushed(\App\Domain\ProductAutoCreate\Jobs\CreateWooProductJob::class);
 });

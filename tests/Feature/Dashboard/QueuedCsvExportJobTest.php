@@ -53,18 +53,14 @@ it('constructs with sync-bulk queue (PHP 8.4 trait-collision guard)', function (
 it('does NOT declare $queue as a public trait-collision property', function (): void {
     $reflection = new ReflectionClass(QueuedCsvExportJob::class);
 
-    // $queue lives on the Queueable trait as a public nullable string.
-    // If a job declares its own public string $queue = 'x', PHP 8.4 errors
-    // on the trait composition. This regression guard confirms it's the
-    // inherited property, not a re-declared one.
-    $ownProps = array_filter(
-        $reflection->getProperties(ReflectionProperty::IS_PUBLIC),
-        fn (ReflectionProperty $p) => $p->getDeclaringClass()->getName() === QueuedCsvExportJob::class,
-    );
-
-    $ownPropNames = array_map(fn (ReflectionProperty $p) => $p->getName(), $ownProps);
-
-    expect($ownPropNames)->not->toContain('queue');
+    // $queue lives on the Queueable trait as an UNTYPED public property.
+    // If a job declares its own `public string $queue = 'x'`, PHP 8.4 errors
+    // on the trait composition. Note: PHP flattens trait properties into the
+    // using class, so getDeclaringClass() always reports QueuedCsvExportJob —
+    // the reliable signal that the property is the inherited trait one (and not
+    // a colliding re-declaration) is that it remains UNTYPED.
+    expect($reflection->hasProperty('queue'))->toBeTrue();
+    expect($reflection->getProperty('queue')->hasType())->toBeFalse();
 });
 
 it('writes a CSV file to storage/app/exports when dispatched', function (): void {
@@ -85,7 +81,7 @@ it('writes a CSV file to storage/app/exports when dispatched', function (): void
         correlationId: $cid,
     );
 
-    $job->handle(app(\App\Domain\Dashboard\Services\CsvExportWriter::class));
+    $job->handle(app(\App\Filament\Exports\CsvExportWriter::class));
 
     $shortCid = substr(str_replace('-', '', $cid), 0, 8);
     $expectedPattern = storage_path('app/exports/*_'.$shortCid.'.csv');
@@ -115,7 +111,7 @@ it('sends a QueuedCsvExportMail with the signed URL after successful write', fun
         correlationId: (string) Str::uuid(),
     );
 
-    $job->handle(app(\App\Domain\Dashboard\Services\CsvExportWriter::class));
+    $job->handle(app(\App\Filament\Exports\CsvExportWriter::class));
 
     Mail::assertSent(QueuedCsvExportMail::class, function (QueuedCsvExportMail $mail) use ($user) {
         return $mail->hasTo($user->email)
@@ -157,7 +153,7 @@ it('skips mail delivery when the user has been deleted mid-run (safe degrade)', 
     );
 
     // Should not throw — user missing is logged + job returns.
-    $job->handle(app(\App\Domain\Dashboard\Services\CsvExportWriter::class));
+    $job->handle(app(\App\Filament\Exports\CsvExportWriter::class));
 
     Mail::assertNothingSent();
 })->skip(! class_exists(\App\Domain\Products\Filament\Resources\ProductResource::class), 'ProductResource not available');

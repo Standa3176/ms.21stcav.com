@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 
-it('defines exactly 7 production supervisors', function () {
+it('defines exactly 8 production supervisors', function () {
     $production = config('horizon.environments.production');
 
     expect($production)->toBeArray();
-    expect(array_keys($production))->toHaveCount(7);
+    expect(array_keys($production))->toHaveCount(8);
 
     $expected = [
         'webhook-inbound-supervisor',
@@ -19,6 +19,7 @@ it('defines exactly 7 production supervisors', function () {
         'competitor-csv-supervisor',
         'critical-supervisor',
         'default-supervisor',
+        'agents-supervisor',
     ];
 
     foreach ($expected as $name) {
@@ -26,11 +27,11 @@ it('defines exactly 7 production supervisors', function () {
     }
 });
 
-it('production supervisors cover all 7 named queues', function () {
+it('production supervisors cover all 8 named queues', function () {
     $production = config('horizon.environments.production');
     $allQueues = collect($production)->flatMap(fn ($s) => $s['queue'])->unique()->values();
 
-    $expected = collect(['critical', 'sync-woo-push', 'sync-bulk', 'crm-bitrix', 'competitor-csv', 'webhook-inbound', 'default'])
+    $expected = collect(['critical', 'sync-woo-push', 'sync-bulk', 'crm-bitrix', 'competitor-csv', 'webhook-inbound', 'default', 'agents'])
         ->sort()
         ->values();
 

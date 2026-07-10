@@ -84,7 +84,7 @@ it('has indexes on correlation_id, (channel, created_at), (status, created_at)',
     $columns = Schema::getColumnListing('integration_events');
     expect($columns)->toContain('correlation_id', 'channel', 'status', 'created_at');
 
-    $indexes = collect(DB::select('SHOW INDEX FROM integration_events'))->pluck('Key_name')->unique()->values();
+    $indexes = collect(Schema::getIndexes('integration_events'))->pluck('name')->unique()->values();
 
     expect($indexes)->toContain('integration_events_correlation_id_index');
     expect($indexes)->toContain('integration_events_channel_created_at_index');

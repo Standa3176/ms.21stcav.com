@@ -91,6 +91,7 @@ it('merge semantics NEVER clear an existing pin (D-15)', function (): void {
     $p = Product::factory()->create(['sku' => 'KEEP-1']);
     ProductOverride::create([
         'product_id' => $p->id,
+        'margin_basis_points' => 0, // NOT NULL, no DB default — pins-only convention
         'pin_title' => true, // pre-existing ops-set pin
     ]);
 
@@ -108,6 +109,7 @@ it('merge adds new pins to an existing override without clearing old ones', func
     $p = Product::factory()->create(['sku' => 'ADD-1']);
     ProductOverride::create([
         'product_id' => $p->id,
+        'margin_basis_points' => 0, // NOT NULL, no DB default — pins-only convention
         'pin_title' => true,
         'pin_slug' => true,
     ]);

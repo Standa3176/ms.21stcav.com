@@ -13,6 +13,10 @@ use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['services.woo.write_enabled' => false]);
+    // Pin the PUT path: put() routes through POST by default (260530-clv WAF
+    // workaround, covered by its own tests). These tests assert the PUT verb
+    // itself, so disable the POST-for-updates rewrite for determinism.
+    config(['services.woo.use_post_for_updates' => false]);
 });
 
 it('records a SyncDiff instead of calling Woo when WOO_WRITE_ENABLED=false', function () {
@@ -52,7 +56,7 @@ it('WOO_WRITE_ENABLED=true invokes the Automattic client (replaces Phase 1 Logic
         ->with('products/1234', ['regular_price' => '99.99'])
         ->andReturn(['id' => 1234, 'regular_price' => '99.99']);
 
-    $client = new WooClient(app(IntegrationLogger::class), $mockInner);
+    $client = new WooClient(app(IntegrationLogger::class), app(\App\Domain\Integrations\Services\IntegrationCredentialResolver::class), $mockInner);
     $result = $client->put('products/1234', ['regular_price' => '99.99']);
 
     expect($result)->toHaveKey('id', 1234);

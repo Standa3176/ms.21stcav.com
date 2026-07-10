@@ -232,8 +232,10 @@ it('exposes a read() helper that returns null when snapshot is absent', function
 it('refreshAll returns the count of metrics upserted', function (): void {
     $count = app(SnapshotAggregator::class)->refreshAll();
 
-    // 9 (Phase 7) + 1 (Phase 09.1 integration_health) + 1 (260606-lhp suggestions_triage_health) = 11.
-    expect($count)->toBe(11);
+    // 9 (Phase 7) + 1 (Phase 09.1 integration_health) + 1 (260606-lhp suggestions_triage_health)
+    // + 4 quick-task widgets (ad_candidates_health, category_audit_health, supplier_freshness,
+    // stock_divergence) = 15.
+    expect($count)->toBe(15);
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────

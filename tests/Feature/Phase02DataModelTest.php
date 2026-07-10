@@ -218,6 +218,10 @@ it('produces valid persisted instances from every new Phase-2 factory + ProductF
 // ══════════════════════════════════════════════════════════════════════════════
 
 it('rolls back the 6 Phase-2 migrations + re-migrates cleanly (round-trip)', function () {
+    if (Schema::getConnection()->getDriverName() !== 'mysql') {
+        test()->markTestSkipped('sqlite cannot drop an indexed column on rollback; prod is MySQL.');
+    }
+
     // RefreshDatabase has already brought us to a fully-migrated state.
     // Step=27 rolls back (newest first):
     //   Phase 5 Plan 01 (7 migrations — 5 new tables + 2 additive columns):

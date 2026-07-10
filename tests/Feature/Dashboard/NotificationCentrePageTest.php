@@ -80,7 +80,10 @@ it('renders failed_jobs rows on the failed-jobs tab', function (): void {
 
 it('exposes receives_weekly_digest on AlertRecipientResource form', function (): void {
     $schema = \App\Domain\Alerting\Filament\Resources\AlertRecipientResource::form(
-        \Filament\Forms\Form::make(new \Livewire\Component())
+        \Filament\Forms\Form::make(new class extends \Livewire\Component implements \Filament\Forms\Contracts\HasForms
+        {
+            use \Filament\Forms\Concerns\InteractsWithForms;
+        })
     )->getComponents();
 
     $names = array_map(fn ($c) => method_exists($c, 'getName') ? $c->getName() : null, $schema);

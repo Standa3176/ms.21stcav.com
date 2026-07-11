@@ -556,3 +556,40 @@ Schedule::command('google:pull-ga4')
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Twice-daily GA4 channel/campaign pull (06:00 + 14:00 London); no-op until GA4 credential saved (Phase 15 15a-02)');
+
+// Quick task 260711-aps — twice-weekly straight-to-live auto-PUBLISH of pending,
+// sourceable, 2-or-3-competitor SKUs (operator spec: "auto create twice a week
+// any pending suggested SKU where we have a supplier and 2 or 3 competitors show
+// the product — push straight to live, and keep a record of what was pushed and
+// when"). Mon+Thu 05:00 London — ahead of the 07:00 supplier sync + morning ops
+// review, uncontended in the 05:00 window.
+//
+// --auto-approve dispatches PublishProductJob per draft (POST straight to live
+// Woo). Each CONFIRMED real publish writes one auto_publish_log row capturing the
+// 2-vs-3 competitor split (viewable under Woo Maintenance → Auto-Publish Log).
+//
+// CRITICAL: live publishing requires WOO_WRITE_ENABLED=true. Until that flag is
+// flipped, PublishProductJob records a SyncDiff instead of touching Woo and does
+// NOT mark rows published — so this run is a SAFE SHADOW NO-OP (no live writes,
+// no false 'published' status, and NO audit-log row) until cutover.
+//
+// Batch cap via config('product_auto_create.scheduled_publish_limit') (env
+// AUTO_PUBLISH_SCHEDULED_LIMIT, default 25) — tunable without a deploy.
+// withoutOverlapping() guards the slow (Claude + Woo) run from colliding.
+Schedule::command('products:draft-from-suggestions', [
+    '--min-competitors' => 2,
+    '--max-competitors' => 3,
+    '--auto-approve' => true,
+    '--create-missing-brands' => true,
+    '--source-images' => true,
+    '--limit' => (int) config('product_auto_create.scheduled_publish_limit', 25),
+    '--no-confirm' => true,
+])
+    // Twice weekly = Mon (1) + Thu (4) at 05:00. Laravel's scheduler has no
+    // twiceWeekly() helper (only twiceDaily/twiceMonthly), so express it as the
+    // equivalent cron — matches this file's ->cron('... 1-5') convention.
+    ->cron('0 5 * * 1,4')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Twice-weekly straight-to-live auto-publish of 2/3-competitor sourceable pending SKUs (Mon+Thu 05:00 London; safe shadow no-op until WOO_WRITE_ENABLED=true; 260711-aps)');

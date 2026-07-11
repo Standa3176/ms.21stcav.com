@@ -80,4 +80,11 @@ return [
     // (draft-from-suggestions via RunAutoCreatePipelineJob).
     'auto_create_missing_brands' => true,
 
+    // 260711-aps — batch cap for the twice-weekly scheduled straight-to-live
+    // auto-publish (routes/console.php: products:draft-from-suggestions
+    // --auto-approve, 2-or-3-competitor sourceable pending SKUs). Tunable without
+    // a deploy via AUTO_PUBLISH_SCHEDULED_LIMIT. LIVE publishing requires
+    // WOO_WRITE_ENABLED=true — until then the scheduled run is a safe shadow no-op.
+    'scheduled_publish_limit' => (int) env('AUTO_PUBLISH_SCHEDULED_LIMIT', 25),
+
 ];

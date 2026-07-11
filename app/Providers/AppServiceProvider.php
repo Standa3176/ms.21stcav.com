@@ -95,8 +95,10 @@ use App\Domain\Dashboard\Models\UserSavedFilter;
 use App\Domain\Dashboard\Policies\DashboardSnapshotPolicy;
 use App\Domain\Dashboard\Policies\UserSavedFilterPolicy;
 use App\Domain\Integrations\Commands\PullGa4Command;
+use App\Domain\Integrations\Models\GaChannelMetric;
 use App\Domain\Integrations\Models\IntegrationCredential;
 use App\Domain\Integrations\Observers\IntegrationCredentialObserver;
+use App\Domain\Integrations\Policies\GaChannelMetricPolicy;
 use App\Domain\Integrations\Policies\IntegrationCredentialPolicy;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Pricing\Console\Commands\PricingRecomputeCommand;
@@ -616,6 +618,14 @@ class AppServiceProvider extends ServiceProvider
         // in Plan 11-01 so the gate is in place before the UI lands.
         Gate::policy(Quote::class, QuotePolicy::class);
         Gate::policy(QuoteLine::class, QuoteLinePolicy::class);
+
+        // ── Phase 15 Plan 15a-02: GA4 Channels (read-only Marketing viewer) ──
+        // GaChannelMetricResource is a READ-ONLY window over
+        // ga_channel_metrics_daily (written only by the scheduled
+        // google:pull-ga4 pull). viewAny/view = any authed workspace user;
+        // all mutations DENY for everyone (producer-owned table). Hand-written
+        // per Pitfall P5-F — DO NOT regenerate via shield:generate.
+        Gate::policy(GaChannelMetric::class, GaChannelMetricPolicy::class);
 
         // ── Phase 11 Plan 02: QuoteLine observer chain (D-13 + OQ-1) ─────
         // ORDER MATTERS — the array-form ::observe() preserves registration

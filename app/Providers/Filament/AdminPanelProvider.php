@@ -97,12 +97,16 @@ class AdminPanelProvider extends PanelProvider
             // WooMaintenanceOverviewPage + CatalogueGapsPage set the group but it
             // was never listed, so it dangled last in an uncontrolled slot). Now
             // pinned right after Catalogue.
+            // Phase 15 Plan 15a-02 — 'Marketing' group added AFTER 'Competitors'
+            // and BEFORE 'Sync & CRM'. Houses the read-only GA4 Channels viewer
+            // (GaChannelMetricResource); later 15b analyser surfaces slot here too.
             ->navigationGroups([
                 'Operations',
                 'Catalogue',
                 'Woo Maintenance',
                 'Review',
                 'Competitors',
+                'Marketing',
                 'Sync & CRM',
                 'Settings',
             ])

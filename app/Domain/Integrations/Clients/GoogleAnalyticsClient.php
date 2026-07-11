@@ -8,8 +8,10 @@ use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Exceptions\IntegrationCredentialMissingException;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Integrations\Services\IntegrationTestResult;
+use Carbon\CarbonInterface;
 use Google\Analytics\Data\V1beta\Client\BetaAnalyticsDataClient;
 use Google\Analytics\Data\V1beta\DateRange;
+use Google\Analytics\Data\V1beta\Dimension;
 use Google\Analytics\Data\V1beta\Metric;
 use Google\Analytics\Data\V1beta\RunReportRequest;
 use Google\Analytics\Data\V1beta\RunReportResponse;
@@ -99,6 +101,88 @@ class GoogleAnalyticsClient
     public function runReport(RunReportRequest $request): RunReportResponse
     {
         return $this->client()->runReport($request);
+    }
+
+    /**
+     * Phase 15 Plan 15a-02 — READ-ONLY daily channel/campaign report pull.
+     *
+     * Grain per returned row = date × sessionDefaultChannelGroup ×
+     * sessionSourceMedium × sessionCampaignName. The `date` dimension is
+     * included so each row carries its own day (without it GA4 aggregates the
+     * whole range into one row and the daily grain collapses).
+     *
+     * Returns [] when credentials are null (unconfigured) — this is the ONLY
+     * silent no-op, which is what makes the scheduled `google:pull-ga4` safe to
+     * ship before a GA4 service account exists. Any OTHER failure (e.g. a
+     * property that rejects `keyEvents`) surfaces as the underlying SDK
+     * exception so the calling command can log it — fetch never swallows those.
+     *
+     * Revenue is returned as a float in the property currency; conversion to
+     * integer pennies happens in the command (the one money-mapping).
+     *
+     * @return list<array{
+     *     date:string, channel_group:string, source_medium:string, campaign:string,
+     *     sessions:int, key_events:int, transactions:int, purchase_revenue:float
+     * }>
+     */
+    public function fetchChannelMetrics(CarbonInterface $from, CarbonInterface $to): array
+    {
+        $creds = $this->credentials();
+        if ($creds === null) {
+            return [];
+        }
+
+        $request = (new RunReportRequest)
+            ->setProperty('properties/'.$creds['property_id'])
+            ->setDimensions([
+                new Dimension(['name' => 'date']),
+                new Dimension(['name' => 'sessionDefaultChannelGroup']),
+                new Dimension(['name' => 'sessionSourceMedium']),
+                new Dimension(['name' => 'sessionCampaignName']),
+            ])
+            ->setMetrics([
+                new Metric(['name' => 'sessions']),
+                new Metric(['name' => 'keyEvents']),
+                new Metric(['name' => 'transactions']),
+                new Metric(['name' => 'purchaseRevenue']),
+            ])
+            ->setDateRanges([new DateRange([
+                'start_date' => $from->format('Y-m-d'),
+                'end_date' => $to->format('Y-m-d'),
+            ])]);
+
+        $response = $this->runReport($request);
+
+        $rows = [];
+        foreach ($response->getRows() as $row) {
+            $dims = iterator_to_array($row->getDimensionValues());
+            $mets = iterator_to_array($row->getMetricValues());
+
+            $rows[] = [
+                'date' => $this->normalizeGaDate((string) $dims[0]->getValue()),
+                'channel_group' => (string) $dims[1]->getValue(),
+                'source_medium' => (string) $dims[2]->getValue(),
+                'campaign' => (string) $dims[3]->getValue(),
+                'sessions' => (int) $mets[0]->getValue(),
+                'key_events' => (int) $mets[1]->getValue(),
+                'transactions' => (int) $mets[2]->getValue(),
+                'purchase_revenue' => (float) $mets[3]->getValue(),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * GA4's `date` dimension yields a compact YYYYMMDD string (e.g. "20260710").
+     * Normalize to ISO Y-m-d so the caller can persist it into a date column
+     * portably. Falls back to the raw value if it is not the expected shape.
+     */
+    protected function normalizeGaDate(string $raw): string
+    {
+        $parsed = \DateTimeImmutable::createFromFormat('Ymd', $raw);
+
+        return $parsed instanceof \DateTimeImmutable ? $parsed->format('Y-m-d') : $raw;
     }
 
     /**

@@ -37,6 +37,7 @@ use App\Domain\Agents\Appliers\SeoContentPatchApplier;
 use App\Domain\Agents\Console\Commands\AgentRunCommand;
 use App\Domain\Agents\Console\Commands\AgentsGdprPurgeLangfuseCommand;
 use App\Domain\Agents\Console\Commands\AgentsPruneArchiveCommand;
+use App\Domain\Agents\Console\Commands\RunAdOptimisationCommand;
 use App\Domain\Agents\Console\Commands\RunSeoAgentBatchCommand;
 use App\Domain\Agents\Console\Commands\ShieldSafeRegenerateCommand;
 use App\Domain\Agents\Models\AgentRun;
@@ -959,6 +960,13 @@ class AppServiceProvider extends ServiceProvider
                 // routes/console.php at 04:30 Europe/London, env-flag gated
                 // (AGENT_SEO_BATCH_SCHEDULE_ENABLED, default true).
                 RunSeoAgentBatchCommand::class,
+                // Phase 15 Plan 15b-01 — advice-only AdOptimisationAgent
+                // dispatcher (agents:run-ad-optimisation). Safe no-op when
+                // ga_channel_metrics_daily has no rows in the lookback window
+                // (no dispatch, no LLM spend). Scheduled everySixHours in
+                // routes/console.php, env-flag gated
+                // (AGENT_AD_OPTIMISATION_SCHEDULE_ENABLED, default true).
+                RunAdOptimisationCommand::class,
                 // Quick task 260504-muq — history:prune (90-day price + stock
                 // history retention). Deletes product_price_snapshots +
                 // supplier_offer_snapshots older than

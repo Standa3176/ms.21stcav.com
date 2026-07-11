@@ -415,6 +415,22 @@ if ((bool) config('agents.seo_batch_schedule_enabled', true)) {
         ->description('Phase 12 SEOAGT-05 — nightly SEO agent batch (04:30 Europe/London)');
 }
 
+// Phase 15 Plan 15b-01 — advice-only AdOptimisationAgent, several times a day.
+// everySixHours is SAFE because (a) the command no-ops when there are no recent
+// ga_channel_metrics_daily rows (no dispatch, no LLM spend — so it is safe to
+// schedule NOW before real GA4 data flows) and (b) the daily 300p budget cap
+// bounds worst-case spend. withoutOverlapping guards a slow run from colliding
+// with the next fire. Config()-gated (not env()) — env() returns the default in
+// cached-config mode (deploy runs config:cache), silently disabling the schedule.
+if ((bool) config('agents.ad_optimisation_schedule_enabled', true)) {
+    Schedule::command('agents:run-ad-optimisation')
+        ->everySixHours()
+        ->withoutOverlapping()
+        ->onOneServer()
+        ->timezone('Europe/London')
+        ->description('Phase 15 — advice-only AdOptimisationAgent (every 6h, Europe/London; no-op when no recent GA4 data)');
+}
+
 // Quick task 260708-b4f — products:reconcile-woo-maintenance nightly 04:30 London.
 // READ-ONLY paged Woo GET /products that mirrors each live product's real Woo
 // state (image count / EAN / category count / stock) into the local woo_*

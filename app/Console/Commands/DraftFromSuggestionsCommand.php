@@ -8,12 +8,14 @@ use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Concerns\ResolvesWooBrandKey;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
+use App\Domain\ProductAutoCreate\Models\AutoPublishLogEntry;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Context;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -96,6 +98,10 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $explicitSkus = $this->parseSkusOption((string) ($this->option('skus') ?? ''));
         $skipConfirm = (bool) $this->option('no-confirm')
             || ! $this->input->isInteractive();
+        // 260711-aps — thread this run's correlation id (set by BaseCommand) onto
+        // each audit-log row so a scheduled batch is traceable end-to-end.
+        $correlationId = Context::get('correlation_id');
+        $correlationId = is_string($correlationId) ? $correlationId : null;
 
         // ── 1. Resolve current Woo brand list (cached by TaxonomyResolver) ──
         $wooBrandsByLower = [];
@@ -144,6 +150,10 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         // ── 4. Walk pending suggestions in chunks; collect candidates ──
         /** @var array<string, string> $candidates  sku → canonical Woo brand name */
         $candidates = [];
+        // 260711-aps — sku → driving suggestion's supporting_competitors, populated
+        // during the Suggestion walk; consumed by the --auto-approve audit write.
+        /** @var array<string, int> $competitorBySku */
+        $competitorBySku = [];
         /** @var array<string, array<int, string>> $byBrand  canonical brand → [skus] */
         $byBrand = [];
         // Skip-reason buckets — survive across chunks via use (&$skips) below.
@@ -250,14 +260,18 @@ final class DraftFromSuggestionsCommand extends BaseCommand
             }
         } else {
             $this->pendingOpportunitySuggestionsQuery($minCompetitors, $maxCompetitors)
-                ->chunk(200, function ($rows) use ($chunkProcessor) {
+                ->chunk(200, function ($rows) use ($chunkProcessor, &$competitorBySku) {
                     // Adapt suggestion rows → raw SKU strings for the processor.
+                    // 260711-aps — also capture the driving suggestion's competitor
+                    // count keyed by SKU so the --auto-approve audit-log write can
+                    // record the 2-vs-3 split per published product.
                     $skus = [];
                     foreach ($rows as $sug) {
                         $ev = json_decode((string) $sug->evidence, true);
                         $sku = trim((string) ($ev['sku'] ?? ''));
                         if ($sku !== '') {
                             $skus[] = $sku;
+                            $competitorBySku[$sku] = (int) ($ev['supporting_competitors'] ?? 0);
                         }
                     }
 
@@ -408,14 +422,24 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                     // dispatchSync runs the job inline, so we can capture the
                     // back-fill of woo_product_id without waiting on Horizon.
                     PublishProductJob::dispatchSync((int) $product->id, 0);
-                    $product->refresh();
-                    if ($product->woo_product_id !== null && (int) $product->woo_product_id > 0) {
-                        $this->line(sprintf('  ✓ %s → Woo #%d', $sku, $product->woo_product_id));
+                    // 260711-aps — write the audit row ONLY on a confirmed real
+                    // publish (recordAutoPublish re-reads auto_create_status +
+                    // woo_product_id). In shadow mode both are absent → returns
+                    // false → NO row, and the product stays in the review inbox.
+                    $wrote = $this->recordAutoPublish(
+                        $product,
+                        $competitorBySku[$sku] ?? 0,
+                        null,
+                        $correlationId,
+                    );
+                    if ($wrote) {
+                        $product->refresh();
+                        $this->line(sprintf('  ✓ %s → Woo #%d (audit logged)', $sku, $product->woo_product_id));
                         $published++;
                     } else {
-                        // No woo_product_id back-filled = shadow mode (WOO_WRITE_ENABLED=false)
-                        // or some other no-op path. Stays in review inbox.
-                        $this->warn("  ⊘ {$sku}: no Woo id back-filled (shadow mode?) — stays in review inbox");
+                        // No confirmed publish = shadow mode (WOO_WRITE_ENABLED=false)
+                        // or some other no-op path. Stays in review inbox; no audit row.
+                        $this->warn("  ⊘ {$sku}: not confirmed published (shadow mode?) — stays in review inbox, no audit row");
                         $shadowed++;
                     }
                 } catch (\Throwable $e) {
@@ -517,6 +541,45 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         return DB::connection()->getDriverName() === 'sqlite'
             ? "CAST(json_extract(evidence, '$.supporting_competitors') AS INTEGER)"
             : "CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS SIGNED)";
+    }
+
+    /**
+     * 260711-aps — record ONE auto_publish_log row for a confirmed REAL live
+     * publish, then return true. Returns false (and writes NOTHING) unless the
+     * product is confirmed published on Woo: re-read auto_create_status must be
+     * 'published' AND woo_product_id must be present. This is the seam that keeps
+     * a shadow-mode run (WOO_WRITE_ENABLED=false — PublishProductJob no-ops,
+     * leaving the row un-published with no woo id) from ever writing an audit row.
+     *
+     * competitorCount is the driving suggestion's supporting_competitors (2 or 3
+     * under the schedule) so the operator sees the split. supplierCount is
+     * forward-compat (the current walk passes null). Pure + injectable — the
+     * --auto-approve loop calls it, and it is unit-tested without the live walk.
+     */
+    public function recordAutoPublish(Product $product, int $competitorCount, ?int $supplierCount, ?string $correlationId): bool
+    {
+        $product->refresh();
+
+        if ($product->auto_create_status !== 'published') {
+            return false;
+        }
+        $wooId = (int) ($product->woo_product_id ?? 0);
+        if ($wooId <= 0) {
+            return false;
+        }
+
+        AutoPublishLogEntry::create([
+            'sku' => (string) $product->sku,
+            'product_id' => (int) $product->id,
+            'woo_product_id' => $wooId,
+            'competitor_count' => $competitorCount,
+            'supplier_count' => $supplierCount,
+            'source' => AutoPublishLogEntry::SOURCE_SCHEDULED,
+            'batch_correlation_id' => $correlationId,
+            'published_at' => now(),
+        ]);
+
+        return true;
     }
 
     /**

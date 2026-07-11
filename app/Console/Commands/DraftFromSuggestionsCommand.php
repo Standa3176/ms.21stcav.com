@@ -12,6 +12,7 @@ use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -58,6 +59,8 @@ final class DraftFromSuggestionsCommand extends BaseCommand
     protected $signature = 'products:draft-from-suggestions
         {--brands= : Comma-separated case-insensitive brand filter. Default: all brands on Woo.}
         {--skus= : Comma-separated explicit SKU list. When set, bypass the Suggestion walk and use these SKUs directly (still filtered to sourceable + brand-on-Woo). Used by the Filament "Auto-create all in this tab" header action.}
+        {--min-competitors= : Suggestion-walk path only — include only SKUs whose evidence.supporting_competitors is >= this value (inclusive). Default: no lower bound (backward compatible).}
+        {--max-competitors= : Suggestion-walk path only — include only SKUs whose evidence.supporting_competitors is <= this value (inclusive). Default: no upper bound (backward compatible).}
         {--limit=100 : Max products to include in this batch (0 = unbounded — careful)}
         {--source-images : Also run products:source-images at the end (default: skip — cheaper, run on keepers later)}
         {--auto-approve : Bypass the review inbox — auto-dispatch PublishProductJob to push each draft live on Woo (requires WOO_WRITE_ENABLED=true)}
@@ -86,6 +89,10 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         $autoApprove = (bool) $this->option('auto-approve');
         $createMissingBrands = (bool) $this->option('create-missing-brands');
         $dryRun = (bool) $this->option('dry-run');
+        // 260711-aps — inclusive competitor-count band on the Suggestion-walk path.
+        // null = no bound (backward compatible); applies to evidence.supporting_competitors.
+        $minCompetitors = $this->option('min-competitors') !== null ? (int) $this->option('min-competitors') : null;
+        $maxCompetitors = $this->option('max-competitors') !== null ? (int) $this->option('max-competitors') : null;
         $explicitSkus = $this->parseSkusOption((string) ($this->option('skus') ?? ''));
         $skipConfirm = (bool) $this->option('no-confirm')
             || ! $this->input->isInteractive();
@@ -242,10 +249,7 @@ final class DraftFromSuggestionsCommand extends BaseCommand
                 }
             }
         } else {
-            DB::table('suggestions')
-                ->where('kind', 'new_product_opportunity')
-                ->where('status', 'pending')
-                ->orderBy('id')
+            $this->pendingOpportunitySuggestionsQuery($minCompetitors, $maxCompetitors)
                 ->chunk(200, function ($rows) use ($chunkProcessor) {
                     // Adapt suggestion rows → raw SKU strings for the processor.
                     $skus = [];
@@ -466,6 +470,53 @@ final class DraftFromSuggestionsCommand extends BaseCommand
         if ($key !== '') {
             Cache::put($key, $summary, 600);
         }
+    }
+
+    /**
+     * 260711-aps — the pending new_product_opportunity walk query, with the
+     * optional inclusive competitor-count band applied to
+     * evidence.supporting_competitors. This is the exact query the Suggestion-
+     * walk path drives; exposed (public) so the competitor filter is testable
+     * without the live supplier_db mysqli walk.
+     *
+     * Driver-portable (memory: SQLite↔MariaDB strict trap): SQLite uses
+     * json_extract() (already unquotes scalars) + CAST(... AS INTEGER); MariaDB
+     * (prod) needs JSON_UNQUOTE(JSON_EXTRACT(...)) + CAST(... AS SIGNED). No
+     * MySQL-only CAST AS UNSIGNED in a shared (non-switched) path.
+     *
+     * min/max null = no bound on that side (both null = no filter at all, so
+     * behaviour is byte-identical to the pre-260711 walk).
+     */
+    public function pendingOpportunitySuggestionsQuery(?int $minCompetitors, ?int $maxCompetitors): Builder
+    {
+        $query = DB::table('suggestions')
+            ->where('kind', 'new_product_opportunity')
+            ->where('status', 'pending')
+            ->orderBy('id');
+
+        if ($minCompetitors !== null || $maxCompetitors !== null) {
+            $expr = $this->competitorCountExpr();
+            if ($minCompetitors !== null) {
+                $query->whereRaw("{$expr} >= ?", [$minCompetitors]);
+            }
+            if ($maxCompetitors !== null) {
+                $query->whereRaw("{$expr} <= ?", [$maxCompetitors]);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * Driver-portable integer extraction of evidence.supporting_competitors.
+     * Mirrors Suggestion::scopeHighConfidenceSourceable (SQLite json_extract +
+     * CAST AS INTEGER; MariaDB JSON_UNQUOTE(JSON_EXTRACT()) + CAST AS SIGNED).
+     */
+    private function competitorCountExpr(): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "CAST(json_extract(evidence, '$.supporting_competitors') AS INTEGER)"
+            : "CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS SIGNED)";
     }
 
     /**

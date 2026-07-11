@@ -30,6 +30,7 @@ use App\Console\Commands\Reports\SupplierSyncDigestCommand;
 use App\Console\Commands\Reports\WeeklyDigestCommand;
 use App\Console\Commands\RetagProductsOnWooCommand;
 use App\Console\Commands\SupplierProbeSingleSkuCommand;
+use App\Domain\Agents\Agents\AdOptimisationAgent;
 use App\Domain\Agents\Agents\PricingAgent;
 use App\Domain\Agents\Agents\SeoAgent;
 use App\Domain\Agents\Appliers\SeoContentPatchApplier;
@@ -447,6 +448,14 @@ class AppServiceProvider extends ServiceProvider
                 // Plan 12-01 — this line — is the AgentRegistry binding so
                 // downstream plans wire against a stable interface.
                 $registry->register('seo', SeoAgent::class);
+                // ── Phase 15 Plan 15b-01: AgentRegistry — register AdOptimisationAgent ──
+                // Third REAL RunsAsAgent consumer. ADVICE-ONLY marketing analyst
+                // (GA4 snapshot + own margin/competitor/stock data → ad_optimisation
+                // Suggestions). Scheduled several times a day (agents:run-ad-optimisation);
+                // RunAdOptimisationJob owns orchestration; AdOptimisationResultMapper
+                // writes the shadow-gated Suggestions. No external writes (15c owns
+                // any closed-loop).
+                $registry->register('ad_optimisation', AdOptimisationAgent::class);
             }
         );
 

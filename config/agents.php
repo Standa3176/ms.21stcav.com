@@ -174,4 +174,29 @@ return [
     // (see that comment) — read via config() from routes/console.php.
     'seo_batch_schedule_enabled' => (bool) env('AGENT_SEO_BATCH_SCHEDULE_ENABLED', true),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Phase 15 — AdOptimisationAgent (advice-only marketing analyst)
+    |--------------------------------------------------------------------------
+    |
+    | temperature        — modest creativity for a cautious analyst; slightly
+    |                       above pricing (0.0) but below SEO copy (0.4). The
+    |                       agent structures recommendations, not prose.
+    | data_lookback_days — the command counts ga_channel_metrics_daily rows in
+    |                       this window; ZERO rows → safe no-op (log + exit 0,
+    |                       no dispatch, no LLM spend). Guards scheduling now
+    |                       before real GA4 data flows.
+    |
+    | Daily budget cap lives in daily_caps.ad_optimisation (300p) above.
+    */
+    'ad_optimisation' => [
+        'temperature' => (float) env('AGENTS_AD_OPTIMISATION_TEMPERATURE', 0.3),
+        'data_lookback_days' => (int) env('AGENTS_AD_OPTIMISATION_LOOKBACK_DAYS', 14),
+    ],
+
+    // `agents:run-ad-optimisation` schedule toggle (operator emergency
+    // disable). Read via config() from routes/console.php (same
+    // env()-broken-in-cached-config caveat as seo_batch_schedule_enabled).
+    'ad_optimisation_schedule_enabled' => (bool) env('AGENT_AD_OPTIMISATION_SCHEDULE_ENABLED', true),
+
 ];

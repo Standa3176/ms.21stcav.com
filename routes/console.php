@@ -524,3 +524,19 @@ if ((bool) config('pricing.undercut_schedule_enabled', false)) {
         ->timezone('Europe/London')
         ->description('Core loop #1 — daily competitor-undercut repricing (08:00 Europe/London; opt-in via PRICING_UNDERCUT_SCHEDULE_ENABLED)');
 }
+
+// Phase 15 Plan 15a-02 — google:pull-ga4 twice-daily (06:00 + 14:00 London).
+// READ-ONLY pull of GA4 channel/campaign metrics into ga_channel_metrics_daily.
+// SAFE TO SHIP NOW: the command no-ops (logs + exits 0) whenever GA4 is
+// unconfigured — GoogleAnalyticsClient::fetchChannelMetrics() returns [] until a
+// GA4 service-account credential is saved. So this schedule stays a harmless
+// no-op in prod today and starts populating the snapshot table the instant the
+// operator provisions the integration. withoutOverlapping() guards against a
+// slow pull colliding with the next fire. The default 7-day window means the
+// 14:00 run refreshes the partial current day the 06:00 run captured.
+Schedule::command('google:pull-ga4')
+    ->twiceDaily(6, 14)
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Twice-daily GA4 channel/campaign pull (06:00 + 14:00 London); no-op until GA4 credential saved (Phase 15 15a-02)');

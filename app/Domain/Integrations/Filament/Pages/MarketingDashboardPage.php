@@ -4,11 +4,16 @@ declare(strict_types=1);
 
 namespace App\Domain\Integrations\Filament\Pages;
 
+use App\Domain\Agents\Jobs\RunAdOptimisationJob;
 use App\Domain\Integrations\Filament\Widgets\LatestMarketingAdviceWidget;
 use App\Domain\Integrations\Filament\Widgets\MarketingOverviewStats;
 use App\Domain\Integrations\Filament\Widgets\MarketingRevenueTrendChart;
 use App\Domain\Integrations\Models\GaChannelMetric;
+use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 
 /**
  * Phase 15 Plan 15b-02 — Marketing dashboard (READ-ONLY presentation).
@@ -47,6 +52,77 @@ class MarketingDashboardPage extends Page
     {
         // Consistent with the GA4 Channels resource — authed workspace read.
         return auth()->user()?->can('viewAny', GaChannelMetric::class) ?? false;
+    }
+
+    /**
+     * Task 6 — on-demand "Review with Claude" header action. Runs the EXISTING
+     * 15b-01 AdOptimisationAgent now (admin-pull) instead of waiting for the
+     * 6-hourly schedule. REUSES RunAdOptimisationJob — no new agent, no new
+     * external integration, no Google calls. Money-safe: admin-gated,
+     * requiresConfirmation, 300p daily budget cap (enforced by the job's
+     * BudgetGuard), advice-only.
+     */
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('review_with_claude')
+                ->label('Review with Claude')
+                ->icon('heroicon-o-sparkles')
+                ->color('primary')
+                // Admin gate — same posture as RunPricingAgentAction (admin-pull).
+                ->authorize(fn (): bool => auth()->user()?->hasRole('admin') ?? false)
+                ->requiresConfirmation()
+                ->modalHeading('Review marketing data with Claude')
+                ->modalDescription(
+                    'Dispatches the advice-only ad-optimisation agent on the `agents` queue under '
+                    .'the 300p daily budget cap. Claude reviews recent GA4 performance plus your '
+                    .'high-margin in-stock products and proposes marketing actions in the Suggestions '
+                    .'inbox (approval does nothing external — advice-only). Advice appears in ~10-30s.'
+                )
+                ->modalSubmitActionLabel('Review now')
+                ->action(fn () => $this->dispatchReview()),
+        ];
+    }
+
+    /**
+     * No-data guard mirrors `agents:run-ad-optimisation` (RunAdOptimisationCommand)
+     * VERBATIM so the button and the schedule agree: count ga_channel_metrics_daily
+     * rows within the same lookback window; dispatch NOTHING when empty.
+     */
+    private function dispatchReview(): void
+    {
+        $lookbackDays = (int) config('agents.ad_optimisation.data_lookback_days', 14);
+
+        $recentRows = GaChannelMetric::query()
+            ->where('date', '>=', Carbon::today()->subDays($lookbackDays)->toDateString())
+            ->count();
+
+        // ── SAFE NO-OP — no recent GA4 data means nothing to analyse ──────────
+        if ($recentRows === 0) {
+            Notification::make()
+                ->warning()
+                ->title('No GA4 data yet')
+                ->body("No Google Analytics 4 rows in the last {$lookbackDays} days — connect Google Analytics to review. Nothing was dispatched (no agent spend).")
+                ->send();
+
+            return;
+        }
+
+        RunAdOptimisationJob::dispatch((string) Str::uuid());
+
+        // Shadow-mode honesty — when writes are disabled the run is forensic-only.
+        $shadow = ! (bool) config('agents.write_enabled', false);
+        $body = 'Claude is reviewing your marketing data — advice will appear in Suggestions shortly.';
+        if ($shadow) {
+            $body .= ' Shadow mode is on: this run is forensic-only (the AgentRun is recorded, but no '
+                .'Suggestion is persisted until AGENT_WRITE_ENABLED=true).';
+        }
+
+        Notification::make()
+            ->success()
+            ->title('Marketing review dispatched')
+            ->body($body)
+            ->send();
     }
 
     protected function getHeaderWidgets(): array

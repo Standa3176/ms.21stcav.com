@@ -95,7 +95,17 @@ it('forbids direct DB writes from app/Domain/Agents (only Models/AgentRun* may w
         // patches to Product.{name|*_description} + ProductOverride.pin_*
         // canonical columns + audit row. P12 CRITICAL title→name column
         // mapping fenced by SeoContentPatchApplierTitleToNameTest.
-        ->notPath('Appliers/SeoContentPatchApplier.php');
+        ->notPath('Appliers/SeoContentPatchApplier.php')
+        // Phase 15 Plan 15b-01 — Jobs/RunAdOptimisationJob is the Path A
+        // SIBLING for the advice-only AdOptimisationAgent (mirrors
+        // RunSeoAgentJob shape, minus $productId). Writes AgentRun rows for
+        // kind='ad_optimisation'; Suggestion writes flow through the mapper.
+        ->notPath('Jobs/RunAdOptimisationJob.php')
+        // Phase 15 Plan 15b-01 — AdOptimisationResultMapper IS the sanctioned
+        // writer for kind='ad_optimisation' (bundled advice-only Suggestion).
+        // No SuggestionApplier is registered for the kind — approving is
+        // acknowledgement only (closed-loop actioning is 15c).
+        ->notPath('Services/AdOptimisationResultMapper.php');
 
     // Catches: Eloquent ::create() / save() / update() / delete() and
     // raw DB facade insert/update/delete (including DB::table()->op chains).

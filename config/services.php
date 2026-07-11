@@ -263,4 +263,17 @@ return [
         ))),
     ],
 
+    // Phase 15 Plan 15a-01 — Google Analytics 4 Data API (READ-ONLY).
+    // Resolver env-fallback for IntegrationCredentialKind::GoogleAnalytics.
+    // Operator typically stores both fields via /admin → Integration Credentials
+    // (the DB row wins); the env path exists for parity with the other kinds.
+    // GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON — the full service-account key JSON
+    //   (grant the service-account email GA4 "Viewer" on the property).
+    // GOOGLE_ANALYTICS_PROPERTY_ID — the numeric GA4 property id (no "properties/"
+    //   prefix; GoogleAnalyticsClient prepends it).
+    'google_analytics' => [
+        'service_account_json' => env('GOOGLE_ANALYTICS_SERVICE_ACCOUNT_JSON', ''),
+        'property_id' => env('GOOGLE_ANALYTICS_PROPERTY_ID', ''),
+    ],
+
 ];

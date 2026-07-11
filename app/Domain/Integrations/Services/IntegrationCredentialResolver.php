@@ -137,6 +137,10 @@ class IntegrationCredentialResolver
             IntegrationCredentialKind::ImageSearch => [
                 'api_key' => (string) config('services.image_search.api_key', ''),
             ],
+            IntegrationCredentialKind::GoogleAnalytics => [
+                'service_account_json' => (string) config('services.google_analytics.service_account_json', ''),
+                'property_id' => (string) config('services.google_analytics.property_id', ''),
+            ],
         };
 
         return $this->payloadHasAllRequiredFields($kind, $envMap) ? $envMap : null;

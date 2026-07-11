@@ -27,6 +27,10 @@ enum IntegrationCredentialKind: string
     case Icecat = 'icecat';
     case EanSearch = 'ean_search';
     case ImageSearch = 'image_search';
+    // Phase 15 Plan 15a-01 — Google Analytics 4 Data API (READ-ONLY). Operator
+    // pastes a service-account key (JSON) + a GA4 property id; the Data API needs
+    // only read access granted directly on the property (no Google approval flow).
+    case GoogleAnalytics = 'google_analytics';
 
     /**
      * Field names required in payload_encrypted per D-04.
@@ -54,6 +58,8 @@ enum IntegrationCredentialKind: string
             self::EanSearch => ['token'],
             // Web image-search provider (Serper.dev by default) — single API key.
             self::ImageSearch => ['api_key'],
+            // GA4 Data API — service-account key JSON + the numeric GA4 property id.
+            self::GoogleAnalytics => ['service_account_json', 'property_id'],
         };
     }
 
@@ -91,6 +97,7 @@ enum IntegrationCredentialKind: string
             self::Icecat => 'Icecat Product Content',
             self::EanSearch => 'EAN-search.org (GTIN lookup)',
             self::ImageSearch => 'Web Image Search (Serper)',
+            self::GoogleAnalytics => 'Google Analytics 4 (Data API)',
         };
     }
 
@@ -119,7 +126,8 @@ enum IntegrationCredentialKind: string
             // Icecat: username + token fields, no URL field
             // EanSearch: bearer token only — base URL is hard-coded in EanSearchClient
             // ImageSearch: api_key only, no URL field
-            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat, self::EanSearch, self::ImageSearch => [],
+            // GoogleAnalytics: service-account JSON + numeric property id — no URL field
+            self::AnthropicApi, self::OpenAiApi, self::SupplierDb, self::Icecat, self::EanSearch, self::ImageSearch, self::GoogleAnalytics => [],
         };
     }
 
@@ -137,6 +145,7 @@ enum IntegrationCredentialKind: string
             self::Icecat => 'info', // content-enrichment source
             self::EanSearch => 'info', // content-enrichment source — palette parity with Icecat
             self::ImageSearch => 'info', // content-enrichment source
+            self::GoogleAnalytics => 'info', // data-source parity (marketing intelligence)
         };
     }
 }

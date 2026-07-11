@@ -12,6 +12,7 @@
         "bitrix24/b24phpsdk": "1.10.0",
         "dompdf/dompdf": "3.0",
         "filament/filament": "^3.3",
+        "google/analytics-data": "^0.24",
         "intervention/image": "^3.11",
         "intervention/image-laravel": "^1.5",
         "laravel/framework": "^12.0",

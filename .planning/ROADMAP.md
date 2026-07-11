@@ -237,7 +237,7 @@ Plans:
 | 12. C3 SEO / Content Agent | v2.0 | 5/5 | Complete    | 2026-05-16 |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |
-| 15. C2 Ad Optimisation Agent | v2.0 | 0/TBD | Not started (gated on cutover + UTM data) | - |
+| 15. C2 Ad Optimisation Agent | v2.0 | 2/TBD | In progress — GA4 read slices shipped (15a-01 foundation, 15a-02 pull+snapshot+viewer, READ-ONLY); advisory agent + Marketing Deptrac layer deferred to 15b | - |
 
 ## Research Flags
 

@@ -389,3 +389,13 @@ Resume: Orchestrator runs `gsd-tools phase complete 12` to finalize the phase, t
 - **P12-H brand-voice opacity** — ReadBrandStyleGuideTool + system.blade.php contain neither `Blade::render` nor `@include`; grep-asserted in test suite.
 - **Critical title→Product.name remap** — SEOAGT-01 user-facing 'title' field maps to Product.name column via `FIELD_TO_PRODUCT_COLUMN` constant; defended by SeoContentPatchApplierTitleToNameTest 3 cases.
 - **UAT deferred to production deploy** — `ms.21stcav.com` not yet bootstrapped; 10 of 10 manual UAT steps have direct Pest substitution; deferred items + re-run conditions captured in 12-UAT-DISPOSITION.md.
+
+### Phase 15 Decisions (logged 2026-07-11) — Marketing Intelligence (Google Ads + GA4)
+
+Scope expanded beyond the original Bitrix-only ad agent to live Google Ads + GA4 ingestion feeding C4 advisory agents. Research/scoping in `.planning/phases/15-c2-ad-optimisation-agent/15-RESEARCH.md`. Operator answered the section-F decisions "proceed with 1-3":
+
+- **D15-1 — Scope 15a + 15b now, defer 15c.** Build order: **15a** = read-only Google Ads + GA4 ingestion (credential kinds, pull commands, snapshot tables, admin viewers); **15b** = advisory agents (AdOptimisationAgent + SEO-agent reuse) running several times/day → Suggestions + Marketing dashboard; **15c** (later) = GCLID closed-loop + gated budget/bid write-back.
+- **D15-2 — GA4-first.** Start with GA4 (service-account read auth, no Google approval to build) while the Google Ads **developer-token** application clears (critical path — apply early, 2026 backlog). Add Ads once the token lands.
+- **D15-3 — Ad writes stay MANUAL.** No autonomous ad-spend changes; agents advise via Suggestions only. Any write-back (budget/bid mutate, GCLID offline-conversion upload) is deferred to 15c and shadow-mode-gated (`GOOGLE_ADS_WRITE_ENABLED` default false).
+- **Note on roadmap numbering:** ROADMAP.md Phase 15 header left intact (avoid breaking gsd-sdk phase parsing); the 15a/15b/15c build order lives in 15-RESEARCH.md §D + here.
+- **First build slice — 15a-01 (GA4 read foundation, approval-free, shadow-safe):** `google/analytics-data` dep + `GoogleAnalytics` credential kind + `GoogleAnalyticsClient` wrapper + `google:ga4-test` connection command + TestIntegrationAction wiring. No snapshot pull/migration yet (that's 15a-02).

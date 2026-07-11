@@ -192,6 +192,10 @@ class AdminPanelProvider extends PanelProvider
             // showed Alert Recipients + Roles & Permissions. The resource itself was correctly placed at
             // navigationGroup='Admin' from day one — only the discoverer pointer was absent.
             ->discoverResources(in: app_path('Domain/Integrations/Filament/Resources'), for: 'App\\Domain\\Integrations\\Filament\\Resources')
+            // Phase 15 Plan 15b-02 — Marketing Dashboard page (Marketing → Marketing Dashboard).
+            // Widgets are header widgets on the page (returned by getHeaderWidgets) so they
+            // need no ->discoverWidgets pointer — that would also leak them onto the main dashboard.
+            ->discoverPages(in: app_path('Domain/Integrations/Filament/Pages'), for: 'App\\Domain\\Integrations\\Filament\\Pages')
             ->discoverResources(in: app_path('Domain/Suggestions/Filament/Resources'), for: 'App\\Domain\\Suggestions\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Alerting/Filament/Resources'), for: 'App\\Domain\\Alerting\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Sync/Filament/Resources'), for: 'App\\Domain\\Sync\\Filament\\Resources')

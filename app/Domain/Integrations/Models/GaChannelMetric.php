@@ -43,7 +43,12 @@ final class GaChannelMetric extends Model
     ];
 
     protected $casts = [
-        'date' => 'date',
+        // date:Y-m-d (not bare 'date') so the DB value is date-only. The bare
+        // 'date' cast serializes as "Y-m-d 00:00:00", which breaks the grain
+        // updateOrCreate lookup on SQLite (a DATE column stores the time part,
+        // so `where date = '2026-07-10'` misses and re-inserts → unique clash).
+        // Date-only serialization keeps re-pulls idempotent on SQLite + MariaDB.
+        'date' => 'date:Y-m-d',
         'sessions' => 'integer',
         'key_events' => 'integer',
         'transactions' => 'integer',

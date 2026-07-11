@@ -94,6 +94,7 @@ use App\Domain\Dashboard\Models\DashboardSnapshot;
 use App\Domain\Dashboard\Models\UserSavedFilter;
 use App\Domain\Dashboard\Policies\DashboardSnapshotPolicy;
 use App\Domain\Dashboard\Policies\UserSavedFilterPolicy;
+use App\Domain\Integrations\Commands\PullGa4Command;
 use App\Domain\Integrations\Models\IntegrationCredential;
 use App\Domain\Integrations\Observers\IntegrationCredentialObserver;
 use App\Domain\Integrations\Policies\IntegrationCredentialPolicy;
@@ -1009,6 +1010,14 @@ class AppServiceProvider extends ServiceProvider
                 // app/Console/Commands/ (auto-discovered dir) but registered
                 // explicitly alongside the other product commands.
                 RefreshBrandsToAddCommand::class,
+                // Phase 15 Plan 15a-02 — google:pull-ga4. READ-ONLY daily pull of
+                // GA4 channel/campaign metrics into ga_channel_metrics_daily.
+                // Lives under app/Domain/Integrations/Commands/ so explicit
+                // registration is required. Scheduled twice-daily (06:00/14:00
+                // London) in routes/console.php; no-ops safely until a GA4
+                // service-account credential is saved (fetchChannelMetrics
+                // returns [] when unconfigured → command logs + exits 0).
+                PullGa4Command::class,
             ]);
         }
     }

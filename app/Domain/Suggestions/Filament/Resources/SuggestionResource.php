@@ -356,6 +356,11 @@ class SuggestionResource extends Resource
                     'crm_push_failed' => 'crm_push_failed',
                     'auto_create_failed' => 'auto_create_failed',
                     'seo_content_patch' => 'seo_content_patch',
+                    // Phase 15 Plan 15b-01 — advice-only AdOptimisationAgent output.
+                    // Surfaces in this existing inbox filtered by kind (no separate
+                    // Marketing dashboard — that's 15b-02). getEloquentQuery does NOT
+                    // hide it (only agent_guardrail_blocked is hidden by default).
+                    'ad_optimisation' => 'ad_optimisation',
                     'agent_guardrail_blocked' => 'agent_guardrail_blocked (audit)',
                 ])->default('new_product_opportunity'),
                 // Quick task 260707-gsy — default to pending (the actionable set).
@@ -547,8 +552,12 @@ class SuggestionResource extends Resource
                     ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
                     // Phase 5 Plan 04a / Phase 6 Plan 04 — generic approve EXCLUDES kinds with
                     // their own kind-specific approve actions below (richer modals + evidence rendering).
+                    // Phase 15 Plan 15b-01 — 'ad_optimisation' is EXCLUDED here so
+                    // the generic approve (which dispatches ApplySuggestionJob) never
+                    // fires for it. Advice-only Suggestions get the acknowledgement-only
+                    // approve action below instead (no apply path — 15c owns closed-loop).
                     ->visible(fn (Suggestion $r) => $r->status === Suggestion::STATUS_PENDING
-                        && ! in_array($r->kind, ['margin_change', 'new_product_opportunity', 'crm_push_failed', 'auto_create_failed'], true))
+                        && ! in_array($r->kind, ['margin_change', 'new_product_opportunity', 'crm_push_failed', 'auto_create_failed', 'ad_optimisation'], true))
                     ->action(function (Suggestion $record): void {
                         $record->update([
                             'status' => Suggestion::STATUS_APPROVED,
@@ -556,6 +565,29 @@ class SuggestionResource extends Resource
                             'resolved_at' => now(),
                         ]);
                         ApplySuggestionJob::dispatch($record->id);
+                    }),
+                // Phase 15 Plan 15b-01 — ADVICE-ONLY acknowledgement approve for
+                // ad_optimisation. Flips status to approved (records who/when) but
+                // dispatches NO ApplySuggestionJob and triggers NO external write:
+                // there is no SuggestionApplier registered for kind 'ad_optimisation'
+                // and closed-loop actioning is deferred to 15c. Approval is a human
+                // acknowledging the recommendation, nothing more.
+                Action::make('acknowledge_ad_optimisation')
+                    ->label('Acknowledge')
+                    ->icon('heroicon-o-check-circle')
+                    ->color('success')
+                    ->authorize(fn (Suggestion $record) => auth()->user()?->hasRole('admin') ?? false)
+                    ->visible(fn (Suggestion $r) => $r->kind === 'ad_optimisation' && $r->status === Suggestion::STATUS_PENDING)
+                    ->requiresConfirmation()
+                    ->modalHeading('Acknowledge marketing recommendation')
+                    ->modalDescription('Advice-only: this records your acknowledgement. It does NOT change any Google Ads budget, pause any campaign, or trigger any automated action.')
+                    ->action(function (Suggestion $record): void {
+                        $record->update([
+                            'status' => Suggestion::STATUS_APPROVED,
+                            'resolved_by_user_id' => auth()->id(),
+                            'resolved_at' => now(),
+                        ]);
+                        // Intentionally NO ApplySuggestionJob::dispatch — advice-only.
                     }),
                 // Phase 5 Plan 04a — margin_change kind approve.
                 // Renders old→new margin delta from the D-07 FROZEN evidence JSON

@@ -63,6 +63,10 @@ class IntegrationCredentialFactory extends Factory
                     'public_key' => 'pk',
                     'secret_key' => 'sk',
                 ],
+                IntegrationCredentialKind::GoogleAnalytics => [
+                    'service_account_json' => '{"type":"service_account"}',
+                    'property_id' => '123456789',
+                ],
             };
 
             return [

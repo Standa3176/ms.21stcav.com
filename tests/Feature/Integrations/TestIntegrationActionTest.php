@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\CRM\Services\BitrixClient;
 use App\Domain\Integrations\Clients\ClaudeClient;
+use App\Domain\Integrations\Clients\GoogleAnalyticsClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Enums\IntegrationTestStatus;
 use App\Domain\Integrations\Filament\Actions\TestIntegrationAction;
@@ -22,6 +23,7 @@ it('dispatches per-kind to the matching client testConnection (Test 3.4)', funct
         [IntegrationCredentialKind::WooRest, WooClient::class],
         [IntegrationCredentialKind::BitrixWebhook, BitrixClient::class],
         [IntegrationCredentialKind::AnthropicApi, ClaudeClient::class],
+        [IntegrationCredentialKind::GoogleAnalytics, GoogleAnalyticsClient::class],
     ];
 
     foreach ($matrix as [$kind, $clientClass]) {

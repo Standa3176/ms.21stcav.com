@@ -6,6 +6,7 @@ namespace App\Domain\Integrations\Filament\Actions;
 
 use App\Domain\CRM\Services\BitrixClient;
 use App\Domain\Integrations\Clients\ClaudeClient;
+use App\Domain\Integrations\Clients\GoogleAnalyticsClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Enums\IntegrationTestStatus;
 use App\Domain\Integrations\Models\IntegrationCredential;
@@ -84,6 +85,7 @@ class TestIntegrationAction
             IntegrationCredentialKind::Icecat => app(IcecatClient::class)->testConnection(),
             IntegrationCredentialKind::EanSearch => app(EanSearchClient::class)->testConnection(),
             IntegrationCredentialKind::ImageSearch => app(WebImageSearchClient::class)->testConnection(),
+            IntegrationCredentialKind::GoogleAnalytics => app(GoogleAnalyticsClient::class)->testConnection(),
             default => IntegrationTestResult::failed('Unknown kind: '.($record->kind?->value ?? 'null'), 0),
         };
     }

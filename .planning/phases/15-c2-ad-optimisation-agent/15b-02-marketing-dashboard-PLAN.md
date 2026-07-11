@@ -6,9 +6,12 @@
 
 ## Goal
 A single **Marketing** dashboard page giving an at-a-glance view of channel/campaign performance (from
-`ga_channel_metrics_daily`, 15a-02) and the latest agent advice (`ad_optimisation` Suggestions, 15b-01).
-It is read-only and must render cleanly with a friendly **empty state when GA4 isn't connected yet**
-(no rows) — never an error. Nothing here changes data or calls Google.
+`ga_channel_metrics_daily`, 15a-02) and the latest agent advice (`ad_optimisation` Suggestions, 15b-01),
+**plus an on-demand "Review with Claude" action** that runs the AdOptimisationAgent against the current
+data right now (admin-pull) instead of waiting for the 6-hourly schedule. It is read-only w.r.t. Google
+and must render cleanly with a friendly **empty state when GA4 isn't connected yet** (no rows) — never an
+error. The Claude review is the app's existing Anthropic connector (ClaudeClient / AnthropicApi
+credential) via the 15b-01 agent — NOT a new external integration.
 
 ## Template to MIRROR (verified)
 - Page: `app/Domain/Pricing/Filament/Pages/PricingOperationsPage.php` — `extends Page` with
@@ -67,8 +70,31 @@ header widgets (mirror `resources/views/filament/pages/pricing-operations.blade.
 empty-state callout logic from Task 1. Confirm the page appears under the Marketing nav group in the
 correct order relative to the GA4 Channels resource.
 
+### Task 6 — On-demand "Review with Claude" action (TDD)
+Add a page **header action** to `MarketingDashboardPage` that runs the AdOptimisationAgent on demand,
+mirroring `app/Domain/Agents/Filament/Actions/RunPricingAgentAction.php` (the established admin-pull
+pattern): `Action::make('review_with_claude')` with an icon + label ("Review with Claude"),
+`->authorize()` (admin — same gate RunPricingAgentAction uses), `->requiresConfirmation()` with a modal
+noting it dispatches the ad-optimisation agent on the `agents` queue under the 300p daily budget cap,
+and `->action()` that:
+- **No-data guard:** if there are no `GaChannelMetric` rows in the lookback window, do NOT dispatch —
+  send a warning Notification ("No GA4 data yet — connect Google Analytics to review"). (Reuse the same
+  lookback the `agents:run-ad-optimisation` command uses; ideally call the same pre-flight check so the
+  button and the schedule agree.)
+- Otherwise `RunAdOptimisationJob::dispatch($correlationId)` and send a success Notification ("Claude is
+  reviewing your marketing data — advice will appear in Suggestions shortly").
+- **Shadow-mode honesty:** if `config('agents.write_enabled')` is false, the Notification body notes the
+  run is forensic-only (no Suggestions persisted until `AGENT_WRITE_ENABLED=true`) — matching the
+  framework's existing posture. The button still dispatches (the AgentRun is recorded either way).
+This reuses the EXISTING 15b-01 job/agent — no new agent, no new external integration, no Google calls.
+It is money-safe: advice-only, budget-capped, admin-gated, and even the produced Suggestions require
+manual approval (which itself does nothing external — 15b-01 guarantee).
+Test: with seeded GA4 rows + `Bus::fake`, the action dispatches exactly one `RunAdOptimisationJob`; with
+no rows it dispatches NONE and the warning fires; the action is hidden/denied for non-admins.
+
 ## Verify
-- `pest` on the new page + 3 widgets (render + aggregate correctness + empty-state) — GREEN. Run a wider
+- `pest` on the new page + 3 widgets + the review action (render + aggregate correctness + empty-state +
+  dispatch/no-op/authorization) — GREEN. Run a wider
   Filament/Integrations smoke to confirm no panel-boot regression.
 - `php artisan route:list --path=admin` exit 0 — `admin/marketing-dashboard` resolves.
 - `pint` pass on touched files.

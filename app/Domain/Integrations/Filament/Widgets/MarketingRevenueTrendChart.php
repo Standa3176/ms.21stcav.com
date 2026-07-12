@@ -5,31 +5,38 @@ declare(strict_types=1);
 namespace App\Domain\Integrations\Filament\Widgets;
 
 use App\Domain\Integrations\Models\GaChannelMetric;
+use App\Domain\Integrations\Support\MarketingDateRange;
 use Filament\Widgets\ChartWidget;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Illuminate\Support\Carbon;
 
 /**
  * Phase 15 Plan 15b-02 Task 3 — Marketing daily revenue trend (READ-ONLY).
  *
  * PURE PRESENTATION over ga_channel_metrics_daily (15a-02). Daily revenue (£ from
- * pennies) over the last 30 days as a single line dataset. No writes, no Google
- * calls, no data pull.
+ * pennies) over the window chosen in the page's date-range filter (260712-mdr;
+ * default 90d) as a single line dataset. No writes, no Google calls, no data pull.
  *
  * Zero-safe / empty-state: with ZERO rows getData() returns
  * ['datasets' => [], 'labels' => []] — Filament renders an empty chart, never an
  * error (pennies → £ for DISPLAY only).
  *
  * Driver-portable: SUM + GROUP BY date + whereBetween('date', …) only (no
- * MySQL-only date functions) so SQLite tests and MariaDB prod agree.
+ * MySQL-only date functions) so SQLite tests and MariaDB prod agree. The window
+ * is resolved through the shared MarketingDateRange resolver so this chart and
+ * the overview stats always agree on the same [from, to].
  */
 final class MarketingRevenueTrendChart extends ChartWidget
 {
-    /** Trailing-window length in days (inclusive of today). */
-    private const WINDOW_DAYS = 30;
-
-    protected static ?string $heading = 'Revenue trend (last 30 days)';
+    // 260712-mdr — receive the page's `filters` state (range/from/to).
+    use InteractsWithPageFilters;
 
     protected int|string|array $columnSpan = 'full';
+
+    public function getHeading(): string
+    {
+        return 'Revenue trend · '.$this->resolveRange()->label;
+    }
 
     public static function canView(): bool
     {
@@ -47,11 +54,10 @@ final class MarketingRevenueTrendChart extends ChartWidget
      */
     protected function getData(): array
     {
-        $from = Carbon::today()->subDays(self::WINDOW_DAYS - 1)->toDateString();
-        $today = Carbon::today()->toDateString();
+        $range = $this->resolveRange();
 
         $rows = GaChannelMetric::query()
-            ->whereBetween('date', [$from, $today])
+            ->whereBetween('date', [$range->from, $range->to])
             ->select('date')
             ->selectRaw('SUM(purchase_revenue_pennies) as rev')
             ->groupBy('date')
@@ -84,5 +90,15 @@ final class MarketingRevenueTrendChart extends ChartWidget
             ]],
             'labels' => $labels,
         ];
+    }
+
+    /** Resolve the page-filter state to a concrete window (shared resolver). */
+    private function resolveRange(): MarketingDateRange
+    {
+        return MarketingDateRange::resolve(
+            $this->filters['range'] ?? null,
+            $this->filters['from'] ?? null,
+            $this->filters['to'] ?? null,
+        );
     }
 }

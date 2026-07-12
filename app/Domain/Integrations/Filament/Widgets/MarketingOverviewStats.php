@@ -5,28 +5,32 @@ declare(strict_types=1);
 namespace App\Domain\Integrations\Filament\Widgets;
 
 use App\Domain\Integrations\Models\GaChannelMetric;
+use App\Domain\Integrations\Support\MarketingDateRange;
+use Filament\Widgets\Concerns\InteractsWithPageFilters;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
-use Illuminate\Support\Carbon;
 
 /**
  * Phase 15 Plan 15b-02 Task 2 — Marketing overview stats (READ-ONLY).
  *
- * PURE PRESENTATION over ga_channel_metrics_daily (15a-02). Four tiles over the
- * last 30 days: Sessions, Transactions, Revenue (£ from pennies), Top channel by
- * revenue. No writes, no Google calls, no data pull.
+ * PURE PRESENTATION over ga_channel_metrics_daily (15a-02). Four tiles —
+ * Sessions, Transactions, Revenue (£ from pennies), Top channel by revenue —
+ * over the window chosen in the page's date-range filter (260712-mdr; default
+ * 90d). No writes, no Google calls, no data pull.
  *
  * Zero-safe / empty-state: with ZERO GaChannelMetric rows every tile renders a
  * friendly value (0 / £0.00 / —) — never an error, no divide-by-zero (pennies
  * are divided by 100 for DISPLAY only).
  *
  * Driver-portable: SUM + GROUP BY + whereBetween('date', …) only (no MySQL-only
- * date/JSON functions) so SQLite tests and MariaDB prod agree.
+ * date/JSON functions) so SQLite tests and MariaDB prod agree. The window is
+ * resolved through the shared MarketingDateRange resolver so this widget and the
+ * revenue-trend chart always agree on the same [from, to].
  */
 final class MarketingOverviewStats extends StatsOverviewWidget
 {
-    /** Trailing-window length in days (inclusive of today). */
-    private const WINDOW_DAYS = 30;
+    // 260712-mdr — receive the page's `filters` state (range/from/to).
+    use InteractsWithPageFilters;
 
     protected int|string|array $columnSpan = 'full';
 
@@ -38,9 +42,10 @@ final class MarketingOverviewStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        [$from, $today] = $this->window();
+        $range = $this->resolveRange();
+        $label = $range->label;
 
-        $base = GaChannelMetric::query()->whereBetween('date', [$from, $today]);
+        $base = GaChannelMetric::query()->whereBetween('date', [$range->from, $range->to]);
 
         $sessions = (int) (clone $base)->sum('sessions');
         $transactions = (int) (clone $base)->sum('transactions');
@@ -57,33 +62,32 @@ final class MarketingOverviewStats extends StatsOverviewWidget
 
         return [
             Stat::make('Sessions', number_format($sessions))
-                ->description('Last '.self::WINDOW_DAYS.' days')
+                ->description($label)
                 ->descriptionIcon('heroicon-m-users')
                 ->color('gray'),
             Stat::make('Transactions', number_format($transactions))
-                ->description('Last '.self::WINDOW_DAYS.' days')
+                ->description($label)
                 ->descriptionIcon('heroicon-m-shopping-cart')
                 ->color($transactions > 0 ? 'success' : 'gray'),
             Stat::make('Revenue', $this->money($revenuePennies))
-                ->description('Last '.self::WINDOW_DAYS.' days')
+                ->description($label)
                 ->descriptionIcon('heroicon-m-banknotes')
                 ->color($revenuePennies > 0 ? 'success' : 'gray'),
             Stat::make('Top channel by revenue', $topChannelLabel)
-                ->description('Last '.self::WINDOW_DAYS.' days')
+                ->description($label)
                 ->descriptionIcon('heroicon-m-trophy')
                 ->color('primary'),
         ];
     }
 
-    /**
-     * @return array{0: string, 1: string} [from, today] as Y-m-d date strings.
-     */
-    private function window(): array
+    /** Resolve the page-filter state to a concrete window (shared resolver). */
+    private function resolveRange(): MarketingDateRange
     {
-        $today = Carbon::today()->toDateString();
-        $from = Carbon::today()->subDays(self::WINDOW_DAYS - 1)->toDateString();
-
-        return [$from, $today];
+        return MarketingDateRange::resolve(
+            $this->filters['range'] ?? null,
+            $this->filters['from'] ?? null,
+            $this->filters['to'] ?? null,
+        );
     }
 
     /** Pennies → £ for DISPLAY only (money stored as integer pennies). */

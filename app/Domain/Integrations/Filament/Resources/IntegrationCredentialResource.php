@@ -9,8 +9,10 @@ use App\Domain\Integrations\Enums\IntegrationTestStatus;
 use App\Domain\Integrations\Filament\Actions\TestIntegrationAction;
 use App\Domain\Integrations\Filament\Resources\IntegrationCredentialResource\Pages;
 use App\Domain\Integrations\Models\IntegrationCredential;
+use Filament\Forms\Components\Component;
 use Filament\Forms\Components\Group;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Forms\Form;
@@ -129,67 +131,110 @@ class IntegrationCredentialResource extends Resource
                     return [];
                 }
 
-                $fields = [];
-                $urlFields = $kind->urlFields();
-                foreach ($kind->requiredFields() as $field) {
-                    // Quick task 260504-ld8b — kind-explicit URL detection.
-                    // Previously substring-matched on "url" + treated all `host`
-                    // fields as URLs; that broke SupplierDb where host is a
-                    // MySQL hostname/IP. Each kind now declares its URL fields.
-                    $isUrlField = in_array($field, $urlFields, true);
-
-                    // Context-aware helper text. On edit, password fields show
-                    // blank because Filament masks them — the value IS stored,
-                    // just deliberately not echoed back. Tell the operator that.
-                    $input = TextInput::make("payload_encrypted.{$field}")
-                        ->label(Str::headline($field))
-                        ->maxLength(2048)
-                        ->dehydrated(fn ($state): bool => filled($state))
-                        ->required(fn (string $context): bool => $context === 'create')
-                        ->helperText(fn (string $context): string => $context === 'edit'
-                            ? '✓ Currently saved (encrypted). Leave blank to keep — type a new value to replace.'
-                            : 'Encrypted at rest.');
-
-                    if ($isUrlField) {
-                        $input = $input->url();
-                    } else {
-                        // For secrets on edit, show a placeholder so the field
-                        // looks intentionally masked rather than empty/missing.
-                        $input = $input
-                            ->password()
-                            ->revealable()
-                            ->placeholder(fn (string $context): string => $context === 'edit'
-                                ? '•••••••• (saved — leave blank to keep)'
-                                : '');
-                    }
-
-                    $fields[] = $input;
-                }
-
-                // Optional credential fields (e.g. Icecat Full-tier api_token +
-                // content_token). Rendered AFTER the required ones, never
-                // ->required(), and dehydrated only when filled so leaving them
-                // blank keeps any existing value on edit.
-                foreach ($kind->optionalFields() as $field) {
-                    $fields[] = TextInput::make("payload_encrypted.{$field}")
-                        ->label(Str::headline($field).' (optional)')
-                        ->maxLength(2048)
-                        ->password()
-                        ->revealable()
-                        ->dehydrated(fn ($state): bool => filled($state))
-                        ->placeholder(fn (string $context): string => $context === 'edit'
-                            ? '•••••••• (saved — leave blank to keep)'
-                            : 'Optional — leave blank if not used')
-                        ->helperText(fn (string $context): string => $context === 'edit'
-                            ? '✓ Stored encrypted if set. Leave blank to keep — type a new value to replace.'
-                            : 'Optional. Encrypted at rest.');
-                }
-
-                return $fields;
+                return static::payloadFieldComponents($kind);
             })->columnSpanFull(),
 
             Toggle::make('is_active')->default(true),
         ]);
+    }
+
+    /**
+     * Build the kind-aware `payload_encrypted.*` form components for a credential
+     * kind. Extracted from the Group schema closure so it can be unit-tested
+     * without a full Filament panel boot (see IntegrationCredentialResourceTextareaFieldTest).
+     *
+     * Field-type rules:
+     *  - textareaFields() → multi-line Textarea (HOTFIX 260712-gaj: GA4
+     *    service_account_json is ~2.5KB multi-line JSON; a single-line TextInput
+     *    with maxLength(2048) truncated/first-lined it → invalid JSON). NOT
+     *    password()/url() (Textarea can't mask; it's behind admin auth + encrypted).
+     *  - urlFields()      → single-line TextInput with ->url() validation.
+     *  - everything else  → single-line masked ->password() TextInput.
+     *
+     * @return array<int, Component>
+     */
+    public static function payloadFieldComponents(IntegrationCredentialKind $kind): array
+    {
+        $fields = [];
+        $urlFields = $kind->urlFields();
+        $textareaFields = $kind->textareaFields();
+
+        foreach ($kind->requiredFields() as $field) {
+            // HOTFIX 260712-gaj — large/multi-line fields render as a Textarea.
+            // Branch BEFORE the url/password logic so they never get ->url()
+            // or ->password() (a Textarea cannot mask, and a service-account key
+            // is not a URL). maxLength(16384) comfortably clears a ~2.5KB key.
+            if (in_array($field, $textareaFields, true)) {
+                $fields[] = Textarea::make("payload_encrypted.{$field}")
+                    ->label(Str::headline($field))
+                    ->rows(12)
+                    ->maxLength(16384)
+                    ->dehydrated(fn ($state): bool => filled($state))
+                    ->required(fn (string $context): bool => $context === 'create')
+                    ->placeholder(fn (string $context): string => $context === 'edit'
+                        ? '•••••••• (saved — leave blank to keep)'
+                        : '')
+                    ->helperText(fn (string $context): string => $context === 'edit'
+                        ? '✓ Currently saved (encrypted). Leave blank to keep — paste a new key to replace.'
+                        : 'Paste the full service-account JSON key. Stored encrypted at rest.');
+
+                continue;
+            }
+
+            // Quick task 260504-ld8b — kind-explicit URL detection.
+            // Previously substring-matched on "url" + treated all `host`
+            // fields as URLs; that broke SupplierDb where host is a
+            // MySQL hostname/IP. Each kind now declares its URL fields.
+            $isUrlField = in_array($field, $urlFields, true);
+
+            // Context-aware helper text. On edit, password fields show
+            // blank because Filament masks them — the value IS stored,
+            // just deliberately not echoed back. Tell the operator that.
+            $input = TextInput::make("payload_encrypted.{$field}")
+                ->label(Str::headline($field))
+                ->maxLength(2048)
+                ->dehydrated(fn ($state): bool => filled($state))
+                ->required(fn (string $context): bool => $context === 'create')
+                ->helperText(fn (string $context): string => $context === 'edit'
+                    ? '✓ Currently saved (encrypted). Leave blank to keep — type a new value to replace.'
+                    : 'Encrypted at rest.');
+
+            if ($isUrlField) {
+                $input = $input->url();
+            } else {
+                // For secrets on edit, show a placeholder so the field
+                // looks intentionally masked rather than empty/missing.
+                $input = $input
+                    ->password()
+                    ->revealable()
+                    ->placeholder(fn (string $context): string => $context === 'edit'
+                        ? '•••••••• (saved — leave blank to keep)'
+                        : '');
+            }
+
+            $fields[] = $input;
+        }
+
+        // Optional credential fields (e.g. Icecat Full-tier api_token +
+        // content_token). Rendered AFTER the required ones, never
+        // ->required(), and dehydrated only when filled so leaving them
+        // blank keeps any existing value on edit.
+        foreach ($kind->optionalFields() as $field) {
+            $fields[] = TextInput::make("payload_encrypted.{$field}")
+                ->label(Str::headline($field).' (optional)')
+                ->maxLength(2048)
+                ->password()
+                ->revealable()
+                ->dehydrated(fn ($state): bool => filled($state))
+                ->placeholder(fn (string $context): string => $context === 'edit'
+                    ? '•••••••• (saved — leave blank to keep)'
+                    : 'Optional — leave blank if not used')
+                ->helperText(fn (string $context): string => $context === 'edit'
+                    ? '✓ Stored encrypted if set. Leave blank to keep — type a new value to replace.'
+                    : 'Optional. Encrypted at rest.');
+        }
+
+        return $fields;
     }
 
     public static function table(Table $table): Table

@@ -9,8 +9,14 @@ use App\Domain\Integrations\Filament\Widgets\LatestMarketingAdviceWidget;
 use App\Domain\Integrations\Filament\Widgets\MarketingOverviewStats;
 use App\Domain\Integrations\Filament\Widgets\MarketingRevenueTrendChart;
 use App\Domain\Integrations\Models\GaChannelMetric;
+use App\Domain\Integrations\Support\MarketingDateRange;
 use Filament\Actions\Action;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Notifications\Notification;
+use Filament\Pages\Dashboard\Concerns\HasFiltersForm;
 use Filament\Pages\Page;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
@@ -33,6 +39,11 @@ use Illuminate\Support\Str;
  */
 class MarketingDashboardPage extends Page
 {
+    // 260712-mdr — Filament's page-filters→header-widgets mechanism. The trait
+    // adds the `#[Url] public ?array $filters` state that getWidgetData() shares
+    // with the two GA-data header widgets (they use InteractsWithPageFilters).
+    use HasFiltersForm;
+
     protected static ?string $navigationIcon = 'heroicon-o-presentation-chart-line';
 
     protected static ?string $navigationGroup = 'Marketing';
@@ -81,6 +92,52 @@ class MarketingDashboardPage extends Page
                 )
                 ->modalSubmitActionLabel('Review now')
                 ->action(fn () => $this->dispatchReview()),
+        ];
+    }
+
+    /**
+     * 260712-mdr — date-range control that drives the two GA-data header widgets.
+     * A Select of presets (default 90d) plus two DatePickers that only show for
+     * the `custom` preset. Filament shares this `$this->filters` state with the
+     * header widgets via getWidgetData(); each widget resolves it through the
+     * shared MarketingDateRange resolver so both agree on the same window.
+     */
+    public function filtersForm(Form $form): Form
+    {
+        return $form->schema([
+            Select::make('range')
+                ->label('Date range')
+                ->options(MarketingDateRange::options())
+                ->default(MarketingDateRange::DEFAULT)
+                ->selectablePlaceholder(false)
+                ->native(false)
+                ->live(),
+            DatePicker::make('from')
+                ->label('From')
+                ->native(false)
+                ->maxDate(now())
+                ->visible(fn (Get $get): bool => $get('range') === 'custom'),
+            DatePicker::make('to')
+                ->label('To')
+                ->native(false)
+                ->maxDate(now())
+                ->visible(fn (Get $get): bool => $get('range') === 'custom'),
+        ]);
+    }
+
+    /**
+     * Share the page filters with the header widgets. The custom page view uses
+     * <x-filament-panels::page>, whose widget data comes from getWidgetData()
+     * (the built-in dashboard blade would inject `filters` for us, but this page
+     * is a plain Page). Passing `filters` here lets MarketingOverviewStats +
+     * MarketingRevenueTrendChart (InteractsWithPageFilters) resolve the window.
+     *
+     * @return array<string, mixed>
+     */
+    public function getWidgetData(): array
+    {
+        return [
+            'filters' => $this->filters,
         ];
     }
 

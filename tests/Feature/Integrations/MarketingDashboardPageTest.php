@@ -76,3 +76,45 @@ it('is accessible to any authed workspace user and registered under Marketing', 
         ->and(MarketingDashboardPage::getNavigationGroup())->toBe('Marketing')
         ->and(MarketingDashboardPage::getSlug())->toBe('marketing-dashboard');
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260712-mdr Task 2 — date-range filters form
+|--------------------------------------------------------------------------
+*/
+
+it('mounts with the default 90d range in the filters form', function (): void {
+    loginDashboardAdmin();
+
+    Livewire::test(MarketingDashboardPage::class)
+        ->assertSuccessful()
+        ->assertSet('filters.range', '90d');
+});
+
+it('renders the range preset options in the filters form', function (): void {
+    loginDashboardAdmin();
+
+    Livewire::test(MarketingDashboardPage::class)
+        ->assertSuccessful()
+        ->assertSee('Last 7 days')
+        ->assertSee('Last 90 days')
+        ->assertSee('This year')
+        ->assertSee('All time');
+});
+
+it('accepts a range change through the filters form', function (): void {
+    loginDashboardAdmin();
+
+    Livewire::test(MarketingDashboardPage::class)
+        ->set('filters.range', '7d')
+        ->assertSuccessful()
+        ->assertSet('filters.range', '7d');
+});
+
+it('keeps the "Review with Claude" header action available alongside the filter', function (): void {
+    loginDashboardAdmin();
+
+    Livewire::test(MarketingDashboardPage::class)
+        ->assertSuccessful()
+        ->assertActionExists('review_with_claude');
+});

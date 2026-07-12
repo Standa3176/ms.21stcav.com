@@ -5,10 +5,16 @@
          via getHeaderWidgets(). --}}
 
     <p class="text-sm text-gray-500 dark:text-gray-400">
-        Channel &amp; campaign performance from Google Analytics 4 (last 30 days) and the latest
-        advice from the ad-optimisation agent. Read-only — use “Review with Claude” to run an
-        on-demand analysis, and approve/reject advice in the Suggestions inbox.
+        Channel &amp; campaign performance from Google Analytics 4 and the latest advice from the
+        ad-optimisation agent. Use the date range to focus the sessions/revenue widgets — read-only;
+        “Review with Claude” runs an on-demand analysis, and advice is approved/rejected in the
+        Suggestions inbox.
     </p>
+
+    {{-- 260712-mdr — date-range control. Drives MarketingOverviewStats +
+         MarketingRevenueTrendChart via the shared $this->filters state
+         (the LatestMarketingAdviceWidget is range-independent). --}}
+    {{ $this->filtersForm }}
 
     @unless ($hasMetrics)
         {{-- Hard empty-state requirement — friendly callout when GA4 isn't connected yet

@@ -193,9 +193,14 @@ class AdminPanelProvider extends PanelProvider
             // navigationGroup='Admin' from day one — only the discoverer pointer was absent.
             ->discoverResources(in: app_path('Domain/Integrations/Filament/Resources'), for: 'App\\Domain\\Integrations\\Filament\\Resources')
             // Phase 15 Plan 15b-02 — Marketing Dashboard page (Marketing → Marketing Dashboard).
-            // Widgets are header widgets on the page (returned by getHeaderWidgets) so they
-            // need no ->discoverWidgets pointer — that would also leak them onto the main dashboard.
+            // The three Marketing widgets are header widgets on the page. They MUST be
+            // discovered so they are registered as Livewire components — otherwise the chart
+            // widget's follow-up lazy-load AJAX request throws ComponentNotFoundException and
+            // the page 500s (fixed 260712-mdx). Discovery does NOT leak them onto the home
+            // dashboard: HomeDashboardPage's explicit getWidgets() is the sole source of that
+            // page's widget composition (same pattern as the Competitor domain discovered below).
             ->discoverPages(in: app_path('Domain/Integrations/Filament/Pages'), for: 'App\\Domain\\Integrations\\Filament\\Pages')
+            ->discoverWidgets(in: app_path('Domain/Integrations/Filament/Widgets'), for: 'App\\Domain\\Integrations\\Filament\\Widgets')
             ->discoverResources(in: app_path('Domain/Suggestions/Filament/Resources'), for: 'App\\Domain\\Suggestions\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Alerting/Filament/Resources'), for: 'App\\Domain\\Alerting\\Filament\\Resources')
             ->discoverResources(in: app_path('Domain/Sync/Filament/Resources'), for: 'App\\Domain\\Sync\\Filament\\Resources')

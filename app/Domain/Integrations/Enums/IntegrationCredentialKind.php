@@ -84,6 +84,28 @@ enum IntegrationCredentialKind: string
         };
     }
 
+    /**
+     * HOTFIX 260712-gaj — fields that must render as a multi-line Textarea (with a
+     * large maxLength) instead of a single-line TextInput.
+     *
+     * A GA4 service-account key is multi-line JSON ~2.3-2.6 KB (the `private_key`
+     * PEM block alone is ~1.7 KB). Pasted into a single-line <input> it keeps only
+     * the first line, and `->maxLength(2048)` truncates it — either way json_decode
+     * fails with "not valid JSON". Declaring it here makes the form render a
+     * Textarea so the whole key survives byte-intact through the encrypted payload.
+     *
+     * No other kind stores a large/multi-line secret, so the default is [].
+     *
+     * @return array<int, string>
+     */
+    public function textareaFields(): array
+    {
+        return match ($this) {
+            self::GoogleAnalytics => ['service_account_json'],
+            default => [],
+        };
+    }
+
     public function label(): string
     {
         return match ($this) {

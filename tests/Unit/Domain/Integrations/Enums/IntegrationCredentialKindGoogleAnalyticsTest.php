@@ -54,6 +54,23 @@ it('urlFields() returns [] for GoogleAnalytics (property id + JSON key, no URL f
     expect(IntegrationCredentialKind::GoogleAnalytics->urlFields())->toBe([]);
 });
 
+it('textareaFields() returns [service_account_json] for GoogleAnalytics (multi-line ~2.5KB key)', function (): void {
+    // HOTFIX 260712-gaj — the service-account key is multi-line JSON ~2.5KB; it
+    // must render as a Textarea, not a single-line maxLength(2048) TextInput.
+    expect(IntegrationCredentialKind::GoogleAnalytics->textareaFields())
+        ->toBe(['service_account_json']);
+});
+
+it('textareaFields() returns [] for every non-GoogleAnalytics kind', function (): void {
+    foreach (IntegrationCredentialKind::cases() as $kind) {
+        if ($kind === IntegrationCredentialKind::GoogleAnalytics) {
+            continue;
+        }
+
+        expect($kind->textareaFields())->toBe([]);
+    }
+});
+
 it('resolver env fallback returns [service_account_json, property_id] when services.google_analytics is set', function (): void {
     Cache::forget(IntegrationCredentialResolver::cacheKeyFor(IntegrationCredentialKind::GoogleAnalytics));
 

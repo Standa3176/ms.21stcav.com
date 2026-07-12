@@ -77,6 +77,35 @@ it('read_ga4_channel_performance excludes rows older than 30 days', function () 
     expect($out['channels'])->toBeEmpty();
 });
 
+it('read_ga4_channel_performance defaults to a 30-day window that excludes a ~100-day-old row', function () {
+    // Default config (30) — a ~100-day-old row is outside the window.
+    seedGaRow(['date' => now()->subDays(100)->toDateString()]);
+
+    $m = new ReflectionMethod(ReadGa4ChannelPerformanceTool::class, 'execute');
+    $m->setAccessible(true);
+    $out = json_decode($m->invoke(app(ReadGa4ChannelPerformanceTool::class)), true);
+
+    expect($out['window_days'])->toBe(30);
+    expect($out['channels'])->toBeEmpty();
+});
+
+it('read_ga4_channel_performance reads its window from config — 120 includes a ~100-day-old row', function () {
+    config()->set('agents.ad_optimisation.data_lookback_days', 120);
+
+    // ~40-day-old and ~100-day-old rows — both inside a 120-day window,
+    // and the 100-day row would be EXCLUDED under the 30-day default.
+    seedGaRow(['channel_group' => 'Paid Search', 'campaign' => 'Recent', 'date' => now()->subDays(40)->toDateString(), 'purchase_revenue_pennies' => 200000]);
+    seedGaRow(['channel_group' => 'Organic Search', 'campaign' => 'Historic', 'source_medium' => 'google / organic', 'date' => now()->subDays(100)->toDateString(), 'purchase_revenue_pennies' => 50000]);
+
+    $m = new ReflectionMethod(ReadGa4ChannelPerformanceTool::class, 'execute');
+    $m->setAccessible(true);
+    $out = json_decode($m->invoke(app(ReadGa4ChannelPerformanceTool::class)), true);
+
+    expect($out['window_days'])->toBe(120);
+    expect($out['channels'])->toHaveCount(2);
+    expect(collect($out['channels'])->pluck('campaign')->all())->toContain('Historic');
+});
+
 it('read_ga4_channel_performance caps output + sets _truncated when over 3 KB', function () {
     // Seed many distinct grains so the JSON exceeds the 3 KB soft cap.
     for ($i = 0; $i < 120; $i++) {

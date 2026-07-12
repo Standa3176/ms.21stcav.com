@@ -13,7 +13,11 @@ use Prism\Prism\Tool;
  * Phase 15 Plan 15b-01 — read_ga4_channel_performance (advice-only AdOptimisationAgent).
  *
  * Aggregates the GA4 channel/campaign snapshot (15a — ga_channel_metrics_daily)
- * over the last 30 days by channel_group + campaign: SUM(sessions),
+ * over the configured lookback window (config
+ * `agents.ad_optimisation.data_lookback_days`, env
+ * `AGENTS_AD_OPTIMISATION_LOOKBACK_DAYS`, default 30 — the SAME knob the
+ * command/dashboard "is there data to review" guard uses) by
+ * channel_group + campaign: SUM(sessions),
  * SUM(key_events), SUM(transactions), SUM(revenue) with revenue mapped
  * pennies → £. Ordered revenue-first so the highest-value channels lead the
  * (capped) list.
@@ -44,7 +48,14 @@ use Prism\Prism\Tool;
  */
 final class ReadGa4ChannelPerformanceTool extends TruncatingTool
 {
-    private const WINDOW_DAYS = 30;
+    /**
+     * Fallback window (days) used only if the config key is entirely absent.
+     * The operative value comes from
+     * `config('agents.ad_optimisation.data_lookback_days')`, unifying this
+     * read window with the command/dashboard "is there data to review" guard
+     * so a single env var (AGENTS_AD_OPTIMISATION_LOOKBACK_DAYS) controls both.
+     */
+    private const DEFAULT_WINDOW_DAYS = 30;
 
     public function name(): string
     {
@@ -53,7 +64,14 @@ final class ReadGa4ChannelPerformanceTool extends TruncatingTool
 
     public function description(): string
     {
-        return 'Read the last 30 days of GA4 channel/campaign performance, aggregated by channel group + campaign: sessions, key events, transactions and revenue (£). Highest-revenue rows first. Use to spot which paid/organic channels convert and which underperform.';
+        $days = $this->windowDays();
+
+        return "Read the last {$days} days of GA4 channel/campaign performance, aggregated by channel group + campaign: sessions, key events, transactions and revenue (£). Highest-revenue rows first. Use to spot which paid/organic channels convert and which underperform.";
+    }
+
+    private function windowDays(): int
+    {
+        return (int) config('agents.ad_optimisation.data_lookback_days', self::DEFAULT_WINDOW_DAYS);
     }
 
     public function asPrismTool(): Tool
@@ -65,7 +83,8 @@ final class ReadGa4ChannelPerformanceTool extends TruncatingTool
 
     private function execute(): string
     {
-        $since = now()->subDays(self::WINDOW_DAYS)->toDateString();
+        $windowDays = $this->windowDays();
+        $since = now()->subDays($windowDays)->toDateString();
 
         $rows = GaChannelMetric::query()
             ->where('date', '>=', $since)
@@ -91,7 +110,7 @@ final class ReadGa4ChannelPerformanceTool extends TruncatingTool
         $total = count($channels);
 
         $payload = [
-            'window_days' => self::WINDOW_DAYS,
+            'window_days' => $windowDays,
             'channels' => $channels,
             '_truncated' => false,
             '_total_available' => $total,

@@ -7,6 +7,7 @@ namespace App\Domain\Agents\Console\Commands;
 use App\Console\Commands\BaseCommand;
 use App\Domain\Agents\Jobs\RunAdOptimisationJob;
 use App\Domain\Integrations\Models\GaChannelMetric;
+use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -25,6 +26,15 @@ use Illuminate\Support\Str;
  * When data exists, it generates a correlation id and dispatches ONE
  * RunAdOptimisationJob on the `agents` queue. --dry-run reports eligibility
  * without dispatching.
+ *
+ * SKIP-IF-PENDING (260713-add): after the no-data guard, if a PENDING
+ * ad_optimisation Suggestion already exists (unactioned advice), the command
+ * logs `ad_optimisation.skip_pending_exists` and exits 0 WITHOUT dispatching —
+ * no Claude spend, no near-duplicate row. Only pending blocks; approved/rejected
+ * do not. Once the operator actions the pending one, the next scheduled run
+ * produces fresh advice. This guards the SCHEDULED path only — the manual
+ * "Review with Claude" dashboard action is deliberately unguarded (explicit
+ * operator intent always dispatches).
  */
 final class RunAdOptimisationCommand extends BaseCommand
 {
@@ -49,6 +59,23 @@ final class RunAdOptimisationCommand extends BaseCommand
                 'reason' => 'no ga_channel_metrics_daily rows in the lookback window',
             ]);
             $this->info("No recent GA4 data ({$lookbackDays}d lookback) — nothing to analyse. Exiting without dispatch (no LLM spend).");
+
+            return self::SUCCESS;
+        }
+
+        // ── SKIP-IF-PENDING — don't pile up near-identical advice ───────────
+        // Only PENDING ad_optimisation Suggestions block; approved/rejected do
+        // not. Driver-portable (no JSON expression — plain kind/status columns).
+        $pendingExists = Suggestion::query()
+            ->where('kind', 'ad_optimisation')
+            ->where('status', Suggestion::STATUS_PENDING)
+            ->exists();
+
+        if ($pendingExists) {
+            Log::info('ad_optimisation.skip_pending_exists', [
+                'reason' => 'a pending ad_optimisation Suggestion is already awaiting operator action',
+            ]);
+            $this->info('A pending ad_optimisation suggestion already exists — skipping (no dispatch, no LLM spend). Action the pending advice to unblock the next run.');
 
             return self::SUCCESS;
         }

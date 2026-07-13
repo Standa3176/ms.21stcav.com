@@ -45,7 +45,7 @@ it('the ad-optimisation schedule no longer uses everySixHours', function () {
     $source = (string) file_get_contents(base_path('routes/console.php'));
 
     // Extract the ad-optimisation schedule block and confirm the old cadence is gone.
-    $adOptBlockStart = strpos($source, "agents:run-ad-optimisation");
+    $adOptBlockStart = strpos($source, 'agents:run-ad-optimisation');
     expect($adOptBlockStart)->not->toBeFalse();
 
     $block = substr($source, (int) $adOptBlockStart, 300);

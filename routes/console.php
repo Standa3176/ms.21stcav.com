@@ -415,20 +415,28 @@ if ((bool) config('agents.seo_batch_schedule_enabled', true)) {
         ->description('Phase 12 SEOAGT-05 — nightly SEO agent batch (04:30 Europe/London)');
 }
 
-// Phase 15 Plan 15b-01 — advice-only AdOptimisationAgent, several times a day.
-// everySixHours is SAFE because (a) the command no-ops when there are no recent
-// ga_channel_metrics_daily rows (no dispatch, no LLM spend — so it is safe to
-// schedule NOW before real GA4 data flows) and (b) the daily 300p budget cap
-// bounds worst-case spend. withoutOverlapping guards a slow run from colliding
-// with the next fire. Config()-gated (not env()) — env() returns the default in
-// cached-config mode (deploy runs config:cache), silently disabling the schedule.
+// Phase 15 Plan 15b-01 (cadence dialled back by quick task 260713-add) —
+// advice-only AdOptimisationAgent, ONCE daily at 07:00 Europe/London.
+//
+// Was everySixHours; reduced to daily because the 6-hourly run piled up
+// near-identical PENDING ad_optimisation suggestions (and spent a Claude call
+// each time) while prior advice sat unactioned. Combined with the command's
+// skip-if-pending guard (260713-add) this means at most one new suggestion per
+// day, and only once the previous is approved/rejected.
+//
+// SAFE because (a) the command no-ops when there are no recent
+// ga_channel_metrics_daily rows (no dispatch, no LLM spend) and (b) the daily
+// 300p budget cap bounds worst-case spend. withoutOverlapping guards a slow run
+// from colliding with the next fire. Config()-gated (not env()) — env() returns
+// the default in cached-config mode (deploy runs config:cache), silently
+// disabling the schedule.
 if ((bool) config('agents.ad_optimisation_schedule_enabled', true)) {
     Schedule::command('agents:run-ad-optimisation')
-        ->everySixHours()
+        ->dailyAt('07:00')
         ->withoutOverlapping()
         ->onOneServer()
         ->timezone('Europe/London')
-        ->description('Phase 15 — advice-only AdOptimisationAgent (every 6h, Europe/London; no-op when no recent GA4 data)');
+        ->description('Phase 15 — advice-only AdOptimisationAgent (daily 07:00 Europe/London; no-op when no recent GA4 data; skip-if-pending guarded — 260713-add)');
 }
 
 // Quick task 260708-b4f — products:reconcile-woo-maintenance nightly 04:30 London.

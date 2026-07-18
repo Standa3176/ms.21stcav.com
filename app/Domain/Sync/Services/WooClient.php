@@ -8,11 +8,15 @@ use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Integrations\Services\IntegrationTestResult;
 use App\Domain\Sync\Exceptions\RateLimitExceededException;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Models\SyncDiff;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Automattic\WooCommerce\Client as AutomatticClient;
 use Automattic\WooCommerce\HttpClient\HttpClientException;
+use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 /**
@@ -196,11 +200,108 @@ class WooClient
     private function writeOrShadow(string $method, string $endpoint, array $payload): array
     {
         // FOUND-08: shadow-mode gate. Default false; flipping to true is a Phase 7 cutover action.
+        // Shadow mode takes NEITHER the serialization lock NOR the rate limiter —
+        // recording a SyncDiff hits no external system, so there is nothing to throttle.
         if (! (bool) config('services.woo.write_enabled', false)) {
             return $this->recordDiff($method, $endpoint, $payload);
         }
 
-        return $this->writeLive($method, $endpoint, $payload);
+        return $this->throttledWriteLive($method, $endpoint, $payload);
+    }
+
+    /**
+     * 260719-wth — throttle wrapper around the LIVE write path.
+     *
+     * On a box shared with the WP storefront an un-capped Woo-write burst is a
+     * self-DoS (2026-07-19 outage). Every live write is admitted single-file:
+     *
+     *   1. Serialization lock ('woo:write') → ≤1 concurrent live write across
+     *      ALL workers/queues. Released in finally. If it can't be acquired
+     *      within write_lock_wait_seconds we throw a RETRYABLE exception (the
+     *      job requeues) rather than writing un-serialised.
+     *   2. Rate limit + pacing (see throttlePace()) — enforces the per-minute
+     *      ceiling and the min-interval spacing while the lock is held (safe to
+     *      sleep because writes are serialised).
+     *
+     * This wraps writeLive() so the existing 429 backoff / POST-for-updates /
+     * delete-routing / AbortGuard semantics are entirely unchanged — the
+     * throttle is purely additive admission control in front of them.
+     *
+     * @throws WooWriteThrottleException  Lock unavailable or rate ceiling hit (retryable).
+     */
+    private function throttledWriteLive(string $method, string $endpoint, array $payload): array
+    {
+        $lockTtl = max(1, (int) config('services.woo.write_lock_seconds', 120));
+        $lockWait = max(0, (int) config('services.woo.write_lock_wait_seconds', 30));
+
+        // The lock guarantees ≤1 concurrent live write regardless of the
+        // configured write_max_concurrency (default 1) — conservative by design.
+        $lock = Cache::lock('woo:write', $lockTtl);
+
+        try {
+            $lock->block($lockWait);
+        } catch (LockTimeoutException $e) {
+            throw new WooWriteThrottleException(
+                "Could not acquire the 'woo:write' lock within {$lockWait}s — "
+                ."another worker is mid-write; requeueing rather than writing un-serialised.",
+                0,
+                $e,
+            );
+        }
+
+        try {
+            $this->throttlePace();
+
+            return $this->writeLive($method, $endpoint, $payload);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * 260719-wth — rate ceiling + min-interval pacing. Called ONLY on the live
+     * path, ONLY while the 'woo:write' lock is held (so it is inherently
+     * single-threaded and safe to sleep in).
+     *
+     * @throws WooWriteThrottleException  When the per-minute ceiling is hit (retryable).
+     */
+    private function throttlePace(): void
+    {
+        // (1) Hard per-minute ceiling — Redis-backed token bucket via RateLimiter.
+        $maxPerMinute = (int) config('services.woo.write_max_per_minute', 60);
+        if ($maxPerMinute > 0) {
+            if (RateLimiter::tooManyAttempts('woo:write', $maxPerMinute)) {
+                $availableIn = RateLimiter::availableIn('woo:write');
+
+                throw new WooWriteThrottleException(
+                    "Woo live-write rate ceiling ({$maxPerMinute}/min) reached — "
+                    ."requeueing; window resets in {$availableIn}s.",
+                );
+            }
+
+            RateLimiter::hit('woo:write', 60);
+        }
+
+        // (2) Minimum spacing between consecutive writes. Sleep the remainder
+        //     since the last write (safe — the lock serialises us).
+        $minIntervalMs = (int) config('services.woo.write_min_interval_ms', 250);
+        if ($minIntervalMs <= 0) {
+            return;
+        }
+
+        $minMicros = $minIntervalMs * 1000;
+        $last = (int) Cache::get('woo:write:last_ts', 0);
+        $now = (int) (microtime(true) * 1_000_000);
+
+        if ($last > 0) {
+            $elapsed = $now - $last;
+            if ($elapsed >= 0 && $elapsed < $minMicros) {
+                $this->sleepMicros($minMicros - $elapsed);
+            }
+        }
+
+        // Record the (post-sleep) timestamp for the next write to pace against.
+        Cache::put('woo:write:last_ts', (int) (microtime(true) * 1_000_000), now()->addMinutes(5));
     }
 
     /**

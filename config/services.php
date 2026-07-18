@@ -49,6 +49,42 @@ return [
         // Phase 1 — shadow-mode flag (D-08; MUST default to false)
         'write_enabled' => env('WOO_WRITE_ENABLED', false),
 
+        // ─────────────────────────────────────────────────────────────
+        // 260719-wth — LIVE-write throttle (self-DoS guard on a SHARED box)
+        // ─────────────────────────────────────────────────────────────
+        // 2026-07-19 incident: with write_enabled=true, a burst of concurrent
+        // Woo-write jobs (222 PushPriceChangeToWoo + auto-create + retries)
+        // saturated the WP php-fpm pool on the box the storefront shares with
+        // this app — load spiked to 55 and meetingstore.co.uk went DOWN for
+        // customers. WooClient::writeLive() had no concurrency cap or pacing.
+        //
+        // These knobs gate the LIVE path ONLY (shadow mode = write_enabled=false
+        // takes NEITHER lock nor limiter). They are behaviourally inert while
+        // write_enabled=false. Conservative by design — better too slow than
+        // another outage.
+        //
+        //   write_max_concurrency   — target concurrent live writes. The
+        //       'woo:write' Cache lock enforces single-file (≤1) serialization
+        //       across ALL workers regardless of queue config; this key
+        //       documents the intended cap (1 = fully serialised).
+        //   write_max_per_minute    — hard per-minute ceiling (Redis token
+        //       bucket via RateLimiter). Over-limit writes throw a retryable
+        //       WooWriteThrottleException so the job requeues instead of piling
+        //       onto the shared box.
+        //   write_min_interval_ms   — minimum spacing between consecutive live
+        //       writes; the remainder is slept (safe because writes are
+        //       serialised). 250ms → ≤240/min even before the ceiling bites.
+        //   write_lock_wait_seconds — how long a worker blocks waiting for the
+        //       'woo:write' lock before giving up (retryable throw → requeue).
+        //   write_lock_seconds      — lock hold TTL (auto-release safety net if
+        //       a worker dies mid-write); comfortably exceeds a worst-case
+        //       writeLive() 429 backoff chain.
+        'write_max_concurrency' => (int) env('WOO_WRITE_MAX_CONCURRENCY', 1),
+        'write_max_per_minute' => (int) env('WOO_WRITE_MAX_PER_MINUTE', 60),
+        'write_min_interval_ms' => (int) env('WOO_WRITE_MIN_INTERVAL_MS', 250),
+        'write_lock_wait_seconds' => (int) env('WOO_WRITE_LOCK_WAIT_SECONDS', 30),
+        'write_lock_seconds' => (int) env('WOO_WRITE_LOCK_SECONDS', 120),
+
         // VAT basis for prices PUSHED to Woo's regular_price (PushPriceChangeToWoo).
         // sell_price is stored VAT-INCLUSIVE; default false = push inc-VAT (matches
         // the existing auto-create convention). Set WOO_PUSH_PRICES_EX_VAT=true if

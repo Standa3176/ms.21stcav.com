@@ -28,6 +28,7 @@ use App\Console\Commands\ReconcileStaleWooIdsCommand;
 use App\Console\Commands\RefreshBrandsToAddCommand;
 use App\Console\Commands\Reports\SupplierSyncDigestCommand;
 use App\Console\Commands\Reports\WeeklyDigestCommand;
+use App\Console\Commands\RestoreSourceablePendingCommand;
 use App\Console\Commands\RetagProductsOnWooCommand;
 use App\Console\Commands\SupplierProbeSingleSkuCommand;
 use App\Domain\Agents\Agents\AdOptimisationAgent;
@@ -882,6 +883,16 @@ class AppServiceProvider extends ServiceProvider
                 // NOT scheduled — operator-triggered repair tool (every publish
                 // now hydrates stock via PublishProductJob, so no nightly pass needed).
                 HydrateLiveStockCommand::class,
+                // Quick task 260713-rsp — products:restore-sourceable-pending.
+                // Cutover-prep LOCAL realignment: restores wrongly-demoted
+                // pending + on-Woo products that have a CURRENT fresh-supplier
+                // offer back to publish so the local DB matches the live store
+                // before cutover. Uses LiveSupplierStockResolver (the consistent
+                // inverse of supplier:db-sync --flag-obsolete's keep decision —
+                // NOT supplier_sku_cache, which would churn). Dry-run by default;
+                // --live applies. LOCAL-ONLY — NO Woo writes (WooClient guard in
+                // the feature test enforces this permanently).
+                RestoreSourceablePendingCommand::class,
                 // Quick task 260609-nku — products:audit-stock-divergence. Detects
                 // "phantom stock" SKUs where Woo claims qty>0 but MS=0 and every
                 // fresh supplier reports qty=0. TRUNCATE-and-replaces

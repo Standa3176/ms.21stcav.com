@@ -65,6 +65,33 @@ class LiveSupplierStockResolver
     }
 
     /**
+     * Quick task 260713-rsp — is this SKU LISTED by any FRESH supplier (any
+     * stock level, product_excluded=0)? This is the stock-agnostic membership
+     * signal — the consistent inverse of supplier:db-sync --flag-obsolete's
+     * KEEP decision (a product stays published iff a fresh, non-excluded
+     * supplier lists it, regardless of stock). resolveForSku() is the STRICTER
+     * in-stock (stock>0) variant; this is the broader opt-in used by
+     * products:restore-sourceable-pending --include-listed-out-of-stock.
+     *
+     * Best-effort: any failure (blank sku, no fresh suppliers, unreachable
+     * supplier_db) returns false so a restore is never made on a guess.
+     */
+    public function isListedByFreshSupplier(string $sku): bool
+    {
+        $key = strtolower(trim($sku));
+        if ($key === '') {
+            return false;
+        }
+        $freshIds = array_values($this->freshness->freshSupplierIds()->all());
+        if ($freshIds === []) {
+            return false;
+        }
+        $rows = $this->fetchOfferRows($key, $freshIds);
+
+        return $rows !== null && $rows !== [];
+    }
+
+    /**
      * PURE — cheapest offer with resolved stock > 0. Input rows carry
      * 'price' (string|numeric) and 'stock' (string|int, already stockseparate-
      * resolved by the SQL). Null when nothing is in stock.

@@ -36,7 +36,7 @@ use Illuminate\Support\Facades\Http;
  * Bind a Mockery LiveSupplierStockResolver.
  *
  * @param  array<int, string>  $inStockSkus  SKUs with a current in-stock offer
- * @param  array<int, string>  $listedSkus   SKUs merely listed (any stock) by a fresh supplier
+ * @param  array<int, string>  $listedSkus  SKUs merely listed (any stock) by a fresh supplier
  */
 function bindRestoreResolver(array $inStockSkus, array $listedSkus = []): void
 {
@@ -241,4 +241,4 @@ it('makes NO Woo call on a full mixed batch', function (): void {
 
     // The throwing WooClient guard + the HTTP fake both assert no Woo egress.
     Http::assertNothingSent();
-})->throwsNoExceptions();
+});

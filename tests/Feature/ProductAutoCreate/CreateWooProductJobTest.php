@@ -92,10 +92,11 @@ function runCreateJob(
     );
 }
 
-it('constructor sets queue=sync-woo-push, tries=3, backoff=[30,300,1800]', function (): void {
+it('constructor sets queue=woo-writes, tries=3, backoff=[30,300,1800]', function (): void {
     $job = new CreateWooProductJob('CTOR-01');
 
-    expect($job->queue)->toBe('sync-woo-push');
+    // 260719-wth — moved from sync-woo-push to the dedicated single-worker write queue.
+    expect($job->queue)->toBe('woo-writes');
     expect($job->tries)->toBe(3);
     expect($job->backoff)->toBe([30, 300, 1800]);
     expect($job->sku)->toBe('CTOR-01');

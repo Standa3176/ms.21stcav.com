@@ -5,11 +5,11 @@ declare(strict_types=1);
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
 
-it('defines exactly 8 production supervisors', function () {
+it('defines exactly 9 production supervisors', function () {
     $production = config('horizon.environments.production');
 
     expect($production)->toBeArray();
-    expect(array_keys($production))->toHaveCount(8);
+    expect(array_keys($production))->toHaveCount(9);
 
     $expected = [
         'webhook-inbound-supervisor',
@@ -20,6 +20,8 @@ it('defines exactly 8 production supervisors', function () {
         'critical-supervisor',
         'default-supervisor',
         'agents-supervisor',
+        // 260719-wth — dedicated single-worker Woo-write queue.
+        'woo-writes-supervisor',
     ];
 
     foreach ($expected as $name) {
@@ -27,15 +29,22 @@ it('defines exactly 8 production supervisors', function () {
     }
 });
 
-it('production supervisors cover all 8 named queues', function () {
+it('production supervisors cover all 9 named queues', function () {
     $production = config('horizon.environments.production');
     $allQueues = collect($production)->flatMap(fn ($s) => $s['queue'])->unique()->values();
 
-    $expected = collect(['critical', 'sync-woo-push', 'sync-bulk', 'crm-bitrix', 'competitor-csv', 'webhook-inbound', 'default', 'agents'])
+    $expected = collect(['critical', 'sync-woo-push', 'sync-bulk', 'crm-bitrix', 'competitor-csv', 'webhook-inbound', 'default', 'agents', 'woo-writes'])
         ->sort()
         ->values();
 
     expect($allQueues->sort()->values()->all())->toBe($expected->all());
+});
+
+it('woo-writes-supervisor is single-worker (mirrors sync-bulk) — 260719-wth', function () {
+    $production = config('horizon.environments.production');
+
+    expect($production['woo-writes-supervisor']['maxProcesses'])->toBe(1)
+        ->and($production['woo-writes-supervisor']['queue'])->toBe(['woo-writes']);
 });
 
 it('respects external rate limit ceilings (Bitrix 2/sec, Woo 100/min)', function () {

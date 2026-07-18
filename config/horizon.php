@@ -74,6 +74,10 @@ return [
         'redis:webhook-inbound' => 30,
         'redis:crm-bitrix' => 120,
         'redis:sync-woo-push' => 90,
+        // 260719-wth — dedicated single-worker Woo-write queue. Paced by the
+        // WooClient throttle (min-interval + per-minute ceiling) so a healthy
+        // backlog is expected; 1800s mirrors sync-bulk (its maxProcesses=1 sibling).
+        'redis:woo-writes' => 1800,
         'redis:sync-bulk' => 1800,
         'redis:competitor-csv' => 600,
         'redis:critical' => 30,
@@ -217,6 +221,35 @@ return [
                 'timeout' => 1800,
                 'memory' => 512,
             ],
+
+            // 260719-wth — dedicated LOW-CONCURRENCY Woo-write supervisor.
+            //
+            // Born from the 2026-07-19 outage: a burst of concurrent live Woo
+            // writes (222 PushPriceChangeToWoo + auto-create + retries) saturated
+            // the WP php-fpm pool on the box the storefront SHARES with this app —
+            // load 55, meetingstore.co.uk down for customers.
+            //
+            // maxProcesses=1 (mirrors sync-bulk-supervisor) so live writes run
+            // single-file at the QUEUE level too, and — crucially — stay OFF the
+            // shared worker pool: a write backlog can never starve sync/crm/agents.
+            // This is belt-and-braces with the app-level 'woo:write' Cache lock
+            // (WooClient throttle) which enforces ≤1 concurrent write regardless of
+            // queue config. tries=2 mirrors sync-bulk; the WooClient's own 429
+            // backoff handles transient Woo rate limits inside a single attempt.
+            //
+            // Behaviourally inert while WOO_WRITE_ENABLED=false (shadow writes are
+            // SyncDiff rows, no external call) — but the queue MUST exist so a
+            // Horizon restart picks it up before writes are ever re-enabled.
+            'woo-writes-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['woo-writes'],
+                'balance' => 'simple',
+                'minProcesses' => 1,
+                'maxProcesses' => 1,
+                'tries' => 2,
+                'timeout' => 1800,
+                'memory' => 512,
+            ],
             'competitor-csv-supervisor' => [
                 'connection' => 'redis',
                 'queue' => ['competitor-csv'],
@@ -289,7 +322,9 @@ return [
                 // Phase 8 Plan 01 — local dev all-in-one queue extended with 'agents'
                 // so `php artisan horizon` on a single dev machine processes agent
                 // runs alongside every other queue without a separate supervisor.
-                'queue' => ['critical', 'webhook-inbound', 'crm-bitrix', 'sync-woo-push', 'sync-bulk', 'competitor-csv', 'default', 'agents'],
+                // 260719-wth — 'woo-writes' added so local `php artisan horizon`
+                // processes throttled Woo writes alongside every other queue.
+                'queue' => ['critical', 'webhook-inbound', 'crm-bitrix', 'sync-woo-push', 'sync-bulk', 'competitor-csv', 'default', 'agents', 'woo-writes'],
                 'balance' => 'auto',
                 'minProcesses' => 1,
                 'maxProcesses' => 3,

@@ -30,13 +30,14 @@ use Spatie\Activitylog\Models\Activity;
 |     + MarginChangeApplierTest patterns.
 */
 
-it('Case E: implements ShouldQueue with $queue=sync-woo-push and $tries=4', function (): void {
+it('Case E: implements ShouldQueue with $queue=woo-writes and $tries=4', function (): void {
     $ref = new ReflectionClass(PushProductFieldsToWoo::class);
 
     expect($ref->implementsInterface(ShouldQueue::class))->toBeTrue();
 
+    // 260719-wth — moved from sync-woo-push to the dedicated single-worker write queue.
     $defaults = $ref->getDefaultProperties();
-    expect($defaults['queue'] ?? null)->toBe('sync-woo-push');
+    expect($defaults['queue'] ?? null)->toBe('woo-writes');
     expect($defaults['tries'] ?? null)->toBe(4);
 });
 

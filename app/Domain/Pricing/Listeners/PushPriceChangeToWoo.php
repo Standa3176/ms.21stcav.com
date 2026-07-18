@@ -53,7 +53,10 @@ final class PushPriceChangeToWoo implements ShouldQueue
 
     public function viaQueue(): string
     {
-        return 'sync-woo-push';
+        // 260719-wth — dedicated single-worker write queue. This was the incident's
+        // main offender (222 concurrent price pushes); keeping it off the shared
+        // sync-woo-push pool stops a price-push backlog starving other queues.
+        return 'woo-writes';
     }
 
     public function handle(ProductPriceChanged $event): void

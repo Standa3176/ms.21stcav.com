@@ -80,10 +80,11 @@ function noStockResolver(): LiveSupplierStockResolver
     return $mock;
 }
 
-it('constructor sets queue=sync-woo-push and tries=3', function (): void {
+it('constructor sets queue=woo-writes and tries=3', function (): void {
     $job = new PublishProductJob(productId: 1, publishedByUserId: 99);
 
-    expect($job->queue)->toBe('sync-woo-push');
+    // 260719-wth — moved from sync-woo-push to the dedicated single-worker write queue.
+    expect($job->queue)->toBe('woo-writes');
     expect($job->tries)->toBe(3);
     expect($job->productId)->toBe(1);
     expect($job->publishedByUserId)->toBe(99);

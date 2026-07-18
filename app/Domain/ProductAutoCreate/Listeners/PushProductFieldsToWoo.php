@@ -51,10 +51,12 @@ final class PushProductFieldsToWoo implements ShouldQueue
     use InteractsWithQueue;
 
     /**
-     * Queue name. Pinned to sync-woo-push — 260611-s2d planner probe of
-     * config/horizon.php corrected the brief's `'woo-writes'` guess.
+     * Queue name. 260719-wth — moved to the dedicated single-worker 'woo-writes'
+     * queue (the queue the 260611-s2d note anticipated but that didn't exist
+     * yet; this task creates the woo-writes Horizon supervisor). Keeps auto-create
+     * field pushes off the shared sync-woo-push pool.
      */
-    public string $queue = 'sync-woo-push';
+    public string $queue = 'woo-writes';
 
     /**
      * Retry budget: 1 attempt + 3 retries. Pinned locally (not deferred

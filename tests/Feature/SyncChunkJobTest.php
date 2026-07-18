@@ -44,13 +44,15 @@ function buildSkuRow(string $sku, int $pid, string $price = '10.00', int $stock 
 }
 
 // -----------------------------------------------------------------------------
-// C1: Job is dispatched on 'sync-woo-push' queue
+// C1: Job is dispatched on 'woo-writes' queue (260719-wth)
 // -----------------------------------------------------------------------------
-test('C1: SyncChunkJob lives on the sync-woo-push queue', function () {
+test('C1: SyncChunkJob lives on the woo-writes queue', function () {
     $run = SyncRun::factory()->running()->create();
     $job = new SyncChunkJob(runId: $run->id, page: 1, skus: [], supplierFeed: []);
 
-    expect($job->queue)->toBe('sync-woo-push');
+    // 260719-wth — supplier price/stock chunks are live Woo writes; moved off the
+    // shared sync-woo-push pool onto the dedicated single-worker write queue.
+    expect($job->queue)->toBe('woo-writes');
 });
 
 // -----------------------------------------------------------------------------

@@ -77,7 +77,9 @@ final class CreateWooProductJob implements ShouldQueue
         public readonly ?string $suggestionId = null,
     ) {
         // PHP 8.4 trait-collision guard — NEVER public string $queue (Phase 5 Plan 02 lesson).
-        $this->onQueue('sync-woo-push');
+        // 260719-wth — dedicated single-worker write queue (product-create is a live
+        // Woo write; keep it off the shared sync-woo-push pool).
+        $this->onQueue('woo-writes');
     }
 
     public function handle(

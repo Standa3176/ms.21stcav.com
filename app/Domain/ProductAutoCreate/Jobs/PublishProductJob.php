@@ -68,7 +68,8 @@ final class PublishProductJob implements ShouldQueue
         public readonly int $publishedByUserId,
     ) {
         // PHP 8.4 trait-collision guard.
-        $this->onQueue('sync-woo-push');
+        // 260719-wth — dedicated single-worker write queue (off the shared pool).
+        $this->onQueue('woo-writes');
     }
 
     public function handle(

@@ -67,7 +67,13 @@ final class SyncChunkJob implements ShouldQueue
         public readonly array $skus,
         public readonly array $supplierFeed,
     ) {
-        $this->onQueue('sync-woo-push');
+        // 260719-wth — supplier price/stock chunks write to Woo on the live path,
+        // so they route to the dedicated single-worker 'woo-writes' queue. With the
+        // Task-2 app-level lock serialising every write anyway, running these on a
+        // 1-worker queue avoids lock-contention thrash and keeps supplier writes off
+        // the shared pool. (Shadow parity syncs are therefore single-file too — an
+        // accepted, safety-first throughput trade-off; see 260719-wth-SUMMARY.)
+        $this->onQueue('woo-writes');
     }
 
     public function handle(WooClient $woo, SyncDiffEngine $diffEngine, AbortGuard $abortGuard): void

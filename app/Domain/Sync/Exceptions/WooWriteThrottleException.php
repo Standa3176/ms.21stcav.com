@@ -21,6 +21,4 @@ namespace App\Domain\Sync\Exceptions;
  * synchronous caller (products:push-status-to-woo) surfaces it as a per-row
  * error and continues — no un-serialised write happens either way.
  */
-final class WooWriteThrottleException extends \RuntimeException
-{
-}
+final class WooWriteThrottleException extends \RuntimeException {}

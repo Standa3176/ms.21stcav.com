@@ -63,7 +63,7 @@ class WooClient
         }
 
         $creds = $this->resolver->for(IntegrationCredentialKind::WooRest);
-        $cacheKey = md5($creds['base_url'] . '|' . $creds['consumer_key']);
+        $cacheKey = md5($creds['base_url'].'|'.$creds['consumer_key']);
 
         if (! isset($this->sdkCache[$cacheKey])) {
             $this->sdkCache[$cacheKey] = new AutomatticClient(
@@ -92,8 +92,8 @@ class WooClient
      *   channel=woo, method=GET, endpoint=$endpoint, http_status, latency_ms,
      *   correlation_id (auto-threaded from Context, fallback UUID).
      *
-     * @throws \RuntimeException         If $inner is null (misconfigured DI).
-     * @throws HttpClientException       If Woo returns 4xx/5xx.
+     * @throws \RuntimeException If $inner is null (misconfigured DI).
+     * @throws HttpClientException If Woo returns 4xx/5xx.
      */
     public function get(string $endpoint, array $query = []): array
     {
@@ -227,7 +227,7 @@ class WooClient
      * delete-routing / AbortGuard semantics are entirely unchanged — the
      * throttle is purely additive admission control in front of them.
      *
-     * @throws WooWriteThrottleException  Lock unavailable or rate ceiling hit (retryable).
+     * @throws WooWriteThrottleException Lock unavailable or rate ceiling hit (retryable).
      */
     private function throttledWriteLive(string $method, string $endpoint, array $payload): array
     {
@@ -243,7 +243,7 @@ class WooClient
         } catch (LockTimeoutException $e) {
             throw new WooWriteThrottleException(
                 "Could not acquire the 'woo:write' lock within {$lockWait}s — "
-                ."another worker is mid-write; requeueing rather than writing un-serialised.",
+                .'another worker is mid-write; requeueing rather than writing un-serialised.',
                 0,
                 $e,
             );
@@ -263,7 +263,7 @@ class WooClient
      * path, ONLY while the 'woo:write' lock is held (so it is inherently
      * single-threaded and safe to sleep in).
      *
-     * @throws WooWriteThrottleException  When the per-minute ceiling is hit (retryable).
+     * @throws WooWriteThrottleException When the per-minute ceiling is hit (retryable).
      */
     private function throttlePace(): void
     {
@@ -313,9 +313,9 @@ class WooClient
      * After 5 failed attempts, throws RateLimitExceededException — caller treats this as a
      * single SyncError (does NOT increment consecutive-failures counter five times).
      *
-     * @throws \RuntimeException              If $inner is null.
-     * @throws RateLimitExceededException     After 5 retries exhausted on 429.
-     * @throws HttpClientException            For non-429 Woo errors.
+     * @throws \RuntimeException If $inner is null.
+     * @throws RateLimitExceededException After 5 retries exhausted on 429.
+     * @throws HttpClientException For non-429 Woo errors.
      */
     private function writeLive(string $method, string $endpoint, array $payload): array
     {
@@ -478,6 +478,7 @@ class WooClient
         }
 
         $code = (int) $e->getCode();
+
         return $code > 0 ? $code : 500;
     }
 
@@ -570,6 +571,7 @@ class WooClient
             return [];
         }
         $decoded = json_decode($encoded, true);
+
         return is_array($decoded) ? $decoded : [];
     }
 

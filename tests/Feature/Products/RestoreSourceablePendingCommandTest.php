@@ -262,7 +262,7 @@ it('makes NO Woo call on a full mixed batch', function (): void {
  * Bind a WooClient spy that records every put() call (mirrors the
  * products:push-status-to-woo test double). Returns the recorder.
  *
- * @param  \Closure|null  $onPut  optional hook to throw / return a canned result
+ * @param  Closure|null  $onPut  optional hook to throw / return a canned result
  */
 function bindRestoreWooSpy(?Closure $onPut = null): stdClass
 {

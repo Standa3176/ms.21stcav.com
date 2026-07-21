@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Models\SyncDiff;
 use App\Domain\Sync\Services\LiveSupplierStockResolver;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Facades\Artisan;
@@ -11,14 +12,13 @@ use Illuminate\Support\Facades\Http;
 /*
 |--------------------------------------------------------------------------
 | Quick task 260713-rsp — products:restore-sourceable-pending
+| Quick task 260721-apr — + --push-to-woo (close the one-way door)
 |--------------------------------------------------------------------------
 |
-| Cutover-prep realignment. supplier:db-sync --flag-obsolete demotes
-| publish→pending any on-Woo product with NO fresh-supplier offer; a batch of
-| products were demoted that DO have a current in-stock supplier offer. Those
-| are still `publish` on the live Woo store (the demotion is LOCAL-only). This
-| command restores the genuinely-sourceable ones to `publish` LOCALLY so the
-| local DB realigns with the store BEFORE cutover.
+| supplier:db-sync --flag-obsolete demotes publish→pending any on-Woo product
+| with NO fresh-supplier offer (CORRECT per the operator's business rule). This
+| command is the missing INVERSE: it restores products that have a current
+| in-stock supplier offer back to `publish`.
 |
 | The restore signal is the CONSISTENT INVERSE of flag-obsolete's keep-set — a
 | live fresh-supplier offer (LiveSupplierStockResolver), NOT supplier_sku_cache
@@ -27,9 +27,13 @@ use Illuminate\Support\Facades\Http;
 |   default (strict):  restore only products with a CURRENT IN-STOCK offer.
 |   --include-listed-out-of-stock:  also restore fresh-supplier-listed (any stock).
 |
-| --dry-run is the DEFAULT (report only); --live applies. LOCAL-only — MUST
-| NOT call WooClient / push to Woo (products are already publish on Woo). The
-| WooClient guard below fails the test on ANY Woo call.
+| --dry-run is the DEFAULT (report only); --live applies.
+|
+| 260721-apr: Woo MIRRORS the local status (Woo admin Pending ≈ local pending),
+| so a local-only restore leaves the product hidden on the storefront. The new
+| --push-to-woo flag pushes status=publish to Woo VIA WooClient (throttle +
+| shadow gate + audit). The flag is OFF by default — the throwing WooClient
+| guard below still fails the test on ANY Woo call made without it.
 */
 
 /**
@@ -55,7 +59,8 @@ function bindRestoreResolver(array $inStockSkus, array $listedSkus = []): void
 
 /**
  * Throwing WooClient guard — ANY Woo call from the command fails the test.
- * products:restore-sourceable-pending is LOCAL-only (no Woo writes/reads).
+ * WITHOUT --push-to-woo the command is LOCAL-only (no Woo writes/reads); the
+ * 260721-apr push tests explicitly rebind a spy/real client over this guard.
  */
 function bindRestoreNoWooGuard(): void
 {
@@ -241,4 +246,168 @@ it('makes NO Woo call on a full mixed batch', function (): void {
 
     // The throwing WooClient guard + the HTTP fake both assert no Woo egress.
     Http::assertNothingSent();
+});
+
+/*
+|--------------------------------------------------------------------------
+| Quick task 260721-apr — --push-to-woo (default OFF)
+|--------------------------------------------------------------------------
+| Woo mirrors the local status, so a local-only restore leaves the product
+| hidden on the storefront. --push-to-woo pushes status=publish to Woo THROUGH
+| WooClient (never raw HTTP) so it inherits the 260719-wth throttle, the
+| WOO_WRITE_ENABLED shadow gate, the AbortGuard and the audit trail.
+*/
+
+/**
+ * Bind a WooClient spy that records every put() call (mirrors the
+ * products:push-status-to-woo test double). Returns the recorder.
+ *
+ * @param  \Closure|null  $onPut  optional hook to throw / return a canned result
+ */
+function bindRestoreWooSpy(?Closure $onPut = null): stdClass
+{
+    $spy = new stdClass;
+    $spy->calls = [];
+
+    $double = Mockery::mock(WooClient::class);
+    $double->shouldReceive('put')->andReturnUsing(
+        function (string $endpoint, array $payload) use ($spy, $onPut): array {
+            $spy->calls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            if ($onPut !== null) {
+                return $onPut($endpoint, $payload);
+            }
+
+            return ['shadow_mode' => true, 'diff_id' => 1];
+        },
+    );
+    app()->instance(WooClient::class, $double);
+
+    return $spy;
+}
+
+it('--push-to-woo PUTs status=publish to products/{wooId} via WooClient', function (): void {
+    bindRestoreResolver(inStockSkus: ['PUSH-1']);
+    $spy = bindRestoreWooSpy(static fn (): array => ['id' => 601, 'status' => 'publish']);
+    $product = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'PUSH-1', 'woo_product_id' => 601,
+    ]);
+
+    $exit = Artisan::call('products:restore-sourceable-pending', [
+        '--live' => true,
+        '--push-to-woo' => true,
+    ]);
+    $output = Artisan::output();
+
+    expect($exit)->toBe(0)
+        ->and($product->fresh()->status)->toBe('publish')
+        ->and($spy->calls)->toHaveCount(1)
+        ->and($spy->calls[0]['endpoint'])->toBe('products/601')
+        ->and($spy->calls[0]['payload'])->toBe(['status' => 'publish'])
+        ->and($output)->toContain('live_pushed=1');
+    Http::assertNothingSent();
+});
+
+it('makes ZERO Woo calls WITHOUT --push-to-woo (backward compatible)', function (): void {
+    bindRestoreResolver(inStockSkus: ['NOPUSH-1']);
+    $spy = bindRestoreWooSpy();
+    $product = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'NOPUSH-1', 'woo_product_id' => 602,
+    ]);
+
+    Artisan::call('products:restore-sourceable-pending', ['--live' => true]);
+
+    expect($product->fresh()->status)->toBe('publish')
+        ->and($spy->calls)->toBe([]);
+    Http::assertNothingSent();
+});
+
+it('--push-to-woo in DRY-RUN (no --live) makes no Woo call at all', function (): void {
+    bindRestoreResolver(inStockSkus: ['DRYPUSH-1']);
+    $spy = bindRestoreWooSpy();
+    $product = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'DRYPUSH-1', 'woo_product_id' => 603,
+    ]);
+
+    $exit = Artisan::call('products:restore-sourceable-pending', ['--push-to-woo' => true]);
+
+    expect($exit)->toBe(0)
+        ->and($product->fresh()->status)->toBe('pending')
+        ->and($spy->calls)->toBe([]);
+});
+
+it('skips + counts a restored product with no usable woo_product_id', function (): void {
+    bindRestoreResolver(inStockSkus: ['NOID-1', 'HASID-1']);
+    $spy = bindRestoreWooSpy();
+    // woo_product_id=0 survives the whereNotNull cohort filter but is NOT a
+    // usable Woo id — restore locally, skip the push, and count it.
+    $noId = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'NOID-1', 'woo_product_id' => 0,
+    ]);
+    $hasId = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'HASID-1', 'woo_product_id' => 604,
+    ]);
+
+    Artisan::call('products:restore-sourceable-pending', [
+        '--live' => true,
+        '--push-to-woo' => true,
+    ]);
+    $output = Artisan::output();
+
+    expect($noId->fresh()->status)->toBe('publish')
+        ->and($hasId->fresh()->status)->toBe('publish')
+        ->and($spy->calls)->toHaveCount(1)
+        ->and($spy->calls[0]['endpoint'])->toBe('products/604')
+        ->and($output)->toContain('skipped_no_woo_id=1');
+});
+
+it('shadow mode (WOO_WRITE_ENABLED=false) records a SyncDiff and performs NO live write', function (): void {
+    config(['services.woo.write_enabled' => false]);
+    bindRestoreResolver(inStockSkus: ['SHADOW-1']);
+    // Use the REAL WooClient: shadow writes never touch the Automattic SDK, so
+    // there is no network to fake — recordDiff() is the entire code path.
+    app()->forgetInstance(WooClient::class);
+    $product = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'SHADOW-1', 'woo_product_id' => 605,
+    ]);
+
+    $exit = Artisan::call('products:restore-sourceable-pending', [
+        '--live' => true,
+        '--push-to-woo' => true,
+    ]);
+    $output = Artisan::output();
+
+    $diff = SyncDiff::where('endpoint', 'products/605')->first();
+
+    expect($exit)->toBe(0)
+        ->and($product->fresh()->status)->toBe('publish')
+        ->and($diff)->not->toBeNull()
+        ->and($diff->channel)->toBe('woo')
+        ->and($diff->woo_id)->toBe('605')
+        ->and($diff->payload)->toBe(['status' => 'publish'])
+        ->and($output)->toContain('shadowed=1')
+        ->and($output)->toContain('live_pushed=0');
+    Http::assertNothingSent();
+});
+
+it('rolls the local restore back to pending when the Woo push fails', function (): void {
+    bindRestoreResolver(inStockSkus: ['FAIL-1']);
+    $spy = bindRestoreWooSpy(static function (): array {
+        throw new RuntimeException('Woo 500');
+    });
+    $product = Product::factory()->create([
+        'status' => 'pending', 'sku' => 'FAIL-1', 'woo_product_id' => 606,
+    ]);
+
+    Artisan::call('products:restore-sourceable-pending', [
+        '--live' => true,
+        '--push-to-woo' => true,
+    ]);
+    $output = Artisan::output();
+
+    // Local status must NOT diverge from Woo — leaving it publish locally would
+    // mean nothing ever retries (the row drops out of the pending cohort).
+    expect($spy->calls)->toHaveCount(1)
+        ->and($product->fresh()->status)->toBe('pending')
+        ->and($output)->toContain('push_failed=1');
 });

@@ -145,6 +145,7 @@ use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
+use App\Domain\Sync\Commands\ProbeSourceabilityGapCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
 use App\Domain\Sync\Commands\SyncSupplierFeedDatesCommand;
@@ -156,8 +157,10 @@ use App\Domain\Sync\Models\SyncRun;
 use App\Domain\Sync\Policies\ImportIssuePolicy;
 use App\Domain\Sync\Policies\SupplierPolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
+use App\Domain\Sync\Services\MysqlSupplierFeedReader;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
+use App\Domain\Sync\Services\SupplierFeedReader;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\Sync\Services\WpRestClient;
@@ -326,6 +329,14 @@ class AppServiceProvider extends ServiceProvider
         // so SupplierDbSyncCommand::buildBestOfferMap shares one cache and triggers
         // AT MOST one query per command run (mirrors SupplierFreshnessResolver).
         $this->app->singleton(SupplierExclusionResolver::class);
+
+        // Quick task 260719-mgp — sourceability-gap probe reads the REMOTE feed
+        // through the SupplierFeedReader seam. Default = live mysqli reader;
+        // tests bind an in-memory fake so classification runs with no VPS.
+        $this->app->bind(
+            SupplierFeedReader::class,
+            MysqlSupplierFeedReader::class,
+        );
     }
 
     /**
@@ -689,6 +700,10 @@ class AppServiceProvider extends ServiceProvider
                 // updates local products.buy_price + stock_quantity. Match key:
                 // LOWER(TRIM(mpn)) preferred, LOWER(TRIM(suppliersku)) fallback.
                 SupplierDbSyncCommand::class,
+                // Quick task 260719-mgp — READ-ONLY sourceability matching-gap
+                // probe: classify why on-Woo products are not in
+                // supplier_sku_cache (matching gap vs discontinued vs absent).
+                ProbeSourceabilityGapCommand::class,
                 // 2026-05-25 — cost-traceability diagnostic: show every supplier
                 // offer for a SKU + which one sets buy_price (cheapest in-stock).
                 ExplainSupplierCostCommand::class,

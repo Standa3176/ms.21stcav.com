@@ -145,6 +145,40 @@ Schedule::command('products:hydrate-stock-from-offers --only-stale=24')
     ->timezone('Europe/London')
     ->description('Hydrate products.stock_quantity from supplier_offer_snapshots (260611-qcq); Mon-Fri 07:20 London');
 
+// Quick task 260721-apr — products:restore-sourceable-pending daily 07:25 London.
+// THE MISSING INVERSE of `supplier:db-sync --flag-obsolete`. The demotion rule
+// ("a product with no current supplier listing moves to pending") is CORRECT and
+// unchanged — but it was a ONE-WAY DOOR: nothing promoted a product back when a
+// supplier listed it again, so the catalogue slowly under-sold (7 such products
+// found on prod 2026-07-21). This closes the loop.
+//
+// SLOT: after supplier:db-sync (07:00) so today's supplier offers + buy_price are
+// fresh, and after products:flag-missing-buy-price (07:15) so a product restored
+// here cannot be re-demoted by the same morning's run (churn-safe). NOT 07:30 —
+// that slot is contended (suggestions:auto-apply); see suppliers:check-stale above.
+// Daily (not Mon-Fri): a weekend run is a harmless no-op because the supplier
+// feeds don't refresh at weekends, and promoting a genuinely sourceable product
+// on a Saturday is still correct.
+//
+// --push-to-woo is REQUIRED for the promote to be effective: Woo MIRRORS the
+// local status, so a local-only restore leaves the product hidden on the
+// storefront. Every push goes through WooClient → the 260719-wth throttle
+// (serialised + rate-limited + paced), so the small daily cohort (~7) cannot
+// burst the shared box.
+//
+// SHADOW NO-OP UNTIL CUTOVER: with WOO_WRITE_ENABLED=false each push records a
+// SyncDiff and performs NO live write, so this entry is behaviourally inert
+// today — it becomes effective the moment WOO_WRITE_ENABLED=true is flipped.
+Schedule::command('products:restore-sourceable-pending', [
+    '--live' => true,
+    '--push-to-woo' => true,
+])
+    ->dailyAt('07:25')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Auto-promote products that became sourceable again — restore to publish + push status to Woo (daily 07:25 London; shadow no-op until WOO_WRITE_ENABLED=true; 260721-apr)');
+
 // Stock-updater parity glue — auto-apply margin_change Suggestions whose delta
 // crosses pricing.auto_apply_threshold_bps (default 800bps = 8pp). Port of
 // the legacy plugin's setPer() rule. Mon-Fri 07:30 London — after the

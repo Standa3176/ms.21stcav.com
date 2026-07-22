@@ -71,6 +71,24 @@ function seedShoppingCandidate(
     return $product;
 }
 
+/**
+ * Run the command and return its console output.
+ *
+ * Uses Artisan::call (NOT $this->artisan) because PendingCommand buffers into
+ * its own output object, leaving Artisan::output() empty — we assert on the
+ * rendered funnel/table text, so we need the real buffer.
+ *
+ * @param  array<string, mixed>  $options
+ */
+function runShoppingCandidates(array $options = [], int $expectedExitCode = 0): string
+{
+    $code = Artisan::call('products:shopping-candidates', $options);
+
+    expect($code)->toBe($expectedExitCode);
+
+    return Artisan::output();
+}
+
 it('prints the eligibility funnel with a per-gate drop count', function (): void {
     seedShoppingCandidate('C-GOOD', 10000, 35000);
     seedShoppingCandidate('C-DRAFT', 10000, 35000, extra: ['status' => 'draft']);
@@ -78,10 +96,7 @@ it('prints the eligibility funnel with a per-gate drop count', function (): void
     seedShoppingCandidate('C-COMPS', 10000, 35000, competitorGrossPences: [40000]);
     seedShoppingCandidate('C-NOGTIN', 10000, 35000, ean: null);
 
-    $this->artisan('products:shopping-candidates')
-        ->assertExitCode(0);
-
-    $output = Artisan::output();
+    $output = runShoppingCandidates();
 
     expect($output)->toContain('Eligibility funnel')
         ->and($output)->toContain('Products scanned')
@@ -97,9 +112,7 @@ it('prints the eligibility funnel with a per-gate drop count', function (): void
 it('states that competitor breadth is a demand proxy needing Keyword Planner validation', function (): void {
     seedShoppingCandidate('C-GOOD', 10000, 35000);
 
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
-
-    $output = Artisan::output();
+    $output = runShoppingCandidates();
 
     expect($output)->toContain('DEMAND PROXY')
         ->and($output)->toContain('Keyword Planner')
@@ -114,7 +127,7 @@ it('writes the full shortlist to --csv with a header row and one row per product
 
     $path = storage_path('app/testing/shopping-candidates-'.uniqid().'.csv');
 
-    $this->artisan('products:shopping-candidates', ['--csv' => $path])->assertExitCode(0);
+    runShoppingCandidates(['--csv' => $path]);
 
     expect(file_exists($path))->toBeTrue();
 
@@ -144,7 +157,7 @@ it('honours --sort for the exported ordering', function (): void {
 
     $path = storage_path('app/testing/shopping-sort-'.uniqid().'.csv');
 
-    $this->artisan('products:shopping-candidates', ['--sort' => 'margin', '--csv' => $path])->assertExitCode(0);
+    runShoppingCandidates(['--sort' => 'margin', '--csv' => $path]);
 
     $rows = array_map('str_getcsv', array_filter(explode("\n", str_replace("\r\n", "\n", trim((string) file_get_contents($path))))));
     expect($rows[1][1])->toBe('S-A');
@@ -153,34 +166,25 @@ it('honours --sort for the exported ordering', function (): void {
 });
 
 it('rejects an unknown --sort value', function (): void {
-    $this->artisan('products:shopping-candidates', ['--sort' => 'bananas'])
-        ->assertExitCode(1);
+    runShoppingCandidates(['--sort' => 'bananas'], expectedExitCode: 1);
 });
 
 it('honours --allow-missing-gtin and flags the affected rows', function (): void {
     seedShoppingCandidate('G-NONE', 10000, 35000, ean: null);
 
-    $this->artisan('products:shopping-candidates', ['--allow-missing-gtin' => true])
-        ->assertExitCode(0);
-
-    expect(Artisan::output())->toContain('G-NONE');
-
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
-
-    expect(Artisan::output())->not->toContain('G-NONE');
+    // Flagged as GTIN-less in the preview table's GTIN column.
+    expect(runShoppingCandidates(['--allow-missing-gtin' => true]))->toContain('G-NONE')
+        ->and(runShoppingCandidates())->not->toContain('G-NONE');
 });
 
 it('honours --min-margin-pence and --min-competitors overrides', function (): void {
     seedShoppingCandidate('O-LOW', 10000, 20000, competitorGrossPences: [40000]);
 
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
-    expect(Artisan::output())->not->toContain('O-LOW');
-
-    $this->artisan('products:shopping-candidates', [
-        '--min-margin-pence' => 9900,
-        '--min-competitors' => 1,
-    ])->assertExitCode(0);
-    expect(Artisan::output())->toContain('O-LOW');
+    expect(runShoppingCandidates())->not->toContain('O-LOW')
+        ->and(runShoppingCandidates([
+            '--min-margin-pence' => 9900,
+            '--min-competitors' => 1,
+        ]))->toContain('O-LOW');
 });
 
 it('is READ-ONLY — issues no insert, update or delete statement', function (): void {
@@ -197,11 +201,11 @@ it('is READ-ONLY — issues no insert, update or delete statement', function ():
         }
     });
 
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
+    runShoppingCandidates();
 
     expect($mutations)->toBe([])
-        ->and(Product::query()->get()->toArray())->toBe($productsBefore)
-        ->and(DB::table('competitor_prices')->get()->toArray())->toBe($competitorPricesBefore);
+        ->and(Product::query()->get()->toArray())->toEqual($productsBefore)
+        ->and(DB::table('competitor_prices')->get()->toArray())->toEqual($competitorPricesBefore);
 });
 
 it('makes no outbound HTTP call (no Woo, no Google)', function (): void {
@@ -213,11 +217,12 @@ it('makes no outbound HTTP call (no Woo, no Google)', function (): void {
         'attributes_json' => [['name' => 'Brand', 'value' => 'Yealink']],
     ]);
 
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
+    $output = runShoppingCandidates();
 
     Http::assertNothingSent();
 
-    expect(Artisan::output())->toContain('Yealink');
+    // Brand resolved from local attributes_json — never from the Woo taxonomy.
+    expect($output)->toContain('Yealink');
 });
 
 it('--live-stock confirms the shortlist against the live fresh-supplier signal', function (): void {
@@ -235,9 +240,7 @@ it('--live-stock confirms the shortlist against the live fresh-supplier signal',
     };
     app()->instance(LiveSupplierStockResolver::class, $fake);
 
-    $this->artisan('products:shopping-candidates', ['--live-stock' => true])->assertExitCode(0);
-
-    $output = Artisan::output();
+    $output = runShoppingCandidates(['--live-stock' => true]);
 
     expect($output)->toContain('LIVE-KEEP')
         ->and($output)->not->toContain('LIVE-DROP');
@@ -246,7 +249,5 @@ it('--live-stock confirms the shortlist against the live fresh-supplier signal',
 it('reports cleanly when nothing is eligible', function (): void {
     seedShoppingCandidate('N-LOW', 10000, 12000);
 
-    $this->artisan('products:shopping-candidates')->assertExitCode(0);
-
-    expect(Artisan::output())->toContain('No eligible');
+    expect(runShoppingCandidates())->toContain('No eligible');
 });

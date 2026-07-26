@@ -30,17 +30,38 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * require operator judgement and are handled via the existing Filament brand-mapping
  * UI, NOT this command.
  *
- * **Canonical selection:** highest Woo `count` DESC, tie-break by lowest term id ASC.
+ * **Canonical selection:** delegated to `BrandDuplicateFinder` — the clean
+ * SLUG-RANK survivor (the tidy slug is the intended canonical; sources are
+ * MOVED onto it, never deleted out from under their products). This replaced the
+ * old "highest Woo `count` DESC" heuristic after the 2026-06-13 incident.
  * Deterministic — re-running produces the same canonical pick, not a flip-flop.
  *
+ * **MANDATORY operator order (do NOT skip step 1):**
+ *   1. `php artisan brands:retag-products-on-woo` — moves the actual Woo
+ *      `product_brand` product membership from each source term onto the
+ *      canonical term. THIS is what empties the source terms on Woo.
+ *   2. `php artisan brands:dedupe --delete-empty-woo-terms` — deletes the
+ *      now-empty source terms.
+ *   Running step 2 WITHOUT step 1 would try to delete terms that still hold
+ *   live Woo products. The 260726-deg emptiness guard (see Phase B below)
+ *   HARD-BLOCKS that: any term the live Woo `products?brand=<id>` read still
+ *   reports as non-empty is skipped, never deleted.
+ *
  * **Two-phase safety:**
- *   - Phase A (reassignment) is SAFE — products always have a valid brand_id
- *     (canonical exists; we move them from source to canonical inside a
- *     DB::transaction per source).
+ *   - Phase A (LOCAL reassignment) is SAFE — products always have a valid
+ *     brand_id (canonical exists; we move them from source to canonical inside a
+ *     DB::transaction per source). NOTE: this only touches the LOCAL
+ *     products.brand_id view, which is single-valued and blind to Woo's
+ *     many-to-many `product_brand` membership.
  *   - Phase B (Woo DELETE) is RISKY — other plugins (Yoast SEO schema, Google
  *     Listings & Ads feed, Flatsome theme overrides) may reference the deleted
- *     term ids. Gated behind `--delete-empty-woo-terms` (default OFF). Operator
- *     runs Phase A alone first, spot-checks storefront, then opts in.
+ *     term ids, AND (260726-bwa) a source term with zero LOCAL products can
+ *     still own hundreds of live Woo products. Gated behind
+ *     `--delete-empty-woo-terms` (default OFF) AND, since 260726-deg, guarded by
+ *     a live per-term emptiness read: the DELETE is impossible to fire against a
+ *     term Woo still reports as non-empty (and fail-safe-skips on any check
+ *     uncertainty). Operator runs `brands:retag-products-on-woo` first, then
+ *     Phase A alone, spot-checks storefront, then opts into the delete.
  *
  * **Idempotence:**
  *   - Re-running on already-deduped state: `groups_found=0` fast path; no writes,
@@ -75,6 +96,16 @@ class DedupeBrandsCommand extends BaseCommand
      * polite by default.
      */
     private const WOO_DELETE_THROTTLE_USEC = 200_000;
+
+    /**
+     * 260726-deg — emptiness-guard verdicts. The Phase-B DELETE is only allowed
+     * when the live Woo `products?brand=<id>` read PROVES the term empty.
+     */
+    private const TERM_EMPTY = 'empty';
+
+    private const TERM_HAS_PRODUCTS = 'has_products';
+
+    private const TERM_CHECK_FAILED = 'check_failed';
 
     protected $signature = 'brands:dedupe
         {--dry-run : Print plan without writes}
@@ -175,6 +206,7 @@ class DedupeBrandsCommand extends BaseCommand
         $productsReassigned = 0;
         $wooTermsDeleted = 0;
         $alreadyDeleted = 0;
+        $skippedNonEmpty = 0;
         $errors = 0;
         /** @var array<string, array{canonical:array{id:int,name:string,count:int}, sources_merged:array<int,int>, products_reassigned:int, woo_terms_deleted:array<int,int>}> $perGroupSummary */
         $perGroupSummary = [];
@@ -246,46 +278,76 @@ class DedupeBrandsCommand extends BaseCommand
                     $sourceId = $source['id'];
                     $sourceName = $source['name'];
 
-                    try {
-                        $this->woo->delete("products/brands/{$sourceId}", ['force' => true]);
-                        $wooTermsDeleted++;
-                        $perGroupSummary[$key]['woo_terms_deleted'][] = $sourceId;
-                        $this->auditor->record('brands.dedupe_woo_term_deleted', [
+                    // ── SAFETY GUARD (260726-deg) ────────────────────────────
+                    // Phase A only reassigns the LOCAL products.brand_id view. Woo
+                    // `product_brand` is many-to-many, so a source term with zero
+                    // local products can still hold hundreds of live Woo products
+                    // (260726-bwa: yealink 285, logitech 176, samsung 163, …). The
+                    // force-delete would strip the brand off every one of them. So
+                    // before deleting, we ask Woo directly whether the term is empty.
+                    $emptiness = $this->wooTermEmptinessStatus($sourceId);
+
+                    if ($emptiness === self::TERM_HAS_PRODUCTS) {
+                        // Proven non-empty — refuse to delete.
+                        $skippedNonEmpty++;
+                        $this->warn("  ! SKIP delete source={$sourceId} ({$sourceName}) — Woo term still holds products");
+                        $this->auditor->record('brands.dedupe_woo_term_not_empty_skipped', [
                             'source_id' => $sourceId,
                             'source_name' => $sourceName,
                             'canonical_id' => $canonicalId,
                         ]);
-                    } catch (\Throwable $e) {
-                        // 404 detection: WP REST returns 404 for terms that no longer
-                        // exist. Code or message-string match — defensive across SDK
-                        // wrappers (HttpClientException carries code via getCode(),
-                        // and rest_term_invalid is the WP REST error key).
-                        $is404 = ((int) $e->getCode() === 404)
-                            || (str_contains($e->getMessage(), 'term does not exist'))
-                            || (str_contains($e->getMessage(), 'rest_term_invalid'));
-
-                        if ($is404) {
-                            $alreadyDeleted++;
-                            $this->line("  already_deleted source={$sourceId}");
-                            $this->auditor->record('brands.dedupe_woo_term_already_deleted', [
+                    } elseif ($emptiness === self::TERM_CHECK_FAILED) {
+                        // Fail-safe: the emptiness read errored (non-404), so we
+                        // CANNOT prove the term empty. Treat as non-empty and skip —
+                        // never delete on uncertainty.
+                        $skippedNonEmpty++;
+                        $this->warn("  ! SKIP delete source={$sourceId} ({$sourceName}) — emptiness check failed, cannot prove empty (fail-safe)");
+                        $this->auditor->record('brands.dedupe_woo_emptiness_check_failed', [
+                            'source_id' => $sourceId,
+                            'source_name' => $sourceName,
+                            'canonical_id' => $canonicalId,
+                        ]);
+                    } else {
+                        // Proven empty (read returned [] or 404 = term already gone).
+                        // Run the existing delete — a 404 here lands on already_deleted,
+                        // the desired idempotent end-state.
+                        try {
+                            $this->woo->delete("products/brands/{$sourceId}", ['force' => true]);
+                            $wooTermsDeleted++;
+                            $perGroupSummary[$key]['woo_terms_deleted'][] = $sourceId;
+                            $this->auditor->record('brands.dedupe_woo_term_deleted', [
                                 'source_id' => $sourceId,
                                 'source_name' => $sourceName,
                                 'canonical_id' => $canonicalId,
                             ]);
-                        } else {
-                            $errors++;
-                            $this->warn("  ! Woo delete failed source={$sourceId}: {$e->getMessage()}");
-                            $this->auditor->record('brands.dedupe_woo_term_error', [
-                                'source_id' => $sourceId,
-                                'source_name' => $sourceName,
-                                'canonical_id' => $canonicalId,
-                                'error' => $e->getMessage(),
-                            ]);
+                        } catch (\Throwable $e) {
+                            // 404 detection: WP REST returns 404 for terms that no longer
+                            // exist. Same idiom shared with the emptiness guard via
+                            // isMissingTermError().
+                            if ($this->isMissingTermError($e)) {
+                                $alreadyDeleted++;
+                                $this->line("  already_deleted source={$sourceId}");
+                                $this->auditor->record('brands.dedupe_woo_term_already_deleted', [
+                                    'source_id' => $sourceId,
+                                    'source_name' => $sourceName,
+                                    'canonical_id' => $canonicalId,
+                                ]);
+                            } else {
+                                $errors++;
+                                $this->warn("  ! Woo delete failed source={$sourceId}: {$e->getMessage()}");
+                                $this->auditor->record('brands.dedupe_woo_term_error', [
+                                    'source_id' => $sourceId,
+                                    'source_name' => $sourceName,
+                                    'canonical_id' => $canonicalId,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
                         }
                     }
 
-                    // Pacing applies whether or not the call succeeded — keeps the
-                    // command polite even when Woo is returning 5xx in a tight loop.
+                    // Pacing applies whether we deleted, skipped, or errored — keeps
+                    // the command polite even when Woo is returning 5xx in a tight
+                    // loop. EXACTLY ONE throttle per source iteration.
                     usleep(self::WOO_DELETE_THROTTLE_USEC);
                 }
             }
@@ -325,6 +387,7 @@ class DedupeBrandsCommand extends BaseCommand
                 ['products_reassigned', $productsReassigned],
                 ['woo_terms_deleted', $wooTermsDeleted],
                 ['already_deleted', $alreadyDeleted],
+                ['skipped_non_empty', $skippedNonEmpty],
                 ['errors', $errors],
             ],
         );
@@ -377,17 +440,27 @@ class DedupeBrandsCommand extends BaseCommand
         if ($deleteEmpty) {
             $this->newLine();
             $this->info('Section 3 — Woo term deletes (--delete-empty-woo-terms):');
+            // 260726-deg — run the SAME live emptiness guard the live path uses so
+            // the operator sees the TRUTH per term (skip vs delete). READ-ONLY: GET
+            // only, zero deletes — dry-run never mutates Woo.
             $rows = [];
             foreach ($plan as $entry) {
                 foreach ($entry['sources'] as $source) {
+                    $status = $this->wooTermEmptinessStatus($source['id']);
+                    [$liveProducts, $willDelete] = match ($status) {
+                        self::TERM_HAS_PRODUCTS => ['≥1 (live)', 'SKIP — term still holds products'],
+                        self::TERM_CHECK_FAILED => ['? (check failed)', 'SKIP — cannot prove empty (fail-safe)'],
+                        default => ['0', 'yes (empty, force=true)'],
+                    };
                     $rows[] = [
                         (string) $source['id'],
                         $source['name'],
-                        'yes (force=true)',
+                        $liveProducts,
+                        $willDelete,
                     ];
                 }
             }
-            $this->table(['Source id', 'Source name', 'Will delete via Woo?'], $rows);
+            $this->table(['Source id', 'Source name', 'Live Woo products', 'Will delete?'], $rows);
         }
     }
 
@@ -402,5 +475,58 @@ class DedupeBrandsCommand extends BaseCommand
         }
 
         return $total;
+    }
+
+    /**
+     * 260726-deg — ask Woo directly whether a `product_brand` term is empty
+     * before letting Phase B delete it.
+     *
+     * The single source of truth is Woo's own membership, NOT the local
+     * products.brand_id view (which is single-valued and blind to the Woo
+     * many-to-many taxonomy — the whole reason the 260726-bwa incident was
+     * possible). READ-ONLY: one GET, zero writes.
+     *
+     * Returns:
+     *   - self::TERM_HAS_PRODUCTS — read returned ≥1 product; DO NOT delete.
+     *   - self::TERM_CHECK_FAILED — read threw a NON-404 error; we cannot prove
+     *     the term empty, so fail-safe (treat as non-empty, DO NOT delete).
+     *   - self::TERM_EMPTY        — read returned [] OR 404 (term already gone);
+     *     deletion is safe (a 404 on the subsequent delete → already_deleted).
+     */
+    private function wooTermEmptinessStatus(int $sourceId): string
+    {
+        try {
+            $products = $this->woo->get('products', [
+                'brand' => $sourceId,
+                'per_page' => 1,
+                'status' => 'any',
+            ]);
+        } catch (\Throwable $e) {
+            // 404 on the emptiness check ⇒ the term no longer exists ⇒ nothing to
+            // protect ⇒ let the existing delete run and land on already_deleted.
+            if ($this->isMissingTermError($e)) {
+                return self::TERM_EMPTY;
+            }
+
+            // Any other failure (5xx, network, WAF) ⇒ we could not prove the term
+            // empty. NEVER delete on uncertainty — fail safe.
+            return self::TERM_CHECK_FAILED;
+        }
+
+        return $products === [] ? self::TERM_EMPTY : self::TERM_HAS_PRODUCTS;
+    }
+
+    /**
+     * 260726-deg — shared 404 / missing-term detection idiom (previously inlined
+     * only in the Phase-B delete catch). WP REST returns 404 for terms that no
+     * longer exist; match on code OR message-string, defensive across SDK
+     * wrappers (HttpClientException carries code via getCode(), and
+     * rest_term_invalid is the WP REST error key).
+     */
+    private function isMissingTermError(\Throwable $e): bool
+    {
+        return ((int) $e->getCode() === 404)
+            || str_contains($e->getMessage(), 'term does not exist')
+            || str_contains($e->getMessage(), 'rest_term_invalid');
     }
 }

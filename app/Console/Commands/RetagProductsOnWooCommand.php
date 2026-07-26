@@ -114,6 +114,7 @@ class RetagProductsOnWooCommand extends BaseCommand
 
     protected $signature = 'brands:retag-products-on-woo
         {--dry-run : Print per-source plan + 20-row sample without writing to Woo}
+        {--allow-shadow : Proceed even when WOO_WRITE_ENABLED=false (writes are shadowed — intentional shadow-testing only)}
         {--source-ids= : Comma-separated source brand ids to scope; default = auto-discover all duplicates}
         {--limit=0 : Global cap on total products processed across all sources (0=unbounded)}
         {--discovery-retries=4 : Attempts for the flaky brands-list discovery read before giving up (both modes)}
@@ -139,6 +140,7 @@ class RetagProductsOnWooCommand extends BaseCommand
     {
         // ── 1. Parse options ─────────────────────────────────────────────────
         $dryRun = (bool) $this->option('dry-run');
+        $allowShadow = (bool) $this->option('allow-shadow');
         $limit = max(0, (int) $this->option('limit'));
         $slow = (bool) $this->option('slow');
         $discoveryRetries = max(1, (int) $this->option('discovery-retries'));
@@ -157,8 +159,36 @@ class RetagProductsOnWooCommand extends BaseCommand
             ),
         ));
 
+        // ── 1b. Shadow-mode guard (260726-slw) ──────────────────────────────
+        // When WOO_WRITE_ENABLED=false, WooClient shadows every write (records a
+        // SyncDiff, no real Woo change). Pre-fix, a LIVE run in that state still
+        // printed "pushed" and counted products_retagged++ — operators got fake
+        // "40 retagged" reports while nothing changed on Woo (the same 40
+        // products reappeared every batch). Refuse a live run in shadow state
+        // BEFORE any discovery/writes unless the operator explicitly opts in with
+        // --allow-shadow (intentional shadow-testing). --dry-run is exempt — it
+        // already writes nothing and is clearly labelled.
+        $writeEnabled = (bool) config('services.woo.write_enabled', false);
+        $shadow = false;
+        if (! $dryRun && ! $writeEnabled) {
+            if (! $allowShadow) {
+                $this->error('REFUSED: WOO_WRITE_ENABLED is false — every Woo write would be SHADOWED (a SyncDiff is recorded but NOTHING changes on Woo). A live run here would falsely report products as retagged while the storefront is untouched.');
+                $this->error('  → Enable WOO_WRITE_ENABLED=true for a real run, OR pass --allow-shadow to intentionally shadow-test (the output will be clearly labelled SHADOW).');
+                $this->auditor->record('brands.retag_refused_shadow_mode', [
+                    'write_enabled' => false,
+                    'allow_shadow' => false,
+                    'slow' => $slow,
+                ]);
+
+                return SymfonyCommand::FAILURE;
+            }
+            // Opted in — proceed but make the shadow nature unmistakable.
+            $shadow = true;
+        }
+
+        $modeTag = $dryRun ? '[dry-run] ' : ($shadow ? '[SHADOW - no live writes] ' : '[LIVE] ');
         $this->info(
-            ($dryRun ? '[dry-run] ' : '[LIVE] ')
+            $modeTag
             .'brands:retag-products-on-woo — source_ids='
             .($explicitSourceIds === [] ? 'auto-discover' : implode(',', $explicitSourceIds))
             .' limit='.($limit === 0 ? 'unbounded' : (string) $limit)
@@ -213,6 +243,7 @@ class RetagProductsOnWooCommand extends BaseCommand
             return $this->runSlow(
                 $sourceToCanonical,
                 $dryRun,
+                $shadow,
                 $limit,
                 $batchSize,
                 $batchPause,
@@ -222,7 +253,7 @@ class RetagProductsOnWooCommand extends BaseCommand
             );
         }
 
-        return $this->runSinglePass($sourceToCanonical, $dryRun, $limit, $sourceNotADuplicate);
+        return $this->runSinglePass($sourceToCanonical, $dryRun, $shadow, $limit, $sourceNotADuplicate);
     }
 
     /**
@@ -260,7 +291,7 @@ class RetagProductsOnWooCommand extends BaseCommand
      *
      * @param  array<int, int>  $sourceToCanonical
      */
-    private function runSinglePass(array $sourceToCanonical, bool $dryRun, int $limit, int $sourceNotADuplicate): int
+    private function runSinglePass(array $sourceToCanonical, bool $dryRun, bool $shadow, int $limit, int $sourceNotADuplicate): int
     {
         $groupsProcessed = 0;
         $productsScanned = 0;
@@ -291,6 +322,7 @@ class RetagProductsOnWooCommand extends BaseCommand
                 $sourceId,
                 $canonicalId,
                 $dryRun,
+                $shadow,
                 self::PRODUCTS_PER_PAGE,
                 0,
                 $limit,
@@ -314,6 +346,7 @@ class RetagProductsOnWooCommand extends BaseCommand
 
         $this->printSummary(
             $dryRun,
+            $shadow,
             $groupsProcessed,
             $productsScanned,
             $productsRetagged,
@@ -340,6 +373,7 @@ class RetagProductsOnWooCommand extends BaseCommand
     private function runSlow(
         array $sourceToCanonical,
         bool $dryRun,
+        bool $shadow,
         int $limit,
         int $batchSize,
         int $batchPause,
@@ -403,6 +437,7 @@ class RetagProductsOnWooCommand extends BaseCommand
                     $sourceId,
                     $canonicalId,
                     $dryRun,
+                    $shadow,
                     $batchSize,
                     $batchSize,
                     $limit,
@@ -465,6 +500,7 @@ class RetagProductsOnWooCommand extends BaseCommand
         // ── Base summary (shared with single-pass) ───────────────────────────
         $this->printSummary(
             $dryRun,
+            $shadow,
             $groupsProcessed,
             $productsScanned,
             $productsRetagged,
@@ -512,6 +548,7 @@ class RetagProductsOnWooCommand extends BaseCommand
         int $sourceId,
         int $canonicalId,
         bool $dryRun,
+        bool $shadow,
         int $perPage,
         int $batchCap,
         int $limit,
@@ -665,14 +702,30 @@ class RetagProductsOnWooCommand extends BaseCommand
                             ),
                         ]);
                         $retagged++;
-                        $this->line("  pushed woo={$wooProductId} sku={$sku} from={$sourceId} to={$canonicalId}");
-                        $this->auditor->record('brands.product_retagged', [
-                            'product_id' => $wooProductId,
-                            'sku' => $sku,
-                            'from_brand_id' => $sourceId,
-                            'to_brand_id' => $canonicalId,
-                            'new_brand_ids' => $newBrandIds,
-                        ]);
+                        // 260726-slw: in shadow mode the WooClient recorded a
+                        // SyncDiff but changed NOTHING on Woo — never print
+                        // "pushed" (that misreports a live success). The audit
+                        // event name also reflects the shadow so the trail is
+                        // truthful.
+                        if ($shadow) {
+                            $this->line("  shadow_write woo={$wooProductId} sku={$sku} from={$sourceId} to={$canonicalId} (SHADOW — no live change)");
+                            $this->auditor->record('brands.product_retag_shadowed', [
+                                'product_id' => $wooProductId,
+                                'sku' => $sku,
+                                'from_brand_id' => $sourceId,
+                                'to_brand_id' => $canonicalId,
+                                'new_brand_ids' => $newBrandIds,
+                            ]);
+                        } else {
+                            $this->line("  pushed woo={$wooProductId} sku={$sku} from={$sourceId} to={$canonicalId}");
+                            $this->auditor->record('brands.product_retagged', [
+                                'product_id' => $wooProductId,
+                                'sku' => $sku,
+                                'from_brand_id' => $sourceId,
+                                'to_brand_id' => $canonicalId,
+                                'new_brand_ids' => $newBrandIds,
+                            ]);
+                        }
 
                         // 200ms throttle between successful live PUTs only —
                         // skipped on errors / already_canonical / dry-run.
@@ -755,6 +808,7 @@ class RetagProductsOnWooCommand extends BaseCommand
      */
     private function printSummary(
         bool $dryRun,
+        bool $shadow,
         int $groupsProcessed,
         int $productsScanned,
         int $productsRetagged,
@@ -766,13 +820,23 @@ class RetagProductsOnWooCommand extends BaseCommand
         array $perSource,
         array $sample,
     ): void {
+        // 260726-slw: the "retagged" counter is labelled by mode so a shadow run
+        // is never misreported as live successes. dry-run → would_retag;
+        // shadow → would_retag_shadow; live → products_retagged.
+        $retagLabel = match (true) {
+            $dryRun => 'would_retag',
+            $shadow => 'would_retag_shadow',
+            default => 'products_retagged',
+        };
+        $retagValue = $dryRun ? $wouldRetag : $productsRetagged;
+
         $this->newLine();
         $this->table(
             ['Outcome', 'Count'],
             [
                 ['groups_processed', $groupsProcessed],
                 ['products_scanned', $productsScanned],
-                [$dryRun ? 'would_retag' : 'products_retagged', $dryRun ? $wouldRetag : $productsRetagged],
+                [$retagLabel, $retagValue],
                 ['already_canonical', $alreadyCanonical],
                 ['errors', $errors],
                 ['no_products_on_woo', $noProductsOnWoo],

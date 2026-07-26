@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Console\Support\Sleeper;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Facades\Artisan;
 use Spatie\Activitylog\Models\Activity;
@@ -35,6 +36,13 @@ use Spatie\Activitylog\Models\Activity;
 beforeEach(function (): void {
     // Default stub binding — each test re-binds with its own fixture if needed.
     bindRetagWooStub([], []);
+
+    // 260726-slw: bind a recording no-op Sleeper so NO test ever really waits —
+    // covers the per-PUT throttle (usleep), the slow-mode inter-batch pause, and
+    // the discovery retry backoff. Tests that assert backoff timing grab this
+    // instance via app(Sleeper::class). Mirrors WooRateLimitTest's sleepMicros
+    // isolation.
+    bindRecordingSleeper();
 });
 
 it('Case A: 5 products tagged only [source] → 5 PUTs all targeting canonical', function (): void {
@@ -626,6 +634,376 @@ it('Case M: DRY-RUN over a non-draining source emits exactly N plan rows (proces
     ));
     expect(count($brand41Gets))->toBe(2);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 260726-slw — brands:retag-products-on-woo --slow (unattended, flaky-endpoint-
+// hardened). Cases N-S cover the two new capabilities: discovery retry-with-
+// backoff (both modes) and the --slow self-pacing multi-batch driver.
+// ─────────────────────────────────────────────────────────────────────────────
+
+it('Case N: discovery retry — finder throws twice then succeeds ⇒ command proceeds (retried, not aborted)', function (): void {
+    // The brands-list read (products/brands) is the flaky call. Throw on the
+    // first 2 reads, succeed on the 3rd. BrandDuplicateFinder.discover() calls
+    // woo->get('products/brands') so a throw there == discover() throwing.
+    $stub = new class extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public array $getCalls = [];
+
+        public array $putCalls = [];
+
+        /** @var array<int, array<string,mixed>> remaining products on source=11 */
+        public array $remaining;
+
+        public function __construct()
+        {
+            $this->remaining = [
+                ['id' => 5001, 'sku' => 'N-1', 'brands' => [['id' => 11]]],
+                ['id' => 5002, 'sku' => 'N-2', 'brands' => [['id' => 11]]],
+            ];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+                if ($this->brandsListCalls <= 2) {
+                    throw new RuntimeException('JSON ERROR: Syntax error', 0);
+                }
+
+                return [
+                    ['id' => 10, 'name' => 'Yealink', 'count' => 500, 'slug' => 'yealink'],
+                    ['id' => 11, 'name' => 'yealink', 'count' => 2, 'slug' => 'yealink-brand'],
+                ];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                return array_values($this->remaining);
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+            if (preg_match('#^products/(\d+)$#', $endpoint, $m)) {
+                $id = (int) $m[1];
+                // Retag moves the product off source=11 → it drops out of the filter.
+                $this->remaining = array_values(array_filter(
+                    $this->remaining,
+                    static fn (array $p): bool => (int) $p['id'] !== $id,
+                ));
+            }
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo');
+
+    expect($exit)->toBe(0);
+    // 3 brands-list reads: 2 failures + 1 success → command proceeded.
+    expect($stub->brandsListCalls)->toBe(3);
+    // Both source products retagged onto canonical.
+    expect($stub->putCalls)->toHaveCount(2);
+
+    // Backoff slept twice via the injected sleeper: 3s then 6s (default 3000ms base).
+    $sleeper = app(Sleeper::class);
+    expect($sleeper->sleptMicros)->toBe([3_000_000, 6_000_000]);
+});
+
+it('Case O: discovery exhausted — finder throws on all attempts ⇒ FAILURE after --discovery-retries tries', function (): void {
+    $stub = new class extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public array $putCalls = [];
+
+        public function __construct() {}
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+                throw new RuntimeException('JSON ERROR: Syntax error', 0);
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', ['--discovery-retries' => 3]);
+
+    expect($exit)->toBe(1); // SymfonyCommand::FAILURE
+    expect($stub->brandsListCalls)->toBe(3); // exactly --discovery-retries attempts
+    expect($stub->putCalls)->toBe([]);
+
+    expect(Activity::query()->where('description', 'brands.retag_discovery_failed')->count())->toBe(1);
+
+    // Backoff slept between attempts 1→2 and 2→3 only (never after the final try).
+    $sleeper = app(Sleeper::class);
+    expect($sleeper->sleptMicros)->toBe([3_000_000, 6_000_000]);
+});
+
+it('Case P: --slow drains a 90-product source in batches of 40, discovers ONCE, retags all 90', function (): void {
+    // 90 products on source=11. per_page=batch-size=40. Each PUT moves a product
+    // off source=11 (models the shrinking WC ?brand filter). discover() must be
+    // called exactly once up front — NOT re-run per batch.
+    $remaining = [];
+    for ($i = 1; $i <= 90; $i++) {
+        $remaining[] = ['id' => 5000 + $i, 'sku' => "P-{$i}", 'brands' => [['id' => 11]]];
+    }
+
+    $stub = new class(['remaining' => $remaining]) extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public array $getCalls = [];
+
+        public array $putCalls = [];
+
+        public array $remaining;
+
+        public function __construct(array $config)
+        {
+            $this->remaining = $config['remaining'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+
+                return [
+                    ['id' => 10, 'name' => 'Samsung', 'count' => 500, 'slug' => 'samsung'],
+                    ['id' => 11, 'name' => 'samsung', 'count' => 90, 'slug' => 'samsung-brand'],
+                ];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                $perPage = (int) ($query['per_page'] ?? 100);
+
+                return array_slice(array_values($this->remaining), 0, $perPage);
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+            if (preg_match('#^products/(\d+)$#', $endpoint, $m)) {
+                $id = (int) $m[1];
+                $this->remaining = array_values(array_filter(
+                    $this->remaining,
+                    static fn (array $p): bool => (int) $p['id'] !== $id,
+                ));
+            }
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', [
+        '--slow' => true,
+        '--batch-size' => 40,
+    ]);
+
+    expect($exit)->toBe(0);
+    // discover() ran ONCE up front — the flaky brands-list read is NOT re-hit per batch.
+    expect($stub->brandsListCalls)->toBe(1);
+    // All 90 retagged cumulatively across the 3 batches (40 + 40 + 10).
+    expect($stub->putCalls)->toHaveCount(90);
+    expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(90);
+
+    // Every batch was clean (error_rate 0, no read error) → pause stays at the
+    // --batch-pause default of 120s every time. 3 batches → 3 recorded pauses.
+    $sleeper = app(Sleeper::class);
+    expect($sleeper->sleptSeconds)->toBe([120, 120, 120]);
+});
+
+it('Case Q: drained-vs-error — a batch whose products GET throws does NOT drain the source; it is retried on a later pass and the pause doubles', function (): void {
+    // Source=11 has 40 products. The FIRST products read throws (JSON/timeout);
+    // subsequent reads succeed. The transient read failure must NOT finish the
+    // source — it stays active and a later pass drains it. It must also trigger
+    // the longer adaptive pause (120 → 240), which then RESETS to 120 after the
+    // next clean batch.
+    $remaining = [];
+    for ($i = 1; $i <= 40; $i++) {
+        $remaining[] = ['id' => 6000 + $i, 'sku' => "Q-{$i}", 'brands' => [['id' => 11]]];
+    }
+
+    $stub = new class(['remaining' => $remaining]) extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public int $productReadCalls = 0;
+
+        public array $putCalls = [];
+
+        public array $remaining;
+
+        public function __construct(array $config)
+        {
+            $this->remaining = $config['remaining'];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+
+                return [
+                    ['id' => 10, 'name' => 'Logitech', 'count' => 500, 'slug' => 'logitech'],
+                    ['id' => 11, 'name' => 'logitech', 'count' => 40, 'slug' => 'logitech-brand'],
+                ];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                $this->productReadCalls++;
+                if ($this->productReadCalls === 1) {
+                    throw new RuntimeException('JSON ERROR: Syntax error', 0);
+                }
+                $perPage = (int) ($query['per_page'] ?? 100);
+
+                return array_slice(array_values($this->remaining), 0, $perPage);
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+            if (preg_match('#^products/(\d+)$#', $endpoint, $m)) {
+                $id = (int) $m[1];
+                $this->remaining = array_values(array_filter(
+                    $this->remaining,
+                    static fn (array $p): bool => (int) $p['id'] !== $id,
+                ));
+            }
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', [
+        '--slow' => true,
+        '--batch-size' => 40,
+        '--batch-pause' => 120,
+        '--max-pause' => 600,
+    ]);
+
+    expect($exit)->toBe(0);
+    expect($stub->brandsListCalls)->toBe(1); // discover once despite the read error
+
+    // The read error did NOT finish the source — it was retried and all 40 retagged.
+    expect($stub->putCalls)->toHaveCount(40);
+    expect(Activity::query()->where('description', 'brands.product_retagged')->count())->toBe(40);
+    // The failed products GET was audited.
+    expect(Activity::query()->where('description', 'brands.retag_pagination_failed')->count())->toBe(1);
+
+    // Pause progression: batch1 read-error → double to 240; batch2 clean → reset to
+    // 120; batch3 clean drain → 120.
+    $sleeper = app(Sleeper::class);
+    expect($sleeper->sleptSeconds)->toBe([240, 120, 120]);
+});
+
+it('Case R: --max-batches cap stops a non-draining loop and the summary warns', function (): void {
+    // Source=11 never drains — every read returns a brand-new product id, so the
+    // loop would run forever without the --max-batches backstop.
+    $stub = new class extends WooClient
+    {
+        public int $seq = 0;
+
+        public array $putCalls = [];
+
+        public function __construct() {}
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            if ($endpoint === 'products/brands') {
+                return [
+                    ['id' => 10, 'name' => 'Barco', 'count' => 500, 'slug' => 'barco'],
+                    ['id' => 11, 'name' => 'barco', 'count' => 999, 'slug' => 'barco-brand'],
+                ];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                $this->seq++;
+
+                return [['id' => 70000 + $this->seq, 'sku' => "R-{$this->seq}", 'brands' => [['id' => 11]]]];
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', [
+        '--slow' => true,
+        '--batch-size' => 1,
+        '--max-batches' => 3,
+    ]);
+
+    expect($exit)->toBe(0);
+    // Exactly --max-batches batches ran, one product each.
+    expect($stub->putCalls)->toHaveCount(3);
+
+    $output = Artisan::output();
+    expect($output)->toContain('batch cap');
+
+    // Loop stopped on the cap, not on draining.
+    expect(Activity::query()->where('description', 'brands.retag_slow_batch_cap')->count())->toBe(1);
+});
+
+/**
+ * Bind a recording no-op Sleeper into the container so tests never wait AND can
+ * assert the exact durations the command requested (adaptive-backoff coverage).
+ */
+function bindRecordingSleeper(): object
+{
+    $sleeper = new class extends Sleeper
+    {
+        /** @var array<int, int> whole-second pauses requested (slow-mode batches) */
+        public array $sleptSeconds = [];
+
+        /** @var array<int, int> microsecond pauses requested (throttle + discovery backoff) */
+        public array $sleptMicros = [];
+
+        public function seconds(int $seconds): void
+        {
+            $this->sleptSeconds[] = $seconds;
+        }
+
+        public function micros(int $micros): void
+        {
+            $this->sleptMicros[] = $micros;
+        }
+    };
+
+    app()->instance(Sleeper::class, $sleeper);
+
+    return $sleeper;
+}
 
 /**
  * Bind an anonymous-subclass WooClient stub into the container.

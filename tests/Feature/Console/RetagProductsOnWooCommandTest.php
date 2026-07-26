@@ -34,6 +34,14 @@ use Spatie\Activitylog\Models\Activity;
 */
 
 beforeEach(function (): void {
+    // 260726-slw shadow-guard: the command REFUSES a live run when
+    // services.woo.write_enabled is false (writes would be shadowed — nothing
+    // changes on Woo — yet the pre-fix command still printed "pushed"). The
+    // config default is false, so default the test env to true here; the
+    // live-write cases (A-R) all assume a real write path. Shadow-guard cases
+    // (S/T/V) override to false explicitly.
+    config(['services.woo.write_enabled' => true]);
+
     // Default stub binding — each test re-binds with its own fixture if needed.
     bindRetagWooStub([], []);
 
@@ -975,6 +983,180 @@ it('Case R: --max-batches cap stops a non-draining loop and the summary warns', 
 
     // Loop stopped on the cap, not on draining.
     expect(Activity::query()->where('description', 'brands.retag_slow_batch_cap')->count())->toBe(1);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 260726-slw (shadow-guard) — a live run with WOO_WRITE_ENABLED=false shadows
+// every write (SyncDiff recorded, nothing changes on Woo). The command must NOT
+// misreport shadow writes as "pushed" / products_retagged. Cases S-V.
+// ─────────────────────────────────────────────────────────────────────────────
+
+it('Case S: NOT --dry-run + write_enabled=false + no --allow-shadow → FAILURE before discovery, no writes, audited', function (): void {
+    config(['services.woo.write_enabled' => false]);
+
+    $stub = new class extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public array $putCalls = [];
+
+        public function __construct() {}
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+
+                return [
+                    ['id' => 10, 'name' => 'Yealink', 'count' => 500, 'slug' => 'yealink'],
+                    ['id' => 11, 'name' => 'yealink', 'count' => 40, 'slug' => 'yealink-brand'],
+                ];
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo');
+
+    expect($exit)->toBe(1); // SymfonyCommand::FAILURE
+    // Refused BEFORE any discovery or writes.
+    expect($stub->brandsListCalls)->toBe(0);
+    expect($stub->putCalls)->toBe([]);
+
+    expect(Activity::query()->where('description', 'brands.retag_refused_shadow_mode')->count())->toBe(1);
+
+    $output = Artisan::output();
+    expect($output)->toContain('WOO_WRITE_ENABLED');
+});
+
+it('Case T: write_enabled=false + --allow-shadow → runs, labelled SHADOW, counter is would_retag_shadow (never "pushed")', function (): void {
+    config(['services.woo.write_enabled' => false]);
+
+    // Shadow model: put() records but does NOT move the product off the source
+    // brand (nothing really changes on Woo). processed-id dedup drains it.
+    $stub = new class extends WooClient
+    {
+        public int $brandsListCalls = 0;
+
+        public array $putCalls = [];
+
+        public array $products;
+
+        public function __construct()
+        {
+            $this->products = [
+                ['id' => 5001, 'sku' => 'T-1', 'brands' => [['id' => 11]]],
+                ['id' => 5002, 'sku' => 'T-2', 'brands' => [['id' => 11]]],
+            ];
+        }
+
+        public function get(string $endpoint, array $query = []): array
+        {
+            if ($endpoint === 'products/brands') {
+                $this->brandsListCalls++;
+
+                return [
+                    ['id' => 10, 'name' => 'Yealink', 'count' => 500, 'slug' => 'yealink'],
+                    ['id' => 11, 'name' => 'yealink', 'count' => 2, 'slug' => 'yealink-brand'],
+                ];
+            }
+            if ($endpoint === 'products' && (int) ($query['brand'] ?? 0) === 11) {
+                return $this->products; // shadow: never shrinks
+            }
+
+            return [];
+        }
+
+        public function put(string $endpoint, array $payload): array
+        {
+            $this->putCalls[] = ['endpoint' => $endpoint, 'payload' => $payload];
+
+            return ['id' => 0];
+        }
+    };
+    app()->instance(WooClient::class, $stub);
+
+    $exit = Artisan::call('brands:retag-products-on-woo', ['--allow-shadow' => true]);
+
+    expect($exit)->toBe(0);
+    expect($stub->brandsListCalls)->toBe(1); // proceeded past discovery
+
+    $output = Artisan::output();
+    expect($output)->toContain('[SHADOW');
+    expect($output)->toContain('would_retag_shadow');
+    // Must NOT misreport shadow writes as live successes.
+    expect($output)->not->toContain('pushed woo=');
+    expect($output)->not->toContain('products_retagged');
+});
+
+it('Case U: write_enabled=true → normal live path unchanged (guard does not trip)', function (): void {
+    // beforeEach already sets write_enabled=true; assert the live path is intact.
+    $stub = bindRetagWooStub(
+        brandsByPage: [
+            1 => [
+                ['id' => 10, 'name' => 'Poly', 'count' => 50],
+                ['id' => 11, 'name' => 'poly', 'count' => 2],
+            ],
+        ],
+        productsByBrandByPage: [
+            11 => [
+                1 => [
+                    ['id' => 5001, 'sku' => 'U-1', 'brands' => [['id' => 11]]],
+                    ['id' => 5002, 'sku' => 'U-2', 'brands' => [['id' => 11]]],
+                ],
+            ],
+        ],
+    );
+
+    $exit = Artisan::call('brands:retag-products-on-woo');
+
+    expect($exit)->toBe(0);
+    expect($stub->putCalls)->toHaveCount(2);
+
+    $output = Artisan::output();
+    expect($output)->toContain('pushed woo=');
+    expect($output)->not->toContain('[SHADOW');
+    expect(Activity::query()->where('description', 'brands.retag_refused_shadow_mode')->count())->toBe(0);
+});
+
+it('Case V: --dry-run + write_enabled=false → still works, no guard trip (dry-run writes nothing anyway)', function (): void {
+    config(['services.woo.write_enabled' => false]);
+
+    $stub = bindRetagWooStub(
+        brandsByPage: [
+            1 => [
+                ['id' => 10, 'name' => 'Poly', 'count' => 50],
+                ['id' => 11, 'name' => 'poly', 'count' => 2],
+            ],
+        ],
+        productsByBrandByPage: [
+            11 => [
+                1 => [
+                    ['id' => 5001, 'sku' => 'V-1', 'brands' => [['id' => 11]]],
+                    ['id' => 5002, 'sku' => 'V-2', 'brands' => [['id' => 11]]],
+                ],
+            ],
+        ],
+    );
+
+    $exit = Artisan::call('brands:retag-products-on-woo', ['--dry-run' => true]);
+
+    expect($exit)->toBe(0);
+    expect($stub->putCalls)->toBe([]);
+
+    $output = Artisan::output();
+    expect($output)->toContain('[dry-run]');
+    expect($output)->toContain('would_retag');
+    expect(Activity::query()->where('description', 'brands.retag_refused_shadow_mode')->count())->toBe(0);
 });
 
 /**

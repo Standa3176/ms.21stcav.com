@@ -5,6 +5,8 @@ date: 2026-07-26
 commits:
   - 30baf87  # test(RED): failing tests + Sleeper seam
   - 9f39e52  # feat(GREEN): --slow driver + discovery retry
+  - fb7484f  # test(RED): shadow-mode write guard
+  - 788cc64  # fix(GREEN): refuse/label shadow writes
 status: completed
 ---
 
@@ -72,9 +74,9 @@ non-slow code path are unchanged — `--slow` only orchestrates repeated batches
 
 ## Tests / gates
 
-- **pest** — `RetagProductsOnWooCommandTest`: **18 passed** (13 existing A–M kept
-  green + 5 new N–R), 91 assertions, ~12s (was ~177s — the throttle now routes
-  through the no-op sleeper in tests, no real waiting).
+- **pest** — `RetagProductsOnWooCommandTest`: **22 passed** (13 existing A–M kept
+  green + 5 new N–R + 4 shadow-guard S–V), 112 assertions, ~14s (was ~177s — the
+  throttle now routes through the no-op sleeper in tests, no real waiting).
   - Case N: discovery throws twice then succeeds ⇒ proceeds; backoff = [3s, 6s].
   - Case O: discovery throws on all `--discovery-retries=3` tries ⇒ FAILURE.
   - Case P: 90-product source, `--batch-size=40` drains in 3 batches; `discover()`
@@ -84,11 +86,40 @@ non-slow code path are unchanged — `--slow` only orchestrates repeated batches
     `brands.retag_pagination_failed` audited once.
   - Case R: non-draining source + `--max-batches=3` stops after 3 batches, summary
     warns, `brands.retag_slow_batch_cap` audited.
+  - Case S: not-dry-run + `write_enabled=false` + no `--allow-shadow` ⇒ FAILURE
+    with `brandsListCalls === 0` (refused BEFORE discovery), no writes,
+    `brands.retag_refused_shadow_mode` audited.
+  - Case T: `write_enabled=false` + `--allow-shadow` ⇒ proceeds, output contains
+    `[SHADOW` and `would_retag_shadow`, and NEVER `pushed woo=` / `products_retagged`.
+  - Case U: `write_enabled=true` ⇒ live path unchanged (`pushed`, no `[SHADOW`).
+  - Case V: `--dry-run` + `write_enabled=false` ⇒ no guard trip, dry-run unchanged.
 - **pint** — pass (3 changed files).
 - **vendor/bin/deptrac analyse** — 0 violations.
 - **php artisan route:list --path=admin** — exit 0.
 
 No real network, no real sleeping — stubbed WooClient + injected recording Sleeper.
+
+### 3. Shadow-mode write guard (post-review bug fix)
+
+**Bug found in live use:** with `WOO_WRITE_ENABLED=false`, `WooClient` shadows
+every write (records a `SyncDiff`, changes nothing on Woo) — but the command
+still printed `pushed` and counted `products_retagged++`. Operators ran it with
+the flag off and got fake "40 retagged" reports while nothing changed on the
+storefront (the same 40 products reappeared every batch).
+
+- New `--allow-shadow` option (default false) for intentional shadow testing.
+- `perform()` reads `config('services.woo.write_enabled')` **once up front**
+  (before any discovery or writes). When NOT `--dry-run` and writes are shadowed
+  and `--allow-shadow` was NOT passed → prominent `error()` explaining the flag is
+  off (writes would be shadowed, nothing changes on Woo), audit
+  `brands.retag_refused_shadow_mode`, and `return SymfonyCommand::FAILURE`
+  immediately.
+- With `--allow-shadow` + `write_enabled=false`: run proceeds but is unmistakably
+  shadow — header shows `[SHADOW - no live writes]`, each product logs
+  `shadow_write …` (never `pushed`), audit event is `brands.product_retag_shadowed`,
+  and the summary counter is labelled `would_retag_shadow` (not `products_retagged`).
+- Applies in BOTH normal and `--slow` modes (checked once in `perform()`).
+- `--dry-run` is exempt (already writes nothing and is clearly labelled).
 
 ## Operator run instructions
 
@@ -133,3 +164,11 @@ php artisan brands:dedupe --delete-empty-woo-terms
 
 There was no pre-existing "discovery-failure test" to update — the retag suite had
 no discovery-failure case, so Cases N/O add that coverage fresh.
+
+- **[Test env] `beforeEach` now defaults `services.woo.write_enabled` to true.**
+  The config default is `false`, and the pre-existing live-write cases (A–R) only
+  passed because the stub `WooClient` bypasses the parent constructor (never
+  checks the flag). The new shadow guard reads the config directly, so without
+  this default every live-write case would trip the guard and fail. Shadow-guard
+  cases S/T/V override to `false` explicitly. This matches the coordinator's
+  instruction to default the test env to `write_enabled=true` for live-write cases.

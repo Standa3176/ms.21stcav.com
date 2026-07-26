@@ -341,15 +341,200 @@ it('Case J: DB::transaction rollback on per-source UPDATE failure — batch cont
     expect(Activity::query()->where('description', 'brands.dedupe_reassigned')->count())->toBe(1);
 });
 
+/*
+|--------------------------------------------------------------------------
+| Quick task 260726-deg — fail-safe live Woo emptiness guard (Phase B)
+|--------------------------------------------------------------------------
+|
+| The 260726-bwa audit proved the LOCAL products.brand_id view cannot see Woo
+| product_brand many-to-many membership: a source term with 0 local products can
+| still hold hundreds of live Woo products. Phase B must NEVER delete a term the
+| live Woo `products?brand=<id>` read still reports as non-empty.
+|
+|   K — non-empty Woo term is NOT deleted: skipped_non_empty=1, no delete call,
+|       brands.dedupe_woo_term_not_empty_skipped audit row (RED-first).
+|   L — empty Woo term IS still deleted exactly as today (regression).
+|   M — emptiness check throws NON-404 ⇒ fail-safe skip (never delete when we
+|       cannot prove empty): brands.dedupe_woo_emptiness_check_failed, no delete.
+|   N — emptiness check 404 (term already gone) ⇒ delete proceeds ⇒ existing
+|       already_deleted path still works.
+|   O — --dry-run performs GET reads but ZERO deletes, and Section 3 reflects
+|       skip-vs-delete per term.
+*/
+
+it('Case K: non-empty Woo term is NOT deleted (skipped_non_empty + audit, no delete call)', function (): void {
+    $stub = bindWooBrandsStub(
+        [
+            1 => [
+                ['id' => 10, 'name' => 'Yealink', 'count' => 285],
+                ['id' => 11, 'name' => 'yealink', 'count' => 0],
+            ],
+        ],
+        // Live Woo still returns a product for the source term id=11 despite
+        // Phase A having "reassigned" it locally (many-to-many membership).
+        productsByBrand: [11 => [['id' => 9001]]],
+    );
+
+    // Locally there are zero products on id=11 (the trap: local view says "empty").
+    $exit = Artisan::call('brands:dedupe', ['--delete-empty-woo-terms' => true]);
+
+    expect($exit)->toBe(0);
+
+    // HARD SAFETY INVARIANT: no DELETE against the still-populated source term.
+    $deleteEndpoints = array_map(static fn (array $c): string => $c['endpoint'], $stub->deleteCalls);
+    expect($deleteEndpoints)->not->toContain('products/brands/11');
+    expect($stub->deleteCalls)->toBe([]);
+
+    // Skip counter + audit row.
+    $output = Artisan::output();
+    expect($output)->toContain('skipped_non_empty');
+
+    $skipRow = Activity::query()
+        ->where('description', 'brands.dedupe_woo_term_not_empty_skipped')
+        ->first();
+    expect($skipRow)->not->toBeNull();
+    expect($skipRow->properties['source_id'])->toBe(11);
+    expect($skipRow->properties['canonical_id'])->toBe(10);
+
+    // The term was NOT counted as deleted.
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_deleted')->count())->toBe(0);
+});
+
+it('Case L: empty Woo term is still deleted exactly as today (regression)', function (): void {
+    $stub = bindWooBrandsStub(
+        [
+            1 => [
+                ['id' => 10, 'name' => 'Poly', 'count' => 50],
+                ['id' => 11, 'name' => 'poly', 'count' => 3],
+            ],
+        ],
+        // No productsByBrand entry ⇒ live Woo read returns [] ⇒ proven empty ⇒ delete.
+    );
+
+    seedProductsWithBrand(11, 3, 'L-poly');
+
+    $exit = Artisan::call('brands:dedupe', ['--delete-empty-woo-terms' => true]);
+
+    expect($exit)->toBe(0);
+    expect(DB::table('products')->where('brand_id', 10)->count())->toBe(3);
+
+    // Delete fired exactly once, with force=true, against the empty term.
+    expect($stub->deleteCalls)->toHaveCount(1);
+    expect($stub->deleteCalls[0]['endpoint'])->toBe('products/brands/11');
+    expect($stub->deleteCalls[0]['payload'])->toBe(['force' => true]);
+
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_deleted')->count())->toBe(1);
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_not_empty_skipped')->count())->toBe(0);
+});
+
+it('Case M: emptiness check throws NON-404 ⇒ fail-safe skip (never delete when unproven empty)', function (): void {
+    $stub = bindWooBrandsStub(
+        [
+            1 => [
+                ['id' => 10, 'name' => 'Logitech', 'count' => 176],
+                ['id' => 11, 'name' => 'logitech', 'count' => 0],
+            ],
+        ],
+        emptinessCheckBehaviour: [11 => '5xx'],
+    );
+
+    $exit = Artisan::call('brands:dedupe', ['--delete-empty-woo-terms' => true]);
+
+    expect($exit)->toBe(0);
+
+    // Fail-safe: no delete when the guard read could not prove the term empty.
+    expect($stub->deleteCalls)->toBe([]);
+
+    $failRow = Activity::query()
+        ->where('description', 'brands.dedupe_woo_emptiness_check_failed')
+        ->first();
+    expect($failRow)->not->toBeNull();
+    expect($failRow->properties['source_id'])->toBe(11);
+
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_deleted')->count())->toBe(0);
+
+    $output = Artisan::output();
+    expect($output)->toContain('skipped_non_empty');
+});
+
+it('Case N: emptiness check 404 (term gone) ⇒ delete proceeds ⇒ already_deleted path preserved', function (): void {
+    $stub = bindWooBrandsStub(
+        [
+            1 => [
+                ['id' => 10, 'name' => 'Samsung', 'count' => 163],
+                ['id' => 11, 'name' => 'samsung', 'count' => 0],
+            ],
+        ],
+        deleteBehaviour: [11 => '404'],
+        emptinessCheckBehaviour: [11 => '404'],
+    );
+
+    $exit = Artisan::call('brands:dedupe', ['--delete-empty-woo-terms' => true]);
+
+    expect($exit)->toBe(0);
+
+    // 404 on the check ⇒ treat as empty ⇒ the existing delete runs (and 404s).
+    expect($stub->deleteCalls)->toHaveCount(1);
+    expect($stub->deleteCalls[0]['endpoint'])->toBe('products/brands/11');
+
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_already_deleted')->count())->toBe(1);
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_emptiness_check_failed')->count())->toBe(0);
+    expect(Activity::query()->where('description', 'brands.dedupe_woo_term_not_empty_skipped')->count())->toBe(0);
+});
+
+it('Case O: --dry-run performs GET reads but ZERO deletes, and Section 3 reflects skip-vs-delete', function (): void {
+    $stub = bindWooBrandsStub(
+        [
+            1 => [
+                // Group 1: non-empty source 11 ⇒ Section 3 must show SKIP.
+                ['id' => 10, 'name' => 'Yealink', 'count' => 285],
+                ['id' => 11, 'name' => 'yealink', 'count' => 0],
+                // Group 2: empty source 21 ⇒ Section 3 must show a delete.
+                ['id' => 20, 'name' => 'Bose', 'count' => 30],
+                ['id' => 21, 'name' => 'bose', 'count' => 2],
+            ],
+        ],
+        productsByBrand: [11 => [['id' => 9001]]],
+    );
+
+    seedProductsWithBrand(11, 0, 'O-noop'); // no-op, keeps intent explicit
+    seedProductsWithBrand(21, 2, 'O-bose');
+
+    $exit = Artisan::call('brands:dedupe', ['--dry-run' => true, '--delete-empty-woo-terms' => true]);
+
+    expect($exit)->toBe(0);
+
+    // Dry-run is READ-ONLY: guard GET reads happen, but ZERO deletes.
+    expect($stub->deleteCalls)->toBe([]);
+    $productReads = array_filter(
+        $stub->getCalls,
+        static fn (array $c): bool => $c['endpoint'] === 'products',
+    );
+    expect($productReads)->not->toBe([]);
+
+    // No writes / no audit rows in dry-run.
+    expect(Activity::query()->where('description', 'like', 'brands.dedupe_%')->count())->toBe(0);
+
+    $output = Artisan::output();
+    expect($output)->toContain('Section 3 — Woo term deletes');
+    expect($output)->toContain('SKIP');
+});
+
 /**
  * Bind an anonymous-subclass WooClient stub into the container.
  *
  * @param  array<int, array<int, array{id:int,name:string,count:int}>>  $brandsByPage  page number => list of brand rows
  * @param  array<int, 'ok'|'404'|'5xx'>  $deleteBehaviour  source_id => per-call delete outcome
+ * @param  array<int, array<int, array{id:int}>>  $productsByBrand  source_id => LIVE Woo product rows returned by the emptiness guard read (`products?brand=<id>`)
+ * @param  array<int, '404'|'5xx'>  $emptinessCheckBehaviour  source_id => make the guard `products?brand=<id>` read THROW (404 = term gone, 5xx = non-404 uncertainty)
  */
-function bindWooBrandsStub(array $brandsByPage, array $deleteBehaviour = []): object
-{
-    $stub = new class($brandsByPage, $deleteBehaviour) extends WooClient
+function bindWooBrandsStub(
+    array $brandsByPage,
+    array $deleteBehaviour = [],
+    array $productsByBrand = [],
+    array $emptinessCheckBehaviour = [],
+): object {
+    $stub = new class($brandsByPage, $deleteBehaviour, $productsByBrand, $emptinessCheckBehaviour) extends WooClient
     {
         /** @var array<int, array{endpoint:string, query:array<string,mixed>}> */
         public array $getCalls = [];
@@ -362,6 +547,10 @@ function bindWooBrandsStub(array $brandsByPage, array $deleteBehaviour = []): ob
             public array $brandsByPage,
             /** @var array<int, 'ok'|'404'|'5xx'> */
             public array $deleteBehaviour,
+            /** @var array<int, array<int, array{id:int}>> */
+            public array $productsByBrand = [],
+            /** @var array<int, '404'|'5xx'> */
+            public array $emptinessCheckBehaviour = [],
         ) {
             // Skip parent constructor — no IntegrationLogger / resolver needed.
         }
@@ -369,6 +558,21 @@ function bindWooBrandsStub(array $brandsByPage, array $deleteBehaviour = []): ob
         public function get(string $endpoint, array $query = []): array
         {
             $this->getCalls[] = ['endpoint' => $endpoint, 'query' => $query];
+
+            // Emptiness-guard read: GET products?brand=<sourceId>&per_page=1&status=any.
+            if ($endpoint === 'products') {
+                $brand = (int) ($query['brand'] ?? 0);
+
+                $behaviour = $this->emptinessCheckBehaviour[$brand] ?? null;
+                if ($behaviour === '404') {
+                    throw new RuntimeException('rest_term_invalid: Term does not exist', 404);
+                }
+                if ($behaviour === '5xx') {
+                    throw new RuntimeException('Stub emptiness-check 5xx for brand='.$brand, 500);
+                }
+
+                return $this->productsByBrand[$brand] ?? [];
+            }
 
             if ($endpoint !== 'products/brands') {
                 return [];

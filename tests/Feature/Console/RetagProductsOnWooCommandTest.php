@@ -710,9 +710,11 @@ it('Case N: discovery retry — finder throws twice then succeeds ⇒ command pr
     // Both source products retagged onto canonical.
     expect($stub->putCalls)->toHaveCount(2);
 
-    // Backoff slept twice via the injected sleeper: 3s then 6s (default 3000ms base).
+    // Backoff slept twice via the injected sleeper: 3s then 6s (default 3000ms
+    // base). The 2 discovery backoffs come FIRST (before any product is touched);
+    // the trailing entries are the per-PUT 200ms throttle for the 2 retags.
     $sleeper = app(Sleeper::class);
-    expect($sleeper->sleptMicros)->toBe([3_000_000, 6_000_000]);
+    expect(array_slice($sleeper->sleptMicros, 0, 2))->toBe([3_000_000, 6_000_000]);
 });
 
 it('Case O: discovery exhausted — finder throws on all attempts ⇒ FAILURE after --discovery-retries tries', function (): void {

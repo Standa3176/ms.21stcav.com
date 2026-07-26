@@ -32,6 +32,19 @@ use Illuminate\Support\Str;
  */
 class WooClient
 {
+    /**
+     * 2026-07-26 (260726-wtc) — Woo-write rate-limiter cache key.
+     *
+     * This MUST stay distinct from the Cache::lock('woo:write') name. On Redis
+     * the lock stores a RAW ~16-byte owner token at key 'woo:write' (locks are
+     * not serialized), while RateLimiter stores a serialized numeric attempts
+     * counter. If both share the key 'woo:write', the limiter reads the lock's
+     * raw owner token and unserialize()s it → fatal
+     * "unserialize(): Error at offset 0 of 16 bytes" on EVERY live write
+     * (confirmed live on prod 2026-07-26). NEVER re-unify these two keys.
+     */
+    private const WRITE_RATE_LIMITER_KEY = 'woo-write-rate';
+
     public function __construct(
         private IntegrationLogger $logger,
         private IntegrationCredentialResolver $resolver,
@@ -236,6 +249,10 @@ class WooClient
 
         // The lock guarantees ≤1 concurrent live write regardless of the
         // configured write_max_concurrency (default 1) — conservative by design.
+        //
+        // 2026-07-26 (260726-wtc): the lock name 'woo:write' MUST stay distinct
+        // from self::WRITE_RATE_LIMITER_KEY. Sharing the key made the limiter
+        // unserialize() this lock's raw owner token → fatal on every live write.
         $lock = Cache::lock('woo:write', $lockTtl);
 
         try {
@@ -268,10 +285,14 @@ class WooClient
     private function throttlePace(): void
     {
         // (1) Hard per-minute ceiling — Redis-backed token bucket via RateLimiter.
+        //     2026-07-26 (260726-wtc): the limiter key is self::WRITE_RATE_LIMITER_KEY
+        //     ('woo-write-rate'), DELIBERATELY distinct from the Cache::lock('woo:write')
+        //     name — sharing the key made the limiter unserialize() the lock's raw
+        //     owner token → fatal on every live write. Do NOT revert to 'woo:write'.
         $maxPerMinute = (int) config('services.woo.write_max_per_minute', 60);
         if ($maxPerMinute > 0) {
-            if (RateLimiter::tooManyAttempts('woo:write', $maxPerMinute)) {
-                $availableIn = RateLimiter::availableIn('woo:write');
+            if (RateLimiter::tooManyAttempts(self::WRITE_RATE_LIMITER_KEY, $maxPerMinute)) {
+                $availableIn = RateLimiter::availableIn(self::WRITE_RATE_LIMITER_KEY);
 
                 throw new WooWriteThrottleException(
                     "Woo live-write rate ceiling ({$maxPerMinute}/min) reached — "
@@ -279,7 +300,7 @@ class WooClient
                 );
             }
 
-            RateLimiter::hit('woo:write', 60);
+            RateLimiter::hit(self::WRITE_RATE_LIMITER_KEY, 60);
         }
 
         // (2) Minimum spacing between consecutive writes. Sleep the remainder

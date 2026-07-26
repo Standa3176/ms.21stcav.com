@@ -98,14 +98,18 @@ it('releases the woo:write lock after a successful live write', function () {
     $after->release();
 });
 
-// (b) The rate limiter is consulted on every live write.
-it('consults the woo:write rate limiter on a live write', function () {
-    expect(RateLimiter::attempts('woo:write'))->toBe(0);
+// (b) The rate limiter is consulted on every live write. 260726-wtc: the limiter
+//     key is 'woo-write-rate' (WooClient::WRITE_RATE_LIMITER_KEY), DISTINCT from
+//     the Cache::lock('woo:write') name.
+it('consults the woo-write-rate rate limiter on a live write', function () {
+    expect(RateLimiter::attempts('woo-write-rate'))->toBe(0);
 
     $client = throttleTestClient(throttleSuccessMock());
     $client->put('products/1234', ['regular_price' => '9.99']);
 
-    expect(RateLimiter::attempts('woo:write'))->toBe(1);
+    expect(RateLimiter::attempts('woo-write-rate'))->toBe(1);
+    // The lock key must NOT be used by the limiter.
+    expect(RateLimiter::attempts('woo:write'))->toBe(0);
 });
 
 // (b-cont) When the per-minute ceiling is already exhausted, the write is
@@ -113,10 +117,10 @@ it('consults the woo:write rate limiter on a live write', function () {
 it('refuses the write with a retryable exception when the per-minute ceiling is hit', function () {
     config(['services.woo.write_max_per_minute' => 3]);
 
-    // Exhaust the window.
-    RateLimiter::hit('woo:write', 60);
-    RateLimiter::hit('woo:write', 60);
-    RateLimiter::hit('woo:write', 60);
+    // Exhaust the window on the limiter key (260726-wtc: 'woo-write-rate').
+    RateLimiter::hit('woo-write-rate', 60);
+    RateLimiter::hit('woo-write-rate', 60);
+    RateLimiter::hit('woo-write-rate', 60);
 
     $mockInner = Mockery::mock(AutomatticClient::class);
     $mockInner->shouldReceive('put')->never();
@@ -166,7 +170,8 @@ it('shadow mode bypasses the lock, the limiter and the pacing entirely', functio
     expect($result)->toMatchArray(['shadow_mode' => true]);
     expect(SyncDiff::count())->toBe(1);
 
-    // Limiter never consulted.
+    // Limiter never consulted (260726-wtc key + the old shared key both clean).
+    expect(RateLimiter::attempts('woo-write-rate'))->toBe(0);
     expect(RateLimiter::attempts('woo:write'))->toBe(0);
     // No pacing timestamp written.
     expect(Cache::get('woo:write:last_ts'))->toBeNull();
@@ -176,4 +181,55 @@ it('shadow mode bypasses the lock, the limiter and the pacing entirely', functio
     $lock = Cache::lock('woo:write', 5);
     expect($lock->get())->toBeTrue();
     $lock->release();
+});
+
+// ══════════════════════════════════════════════════════════════════
+// 260726-wtc — cache-key collision fix (unserialize error on every live write)
+// ══════════════════════════════════════════════════════════════════
+
+// (d) REGRESSION GUARD — the invariant whose violation caused the 2026-07-26 prod
+//     fatal: the Woo-write rate-limiter key MUST NOT equal the Cache::lock name
+//     'woo:write'. On Redis a shared key made the limiter unserialize() the lock's
+//     raw owner token → "unserialize(): Error at offset 0 of 16 bytes" on EVERY
+//     live write. This test FAILS if a future edit re-unifies the two keys.
+it('keeps the Woo-write rate-limiter key distinct from the woo:write lock name (260726-wtc guard)', function () {
+    $limiterKey = (new ReflectionClassConstant(WooClient::class, 'WRITE_RATE_LIMITER_KEY'))->getValue();
+
+    // The bug: limiter key == lock name. The guard: they must never be equal.
+    expect($limiterKey)->not->toBe('woo:write');
+    expect($limiterKey)->toBe('woo-write-rate');
+
+    // The four Woo-write cache keys must be mutually distinct at the bare-key level:
+    //   lock 'woo:write' · limiter 'woo-write-rate' · limiter-timer 'woo-write-rate:timer'
+    //   · pacing 'woo:write:last_ts'.
+    $keys = ['woo:write', $limiterKey, $limiterKey.':timer', 'woo:write:last_ts'];
+    expect($keys)->toBe(array_unique($keys));
+});
+
+// (e) BEHAVIOURAL — a live write completes throttlePace and performs the SDK write
+//     even when the lock's raw owner-token value is sitting at cache key 'woo:write'
+//     (exactly what Cache::lock('woo:write') writes there during a live write).
+//     This proves the limiter reads its OWN key and never touches the lock key.
+//
+//     NOTE: the *raw-token unserialize()* fatal is Redis-only — the array test
+//     store neither serializes cache values nor stores locks at the cache key, so
+//     it cannot reproduce the actual "offset 0 of 16 bytes" error. The true
+//     integration proof is the prod re-canary (brands:retag-products-on-woo).
+it('a live write no longer routes the rate limiter through the woo:write lock key (260726-wtc)', function () {
+    // Simulate the lock's raw ~16-byte owner token parked at the lock key.
+    $rawOwnerToken = Str::random(16);
+    Cache::put('woo:write', $rawOwnerToken, now()->addMinutes(5));
+
+    $client = throttleTestClient(throttleSuccessMock());
+    $result = $client->put('products/1234', ['regular_price' => '9.99']);
+
+    // throttlePace raised no error and the SDK write was reached.
+    expect($result)->toBe(['id' => 1234]);
+
+    // The limiter incremented its OWN key…
+    expect(RateLimiter::attempts('woo-write-rate'))->toBe(1);
+    // …and left the lock key's raw token completely untouched (never overwrote it
+    // with a counter, never consumed it). On Redis the OLD code read THIS value as
+    // an attempts counter and unserialize()d it → fatal; the new key sidesteps it.
+    expect(Cache::get('woo:write'))->toBe($rawOwnerToken);
 });

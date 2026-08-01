@@ -43,4 +43,49 @@ trait NormalisesEan
 
         return $s;
     }
+
+    /**
+     * Validate the GTIN mod-10 check digit (quick task 260726-egr).
+     *
+     * The MISSING gate: normaliseEan() above length-checks and rejects all-zero/
+     * all-nine sentinels, but does NO check-digit validation — so precision-
+     * mangled values that happen to be the right length passed as "valid" (e.g.
+     * A30-020's corrupted local `6938820000000`, which fails this check while
+     * Woo held the real GTIN `0841885115294`). This method is the reverse
+     * source-of-truth guard for products:reconcile-ean-from-woo.
+     *
+     * Standard GTIN mod-10: the rightmost digit is the check digit; working
+     * right-to-left from the digit immediately left of it, weights alternate
+     * 3,1,3,1…; the check digit is (10 − sum % 10) % 10. Valid for the real
+     * GTIN lengths only — GTIN-8 / UPC-12 / EAN-13 / GTIN-14. Anything with a
+     * non-standard length or a non-digit character is rejected regardless of
+     * whether mod-10 would coincidentally pass.
+     *
+     * ADDED alongside normaliseEan() — that method's behaviour is unchanged.
+     */
+    public function isValidGtinChecksum(string $digits): bool
+    {
+        // All-digit only — never strip; a non-digit input is not a GTIN.
+        if ($digits === '' || preg_match('/\D/', $digits) === 1) {
+            return false;
+        }
+
+        $len = strlen($digits);
+        if (! in_array($len, [8, 12, 13, 14], true)) {
+            return false;
+        }
+
+        $checkDigit = (int) $digits[$len - 1];
+
+        $sum = 0;
+        // pos 0 = the digit immediately left of the check digit → weight 3.
+        for ($i = $len - 2, $pos = 0; $i >= 0; $i--, $pos++) {
+            $weight = ($pos % 2 === 0) ? 3 : 1;
+            $sum += ((int) $digits[$i]) * $weight;
+        }
+
+        $expected = (10 - ($sum % 10)) % 10;
+
+        return $expected === $checkDigit;
+    }
 }

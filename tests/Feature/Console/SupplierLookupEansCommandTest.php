@@ -26,7 +26,7 @@ uses(RefreshDatabase::class);
  * Bind a fake SupplierEanLookup that mirrors the real two-pass precedence.
  *
  * @param  array<string, string>  $supplierskuMap  sku_key => raw EAN (suppliersku pass)
- * @param  array<string, string>  $mpnMap          sku_key => raw EAN (mpn fallback pass)
+ * @param  array<string, string>  $mpnMap  sku_key => raw EAN (mpn fallback pass)
  */
 function bindSupplierEanLookupStub(array $supplierskuMap, array $mpnMap = []): void
 {

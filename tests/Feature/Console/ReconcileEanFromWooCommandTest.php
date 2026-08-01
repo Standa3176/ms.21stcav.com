@@ -280,7 +280,7 @@ it('writes a --csv with per-product verdict rows', function (): void {
  * `global_unique_id` per woo_product_id and RECORDS every read + write.
  *
  * @param  array<int, string>  $gtinByWooId  woo_product_id => global_unique_id
- * @return object  the bound stub with public $reads + $writes
+ * @return object the bound stub with public $reads + $writes
  */
 function bindReconcileWooStub(array $gtinByWooId): object
 {

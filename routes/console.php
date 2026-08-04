@@ -74,6 +74,20 @@ Schedule::command('woo:import-products')
     ->timezone('Europe/London')
     ->description('Daily Woo catalogue import (publish + draft + private products)');
 
+// Quick task 260728-fwx T1 — nightly READ-ONLY refresh of the global pa_*
+// attribute term vocabulary into woo_attribute_terms. Feeds the SpecTaxonomy
+// resolver (T2) so new-product spec values resolve to EXISTING terms without
+// hammering the flaky Woo terms endpoint per product (and without Woo
+// auto-creating duplicate terms that re-pollute the cleaned FacetWP facets).
+// 02:40 London keeps it clear of the 03:00 retention cascade + the 03:00 Woo
+// catalogue import. GET-only — safe regardless of WOO_WRITE_ENABLED.
+Schedule::command('spec:sync-taxonomy-cache')
+    ->dailyAt('02:40')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Nightly READ-ONLY cache of pa_* attribute term vocabulary (260728-fwx T1)');
+
 // Quick task 260606-gnu — Mon 06:00 London prune of stale competitor-only orphan suggestions.
 // Runs BEFORE supplier:db-sync (Mon-Fri 07:00) so the prune never touches rows whose
 // sourceability status is about to change. Conservative gates (off-supplier + <2 competitors

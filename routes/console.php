@@ -527,7 +527,11 @@ if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
 // withoutOverlapping(120) — defensive: if a run drags past 2hrs (capped by
 // --max-products=500), the next firing skips. Prevents two concurrent push
 // runs racing on the same sync_diffs.
-Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price,category_id --max-products=500')
+//
+// 260728-fwx / D2(a): category_id deliberately dropped — the app must NOT push
+// categories over the WP-side FacetWP category cleanup. Re-add only after a
+// deliberate local→Woo category reconcile (plan D2(b)).
+Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price --max-products=500')
     ->cron('0 23 * * *')
     ->timezone('Europe/London')
     ->onOneServer()

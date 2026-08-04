@@ -173,8 +173,9 @@ it('marks an unresolvable value as unmatched and NEVER in global', function (): 
 // ── Band derivation boundaries ─────────────────────────────────────────────
 
 it('derives the screen-size band at inclusive boundaries', function (string $raw, string $band): void {
+    // Seeded with the EXACT live pa_screen-size-band (3516) term names.
     $resolver = makeResolver([
-        ATTR_SCREEN_SIZE_BAND => ['Up to 22', '23-27', '28-34', '35-43', '44-55', '56-65', '66-75', '76-85', '86 inch and above'],
+        ATTR_SCREEN_SIZE_BAND => ['Up to 22 inch', '23-27 inch', '28-34 inch', '35-43 inch', '44-55 inch', '56-65 inch', '66-75 inch', '76-85 inch', '86 inch and above'],
     ]);
 
     $spec = $resolver->resolve([['name' => 'Display Size', 'value' => $raw]]);
@@ -183,13 +184,14 @@ it('derives the screen-size band at inclusive boundaries', function (string $raw
     expect($spec->global()[0]['attribute_slug'])->toBe('pa_screen-size-band');
     expect($spec->global()[0]['term_name'])->toBe($band);
 })->with([
-    ['22 inch', 'Up to 22'],
-    ['23"', '23-27'],
-    ['43 inch', '35-43'],
-    ['44 inch', '44-55'],
-    ['55 inch', '44-55'],
-    ['56"', '56-65'],
+    ['22 inch', 'Up to 22 inch'],
+    ['23"', '23-27 inch'],
+    ['43 inch', '35-43 inch'],
+    ['44 inch', '44-55 inch'],
+    ['55 inch', '44-55 inch'],
+    ['56"', '56-65 inch'],
     ['86 inch', '86 inch and above'],
+    ['90 inch', '86 inch and above'],
     ['98"', '86 inch and above'],
 ]);
 
@@ -211,8 +213,9 @@ it('derives the cd/m² brightness band at inclusive boundaries', function (float
 ]);
 
 it('derives the lumens brightness band at inclusive boundaries', function (string $raw, string $band): void {
+    // Seeded with the EXACT live pa_brightness-lumens (3554) term names.
     $resolver = makeResolver([
-        ATTR_BRIGHTNESS_LUMENS => ['Under 3000', '3000-4999', '5000-9999', '10000+ lumens'],
+        ATTR_BRIGHTNESS_LUMENS => ['Under 3000 lumens', '3000-4999 lumens', '5000-9999 lumens', '10000+ lumens'],
     ]);
 
     $spec = $resolver->resolve([['name' => 'Brightness Band (lumens)', 'value' => $raw]]);
@@ -220,10 +223,11 @@ it('derives the lumens brightness band at inclusive boundaries', function (strin
     expect($spec->global())->toHaveCount(1);
     expect($spec->global()[0]['term_name'])->toBe($band);
 })->with([
-    ['2999 lumens', 'Under 3000'],
-    ['3000 lumens', '3000-4999'],
-    ['4999 lumens', '3000-4999'],
-    ['5000 lumens', '5000-9999'],
+    ['2999 lumens', 'Under 3000 lumens'],
+    ['3000 lumens', '3000-4999 lumens'],
+    ['4000 lumens', '3000-4999 lumens'],
+    ['4999 lumens', '3000-4999 lumens'],
+    ['5000 lumens', '5000-9999 lumens'],
     ['10000 lumens', '10000+ lumens'],
 ]);
 
@@ -239,8 +243,9 @@ it('emits the exact figure as a local companion row alongside the band', functio
 });
 
 it('marks a band as unmatched when the derived term is not cached', function (): void {
-    // Cache is missing the "44-55" band term → belt-and-braces unmatched.
-    $resolver = makeResolver([ATTR_SCREEN_SIZE_BAND => ['Up to 22', '23-27']]);
+    // Live vocab, but missing the "44-55 inch" band term → resolve-don't-invent
+    // holds even with the tolerant match (nothing normalises onto 44-55).
+    $resolver = makeResolver([ATTR_SCREEN_SIZE_BAND => ['Up to 22 inch', '23-27 inch']]);
 
     $spec = $resolver->resolve([['name' => 'Display Size', 'value' => '55 inch']]);
 
@@ -253,7 +258,7 @@ it('marks a band as unmatched when the derived term is not cached', function ():
 });
 
 it('marks a non-numeric band value as unmatched', function (): void {
-    $resolver = makeResolver([ATTR_SCREEN_SIZE_BAND => ['Up to 22', '44-55']]);
+    $resolver = makeResolver([ATTR_SCREEN_SIZE_BAND => ['Up to 22 inch', '44-55 inch']]);
 
     $spec = $resolver->resolve([['name' => 'Display Size', 'value' => 'Large']]);
 
@@ -263,8 +268,9 @@ it('marks a non-numeric band value as unmatched', function (): void {
 });
 
 it('derives the room-size band with lower-band-wins tie-break', function (string $raw, string $band): void {
+    // Seeded with the EXACT live pa_room-size-band (3553) term names.
     $resolver = makeResolver([
-        ATTR_ROOM_SIZE_BAND => ['Huddle (2-4 people)', 'Small (4-6)', 'Medium (6-10)', 'Large (10+)'],
+        ATTR_ROOM_SIZE_BAND => ['Huddle (2-4 people)', 'Small (4-6 people)', 'Medium (6-10 people)', 'Large (10+ people)'],
     ]);
 
     $spec = $resolver->resolve([['name' => 'Room Size', 'value' => $raw]]);
@@ -272,11 +278,32 @@ it('derives the room-size band with lower-band-wins tie-break', function (string
     expect($spec->global())->toHaveCount(1);
     expect($spec->global()[0]['term_name'])->toBe($band);
 })->with([
-    ['4 people', 'Huddle (2-4 people)'],   // shared boundary → lower band
-    ['5 people', 'Small (4-6)'],
-    ['6 people', 'Small (4-6)'],           // shared boundary → lower band
-    ['10 people', 'Medium (6-10)'],
-    ['12 people', 'Large (10+)'],
+    ['3 people', 'Huddle (2-4 people)'],
+    ['4 people', 'Huddle (2-4 people)'],       // shared boundary → lower band
+    ['5 people', 'Small (4-6 people)'],
+    ['6 people', 'Small (4-6 people)'],        // shared boundary → lower band
+    ['10 people', 'Medium (6-10 people)'],
+    ['12 people', 'Large (10+ people)'],
+]);
+
+it('tolerantly matches a band term despite a minor unit/case/whitespace drift', function (string $cachedTerm): void {
+    // The derived label is "44-55 inch"; each seeded cache term differs only by
+    // unit suffix / casing / whitespace and must still resolve — to the REAL
+    // cached term (the cache is the source of truth for what's actually sent).
+    $resolver = makeResolver([ATTR_SCREEN_SIZE_BAND => [$cachedTerm]]);
+
+    $spec = $resolver->resolve([['name' => 'Display Size', 'value' => '55 inch']]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_screen-size-band');
+    expect($spec->global()[0]['term_name'])->toBe($cachedTerm);
+    expect($spec->unmatched())->toBe([]);
+})->with([
+    '44-55 inch',    // exact
+    '44-55 inches',  // plural unit
+    '44-55  inch',   // double internal space
+    '44-55 INCH',    // upper-case unit
+    '44-55',         // no unit token at all
 ]);
 
 // ── Never-mix-units (D1) ───────────────────────────────────────────────────
@@ -284,7 +311,7 @@ it('derives the room-size band with lower-band-wins tie-break', function (string
 it('drops and logs the second brightness unit when both are present', function (): void {
     $resolver = makeResolver([
         ATTR_BRIGHTNESS_NITS => ['Semi-bright (351-700)'],
-        ATTR_BRIGHTNESS_LUMENS => ['3000-4999'],
+        ATTR_BRIGHTNESS_LUMENS => ['3000-4999 lumens'],
     ]);
 
     // cd/m² appears first → wins; the lumens signal is dropped as mixed_units.

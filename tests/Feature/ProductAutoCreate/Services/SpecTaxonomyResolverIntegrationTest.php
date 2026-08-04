@@ -37,13 +37,13 @@ it('binds SpecTermVocabulary to the DB-backed WooAttributeTermVocabulary', funct
 it('resolves against the seeded woo_attribute_terms mirror', function (): void {
     seedTerm(3268, 'pa_colour', 'Black', 5001);
     seedTerm(3268, 'pa_colour', 'White', 5002);
-    seedTerm(3516, 'pa_screen-size-band', '44-55', 5003);
+    seedTerm(3516, 'pa_screen-size-band', '44-55 inch', 5003);  // exact live term name
 
     $resolver = app(SpecTaxonomyResolver::class);
 
     $spec = $resolver->resolve([
         ['name' => 'Colour', 'value' => 'black'],           // ci → Black
-        ['name' => 'Display Size', 'value' => '55 inch'],   // band → 44-55
+        ['name' => 'Display Size', 'value' => '55 inch'],   // band → 44-55 inch
         ['name' => 'MPN', 'value' => 'ABC-123'],            // local-forced
         ['name' => 'Widget Factor', 'value' => '42'],       // unknown → local
     ]);
@@ -54,7 +54,7 @@ it('resolves against the seeded woo_attribute_terms mirror', function (): void {
     expect($bySlug['pa_colour']['term_id'])->toBe(5001);
     expect($bySlug['pa_colour']['term_name'])->toBe('Black');
     expect($bySlug['pa_screen-size-band']['term_id'])->toBe(5003);
-    expect($bySlug['pa_screen-size-band']['term_name'])->toBe('44-55');
+    expect($bySlug['pa_screen-size-band']['term_name'])->toBe('44-55 inch');
 
     // MPN + unknown label + the band's exact companion figure all land local.
     expect($spec->local())->toContain(['name' => 'MPN', 'value' => 'ABC-123']);

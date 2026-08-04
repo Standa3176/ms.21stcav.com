@@ -153,46 +153,52 @@ class SpecTaxonomyResolver
      * inclusive and non-overlapping; the canonical label is then RESOLVED
      * against the cache (belt-and-braces — an uncached band term is UNMATCHED).
      *
+     * Labels are the EXACT live Woo term names (validated against prod
+     * `woo_attribute_terms`) so the derived band links to a real cached term.
+     * Boundary integers are unchanged — only the label strings carry the unit
+     * suffix the live store uses (`inch` / `lumens` / `people`). The final
+     * derived→cached match is ALSO unit-suffix/whitespace/case tolerant (see
+     * {@see self::bandNormalise()}) so a minor drift can't silently break it.
+     *
      * @var array<string, list<array{0:int|null, 1:string}>>
      */
     private const BAND_TABLES = [
-        // Screen size (inches): Up to 22 / 23-27 / 28-34 / 35-43 / 44-55 /
-        // 56-65 / 66-75 / 76-85 / 86 inch and above.
+        // Screen size (inches): live pa_screen-size-band (3516) term names.
         'pa_screen-size-band' => [
-            [22, 'Up to 22'],
-            [27, '23-27'],
-            [34, '28-34'],
-            [43, '35-43'],
-            [55, '44-55'],
-            [65, '56-65'],
-            [75, '66-75'],
-            [85, '76-85'],
+            [22, 'Up to 22 inch'],
+            [27, '23-27 inch'],
+            [34, '28-34 inch'],
+            [43, '35-43 inch'],
+            [55, '44-55 inch'],
+            [65, '56-65 inch'],
+            [75, '66-75 inch'],
+            [85, '76-85 inch'],
             [null, '86 inch and above'],
         ],
-        // Brightness cd/m²: Standard (up to 350) / Semi-bright (351-700) /
-        // High bright (701-2500) / Window facing (2500+).
-        // Boundary note: 2500 → High bright, 2501 → Window facing.
+        // Brightness cd/m²: live pa_brightness-nits (3518) term names (already
+        // matched the store — left unchanged). Boundary: 2500 → High bright,
+        // 2501 → Window facing.
         'pa_brightness-nits' => [
             [350, 'Standard (up to 350)'],
             [700, 'Semi-bright (351-700)'],
             [2500, 'High bright (701-2500)'],
             [null, 'Window facing (2500+)'],
         ],
-        // Brightness lumens: Under 3000 / 3000-4999 / 5000-9999 / 10000+ lumens.
+        // Brightness lumens: live pa_brightness-lumens (3554) term names.
         'pa_brightness-lumens' => [
-            [2999, 'Under 3000'],
-            [4999, '3000-4999'],
-            [9999, '5000-9999'],
+            [2999, 'Under 3000 lumens'],
+            [4999, '3000-4999 lumens'],
+            [9999, '5000-9999 lumens'],
             [null, '10000+ lumens'],
         ],
-        // Room size (people): Huddle (2-4) / Small (4-6) / Medium (6-10) /
-        // Large (10+). Brief boundaries overlap at 4/6/10 — tie-break: the
-        // LOWER band wins at a shared boundary (ascending upper-inclusive).
+        // Room size (people): live pa_room-size-band (3553) term names. Brief
+        // boundaries overlap at 4/6/10 — tie-break: the LOWER band wins at a
+        // shared boundary (ascending upper-inclusive).
         'pa_room-size-band' => [
             [4, 'Huddle (2-4 people)'],
-            [6, 'Small (4-6)'],
-            [10, 'Medium (6-10)'],
-            [null, 'Large (10+)'],
+            [6, 'Small (4-6 people)'],
+            [10, 'Medium (6-10 people)'],
+            [null, 'Large (10+ people)'],
         ],
     ];
 
@@ -445,7 +451,10 @@ class SpecTaxonomyResolver
         $bandLabel = $this->deriveBandLabel($slug, $number);
 
         // Belt-and-braces: the derived band label must exist as a cached term.
-        $term = $this->resolveTermName($attributeId, $bandLabel, []);
+        // Tolerant match (exact → ci → unit/whitespace/case-normalised) so a
+        // minor unit-suffix drift can't silently break the link — but still
+        // RESOLVE-DON'T-INVENT (null → unmatched, never fabricated).
+        $term = $this->resolveBandTerm($attributeId, $bandLabel);
         if ($term === null) {
             $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $slug, 'band_term_not_cached');
 
@@ -520,6 +529,64 @@ class SpecTaxonomyResolver
         }
 
         return null;
+    }
+
+    /**
+     * RESOLVE-DON'T-INVENT for a DERIVED BAND label. The band tables carry the
+     * exact live term names, but a term could still drift (unit suffix, casing,
+     * whitespace) between the code and the store cache — so match tolerantly:
+     * exact → case-insensitive → band-normalised (trailing unit token stripped).
+     * The CACHE is the source of truth for what's sent — we return the real
+     * cached term (term_name/term_id), never the internal label. null → the
+     * band term genuinely isn't cached → UNMATCHED (never fabricated).
+     *
+     * @return array{term_id:int, term_name:string, term_slug:string|null}|null
+     */
+    private function resolveBandTerm(int $attributeId, string $bandLabel): ?array
+    {
+        $terms = $this->vocabulary->termsFor($attributeId);
+        if ($terms === []) {
+            return null;
+        }
+
+        // 1) exact
+        foreach ($terms as $term) {
+            if ($term['term_name'] === $bandLabel) {
+                return $term;
+            }
+        }
+
+        // 2) case-insensitive / whitespace-normalised
+        $ci = $this->ciValue($bandLabel);
+        foreach ($terms as $term) {
+            if ($this->ciValue($term['term_name']) === $ci) {
+                return $term;
+            }
+        }
+
+        // 3) band-normalised: tolerate a differing/absent trailing unit token
+        $bn = $this->bandNormalise($bandLabel);
+        foreach ($terms as $term) {
+            if ($this->bandNormalise($term['term_name']) === $bn) {
+                return $term;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Band-term normalisation for tolerant matching: lowercase, collapse
+     * internal whitespace, then strip a SINGLE trailing unit token
+     * (inch|inches|lumens|people). Deliberately narrow — it only forgives the
+     * unit suffix, casing and whitespace; it never rewrites the band range, so
+     * two distinct bands can't collapse onto one another.
+     */
+    private function bandNormalise(string $value): string
+    {
+        $value = $this->ciValue($value);
+
+        return trim((string) preg_replace('/\s*(?:inch|inches|lumens|people)$/', '', $value));
     }
 
     /**

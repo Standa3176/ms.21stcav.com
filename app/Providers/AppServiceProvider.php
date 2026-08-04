@@ -121,6 +121,8 @@ use App\Domain\ProductAutoCreate\Models\AutoCreateSkipRule;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateRejectionPolicy;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateSettingsPolicy;
 use App\Domain\ProductAutoCreate\Policies\AutoCreateSkipRulePolicy;
+use App\Domain\ProductAutoCreate\Services\Spec\SpecTermVocabulary;
+use App\Domain\ProductAutoCreate\Services\Spec\WooAttributeTermVocabulary;
 use App\Domain\Products\Console\Commands\AuditProductCategoriesCommand;
 use App\Domain\Products\Console\Commands\FlagProductsMissingBuyPriceCommand;
 use App\Domain\Products\Console\Commands\SnapshotsPruneCommand;
@@ -336,6 +338,16 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(
             SupplierFeedReader::class,
             MysqlSupplierFeedReader::class,
+        );
+
+        // 260728-fwx T2 — SpecTaxonomyResolver reads the live `pa_*` term
+        // vocabulary through this seam. Production wires the Eloquent-backed
+        // WooAttributeTermVocabulary (fed nightly by T1's spec:sync-taxonomy-cache);
+        // unit tests inject an ArraySpecTermVocabulary so the resolver stays a
+        // pure classifier with NO Woo / DB dependency.
+        $this->app->bind(
+            SpecTermVocabulary::class,
+            WooAttributeTermVocabulary::class,
         );
     }
 

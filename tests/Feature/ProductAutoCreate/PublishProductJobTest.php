@@ -6,6 +6,8 @@ use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
+use App\Domain\ProductAutoCreate\Services\Spec\ArraySpecTermVocabulary;
+use App\Domain\ProductAutoCreate\Services\Spec\SpecTermVocabulary;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\LiveSupplierStockResolver;
@@ -264,7 +266,25 @@ it('shadow mode: path B does NOT mark published and fires no event (stays in rev
 });
 
 it('path B: includes attributes[] in the WC POST when attributes_json is populated (Flatsome layout parity)', function (): void {
+    // 260728-fwx T3 — REWRITTEN: attributes now route through
+    // SpecTaxonomyResolver (via WooAttributePayloadBuilder). The old assertion
+    // hard-coded the pre-T3 LOCAL-only shape (name-keyed, deduped-by-lowercase-
+    // name, position 0 = "brand" case-dup). Under T3:
+    //   - a mappable+resolvable label (Resolution → pa_resolution 3429) becomes a
+    //     GLOBAL taxonomy row {id, options:[<resolved term>]} — FacetWP-visible;
+    //   - non-taxonomy labels (Brand, Connection) stay LOCAL {name, options};
+    //   - the resolver classifies the WHOLE set and does NOT dedupe by name, so
+    //     both "Brand" and "brand" pass through as distinct local rows (dedup was
+    //     a property of the removed local-only builder, not a requirement).
+    // Rows are still trimmed and blank name/value rows skipped (in the resolver).
     Event::fake([ProductPublished::class]);
+
+    // Inject a deterministic term vocabulary so Resolution resolves (no DB/Woo).
+    app()->instance(SpecTermVocabulary::class, new ArraySpecTermVocabulary([
+        3429 => [
+            ['term_id' => 8801, 'term_name' => '4K UHD (3840x2160)', 'term_slug' => '4k-uhd-3840x2160'],
+        ],
+    ]));
 
     $product = Product::factory()->create([
         'woo_product_id' => null,
@@ -277,7 +297,6 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
             ['name' => 'Connection', 'value' => 'USB-C'],
             ['name' => '   ', 'value' => 'should be dropped'],   // blank name → skipped
             ['name' => 'Mount', 'value' => '   '],                 // blank value → skipped
-            ['name' => 'brand', 'value' => 'Acme Duplicate'],       // case-dup of "Brand" → last wins
         ],
         'auto_create_status' => 'draft',
         'status' => 'draft',
@@ -290,20 +309,23 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
             if (! isset($payload['attributes']) || ! is_array($payload['attributes'])) {
                 return false;
             }
-            // 3 rows: Brand (case-dup overwrites first), Resolution, Connection.
-            // Blank-name + blank-value rows dropped.
-            $names = array_column($payload['attributes'], 'name');
+            $attrs = $payload['attributes'];
 
-            return $payload['attributes'][0] === [
-                'name' => 'brand',
-                'options' => ['Acme Duplicate'],
+            // GLOBAL first: Resolution → pa_resolution taxonomy, resolved term.
+            $globalOk = $attrs[0] === [
+                'id' => 3429,
+                'options' => ['4K UHD (3840x2160)'],
                 'position' => 0,
                 'visible' => true,
                 'variation' => false,
-            ]
-                && in_array('Resolution', $names, true)
-                && in_array('Connection', $names, true)
-                && count($payload['attributes']) === 3;
+            ];
+
+            // LOCAL rows: Brand + Connection (non-taxonomy labels), no `id`.
+            $names = array_column($attrs, 'name');
+            $localOk = in_array('Brand', $names, true) && in_array('Connection', $names, true);
+
+            // Blank name/value rows dropped → 1 global + 2 local = 3 rows.
+            return $globalOk && $localOk && count($attrs) === 3;
         }))
         ->andReturn(['id' => 12345, 'slug' => 'spec-rich-widget']);
 

@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\ProductAutoCreate\Services\WooAttributePayloadBuilder;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -52,6 +53,7 @@ final class ResyncProductsToWooCommand extends BaseCommand
         private readonly WooClient $woo,
         private readonly TaxonomyResolver $taxonomy,
         private readonly ProductBrandTermResolver $brandResolver,
+        private readonly WooAttributePayloadBuilder $attributePayloadBuilder,
     ) {
         parent::__construct();
     }
@@ -216,8 +218,11 @@ final class ResyncProductsToWooCommand extends BaseCommand
      *     list) + any local tags
      *   - regular_price: from sell_price; if sell_price is null, backfill
      *     with buy_price × 1.4 as a fallback
-     *   - attributes: re-push attributes_json (in case it was missed in the
-     *     original create)
+     *   - attributes: re-push attributes_json — 260728-fwx T3 now routed through
+     *     the SHARED {@see WooAttributePayloadBuilder} (SpecTaxonomyResolver) so a
+     *     resync RE-GLOBALISES filterable specs into `pa_*` taxonomy attributes
+     *     ({id, options:[<resolved term>]}) instead of re-localising them. Uses
+     *     the SAME builder as PublishProductJob so the two write paths can't drift.
      *
      * @param  array<int, string>  $brandNameById
      * @return array<string, mixed>
@@ -269,31 +274,11 @@ final class ResyncProductsToWooCommand extends BaseCommand
             $payload['regular_price'] = number_format($price, 2, '.', '');
         }
 
-        // ── attributes: re-push attributes_json (idempotent) ──
+        // ── attributes: re-push attributes_json, RE-GLOBALISED (idempotent) ──
+        // Same builder as PublishProductJob → GLOBAL pa_* taxonomy rows
+        // ({id, options:[<resolved term>]}), LOCAL spec rows, unmatched withheld.
         $raw = is_array($product->attributes_json) ? $product->attributes_json : [];
-        $byKey = [];
-        foreach ($raw as $a) {
-            if (! is_array($a)) {
-                continue;
-            }
-            $name = trim((string) ($a['name'] ?? ''));
-            $value = trim((string) ($a['value'] ?? ''));
-            if ($name === '' || $value === '') {
-                continue;
-            }
-            $byKey[mb_strtolower($name)] = ['name' => $name, 'value' => $value];
-        }
-        $i = 0;
-        $attrs = [];
-        foreach ($byKey as $entry) {
-            $attrs[] = [
-                'name' => $entry['name'],
-                'options' => [$entry['value']],
-                'position' => $i++,
-                'visible' => true,
-                'variation' => false,
-            ];
-        }
+        $attrs = $this->attributePayloadBuilder->build($raw);
         if ($attrs !== []) {
             $payload['attributes'] = $attrs;
         }

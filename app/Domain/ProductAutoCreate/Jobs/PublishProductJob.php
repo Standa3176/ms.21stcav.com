@@ -9,6 +9,7 @@ use App\Domain\ProductAutoCreate\Concerns\BuildsWooStockPayload;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
+use App\Domain\ProductAutoCreate\Services\WooAttributePayloadBuilder;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\LiveSupplierStockResolver;
 use App\Domain\Sync\Services\WooClient;
@@ -447,43 +448,37 @@ final class PublishProductJob implements ShouldQueue
 
     /**
      * Map the local attributes_json (array of {name, value}) to the WC REST
-     * `attributes[]` shape — name + options:[value] + visible:true +
-     * variation:false + position (from array order). Skips rows with a blank
-     * name or value, dedupes by lowercased name (last one wins). Returns []
-     * when the column is empty/missing — buildCreatePayload then omits the
-     * key entirely so Woo doesn't create empty global attributes.
+     * `attributes[]` shape — now routed through {@see SpecTaxonomyResolver} (via
+     * {@see WooAttributePayloadBuilder}) so FILTERABLE specs attach as GLOBAL
+     * `pa_*` TAXONOMY attributes ({id, options:[<resolved term>]}) that FacetWP
+     * (and Woo layered nav) can filter, instead of local postmeta invisible to
+     * the facets.
      *
-     * @return array<int, array{name:string, options:array<int,string>, position:int, visible:bool, variation:bool}>
+     * 260728-fwx T3 — the builder classifies every row:
+     *   - GLOBAL    → {id, options:[<resolved term name>], visible, variation, position}
+     *                 (term-linked; WC never auto-creates because the term exists)
+     *   - LOCAL     → {name, options:[<value>], visible, variation, position}
+     *                 (the legacy spec-only shape, for non-taxonomy labels)
+     *   - UNMATCHED → withheld entirely (resolve-don't-invent — an unknown option
+     *                 would auto-create a dup term and re-pollute the facet; the
+     *                 resolver already logged it for the T6 report)
+     *
+     * The builder is obtained from the container (app()) rather than injected —
+     * PublishProductJob is a queued job whose constructor only carries the two
+     * serialisable ids, and handle()'s method-injection seam does not thread
+     * down into buildCreatePayload(). Resolving here keeps that convention while
+     * still letting tests bind a deterministic term vocabulary.
+     *
+     * Returns [] when the column is empty/missing OR when nothing resolves —
+     * buildCreatePayload then omits the `attributes` key entirely so Woo doesn't
+     * create empty global attributes (behaviour preserved).
+     *
+     * @return array<int, array<string, mixed>>
      */
     private function wooAttributes(Product $product): array
     {
         $raw = is_array($product->attributes_json) ? $product->attributes_json : [];
 
-        $byKey = [];
-        foreach ($raw as $a) {
-            if (! is_array($a)) {
-                continue;
-            }
-            $name = trim((string) ($a['name'] ?? ''));
-            $value = trim((string) ($a['value'] ?? ''));
-            if ($name === '' || $value === '') {
-                continue;
-            }
-            $byKey[strtolower($name)] = ['name' => $name, 'value' => $value];
-        }
-
-        $out = [];
-        $i = 0;
-        foreach ($byKey as $entry) {
-            $out[] = [
-                'name' => $entry['name'],
-                'options' => [$entry['value']],
-                'position' => $i++,
-                'visible' => true,
-                'variation' => false,
-            ];
-        }
-
-        return $out;
+        return app(WooAttributePayloadBuilder::class)->build($raw);
     }
 }

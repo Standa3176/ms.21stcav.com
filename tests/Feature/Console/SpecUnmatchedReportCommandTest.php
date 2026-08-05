@@ -83,16 +83,21 @@ function runSpecReport(array $options = []): array
 }
 
 it('reports coverage, fill, unmatched values and unmapped labels (status filtered)', function (): void {
+    // 260728-fwx T9 — the "unmapped label" example was "Connection"; T9 added a
+    // "connection"→pa_connectivity alias (so it is now a MAPPED facet, and its
+    // uncached values would surface as unmatched VALUES, not an unmapped label).
+    // Swapped to "Form Factor" — a label T9 deliberately leaves LOCAL/unmapped
+    // (ambiguous) — so the unmapped-label + spec-only coverage still holds.
     makeSpecProduct('publish', [
         ['name' => 'Resolution', 'value' => '4K'],
         ['name' => 'Colour', 'value' => 'Black'],
         ['name' => 'MPN', 'value' => 'ABC-123'],
-        ['name' => 'Connection', 'value' => 'HDMI'],
+        ['name' => 'Form Factor', 'value' => 'Slim'],
     ]);
     makeSpecProduct('publish', [
         ['name' => 'Resolution', 'value' => '8K'],
         ['name' => 'Colour', 'value' => 'Rainbow'],
-        ['name' => 'Connection', 'value' => 'USB'],
+        ['name' => 'Form Factor', 'value' => 'Compact'],
     ]);
     makeSpecProduct('pending', [['name' => 'Resolution', 'value' => '4K']]);
     makeSpecProduct('publish', []);      // empty — skipped, not scanned
@@ -119,8 +124,8 @@ it('reports coverage, fill, unmatched values and unmapped labels (status filtere
     expect($rows)->toContain(['pa_resolution', '8K', '1', 'value_not_a_term']);
     expect($rows)->toContain(['pa_colour', 'Rainbow', '1', 'value_not_a_term']);
 
-    // Unmapped labels: Connection twice → alias candidate; MPN is known spec-only.
-    expect($rows)->toContain(['Connection', '2', 'unmapped']);
+    // Unmapped labels: Form Factor twice → alias candidate; MPN is known spec-only.
+    expect($rows)->toContain(['Form Factor', '2', 'unmapped']);
     expect($rows)->toContain(['MPN', '1', 'spec_only']);
 
     // Console carries the section headers.

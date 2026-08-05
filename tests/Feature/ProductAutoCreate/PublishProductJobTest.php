@@ -272,11 +272,16 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
     // name, position 0 = "brand" case-dup). Under T3:
     //   - a mappable+resolvable label (Resolution → pa_resolution 3429) becomes a
     //     GLOBAL taxonomy row {id, options:[<resolved term>]} — FacetWP-visible;
-    //   - non-taxonomy labels (Brand, Connection) stay LOCAL {name, options};
+    //   - non-taxonomy labels (Brand, Series) stay LOCAL {name, options};
     //   - the resolver classifies the WHOLE set and does NOT dedupe by name, so
     //     both "Brand" and "brand" pass through as distinct local rows (dedup was
     //     a property of the removed local-only builder, not a requirement).
     // Rows are still trimmed and blank name/value rows skipped (in the resolver).
+    //
+    // 260728-fwx T9 — the local-passthrough example was "Connection"/"USB-C";
+    // T9 added a "connection"→pa_connectivity label alias (a real facet), so
+    // that label is no longer LOCAL. Swapped to "Series" (deliberately kept
+    // LOCAL by T9 as an ambiguous label) so the local-passthrough intent holds.
     Event::fake([ProductPublished::class]);
 
     // Inject a deterministic term vocabulary so Resolution resolves (no DB/Woo).
@@ -294,7 +299,7 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
         'attributes_json' => [
             ['name' => 'Brand', 'value' => 'Acme'],
             ['name' => 'Resolution', 'value' => '4K UHD'],
-            ['name' => 'Connection', 'value' => 'USB-C'],
+            ['name' => 'Series', 'value' => 'Pro-X'],            // ambiguous label → LOCAL (T9)
             ['name' => '   ', 'value' => 'should be dropped'],   // blank name → skipped
             ['name' => 'Mount', 'value' => '   '],                 // blank value → skipped
         ],
@@ -320,9 +325,9 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
                 'variation' => false,
             ];
 
-            // LOCAL rows: Brand + Connection (non-taxonomy labels), no `id`.
+            // LOCAL rows: Brand + Series (non-taxonomy labels), no `id`.
             $names = array_column($attrs, 'name');
-            $localOk = in_array('Brand', $names, true) && in_array('Connection', $names, true);
+            $localOk = in_array('Brand', $names, true) && in_array('Series', $names, true);
 
             // Blank name/value rows dropped → 1 global + 2 local = 3 rows.
             return $globalOk && $localOk && count($attrs) === 3;

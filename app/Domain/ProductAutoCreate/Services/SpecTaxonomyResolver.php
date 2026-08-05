@@ -217,27 +217,61 @@ class SpecTaxonomyResolver
     ];
 
     /**
-     * Per-attribute VALUE-ALIAS maps: NORMALISED raw value → canonical term
-     * NAME (which must itself exist in the cache). Keyed by attribute slug.
+     * Tolerant label aliases (config `label_aliases`), merged OVER the built-in
+     * {@see self::LABEL_ALIASES} defaults so an operator can extend coverage in
+     * config/spec_taxonomy.php without a code change.
+     *
+     * @var array<string, string>
+     */
+    private array $labelAliases;
+
+    /**
+     * Labels whose TARGET attribute depends on the UNIT in the value
+     * (config `unit_routed_labels`). E.g. `brightness` → lumens vs cd/m².
      *
      * @var array<string, array<string, string>>
      */
-    private const VALUE_ALIASES = [
-        'pa_resolution' => [
-            '4k' => '4K UHD (3840x2160)',
-            '4k uhd' => '4K UHD (3840x2160)',
-            'uhd' => '4K UHD (3840x2160)',
-            '3840x2160' => '4K UHD (3840x2160)',
-            '4k@60hz' => '4K UHD (3840x2160)',
-            '4k 60hz' => '4K UHD (3840x2160)',
-            '1080p' => 'Full HD (1920x1080)',
-            'fhd' => 'Full HD (1920x1080)',
-            'full hd' => 'Full HD (1920x1080)',
-            '1920x1080' => 'Full HD (1920x1080)',
-        ],
-    ];
+    private array $unitRoutedLabels;
 
-    public function __construct(private SpecTermVocabulary $vocabulary) {}
+    /**
+     * Per-attribute value-normaliser tables (config `value_normalisers`),
+     * keyed by slug. The SMART LOGIC lives in this class; these are the
+     * operator-editable lookup tables it consumes.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    private array $valueNormalisers;
+
+    /**
+     * Slugs whose single raw value may carry MANY terms (config `multi_value`).
+     *
+     * @var list<string>
+     */
+    private array $multiValueSlugs;
+
+    /**
+     * @param  array<string, mixed>|null  $config  overrides config('spec_taxonomy') (tests)
+     */
+    public function __construct(private SpecTermVocabulary $vocabulary, ?array $config = null)
+    {
+        $config ??= (array) (function_exists('config') ? config('spec_taxonomy', []) : []);
+
+        /** @var array<string, string> $aliases */
+        $aliases = $config['label_aliases'] ?? [];
+        $this->labelAliases = array_merge(self::LABEL_ALIASES, $aliases);
+
+        /** @var array<string, array<string, string>> $routed */
+        $routed = $config['unit_routed_labels'] ?? [];
+        $this->unitRoutedLabels = $routed;
+
+        /** @var array<string, array<string, mixed>> $normalisers */
+        $normalisers = $config['value_normalisers'] ?? [];
+        $this->valueNormalisers = $normalisers;
+
+        /** @var list<string> $multi */
+        $multi = $config['multi_value'] ?? [];
+        $this->multiValueSlugs = $multi;
+    }
 
     /**
      * Classify a product's WHOLE raw spec set into global / local / unmatched.
@@ -291,12 +325,18 @@ class SpecTaxonomyResolver
                 continue;
             }
 
-            // Regular taxonomy: resolve value → existing term (exact / ci / alias).
-            $term = $this->resolveTermName(
-                $entry['attribute_id'],
-                $entry['raw_value'],
-                self::VALUE_ALIASES[$entry['slug']] ?? [],
-            );
+            // Multi-value taxonomy (e.g. Connectivity): one raw value → many
+            // terms. Handled separately so a partly-resolvable value still emits
+            // the tokens that DO resolve (the rest are logged unmatched).
+            if (in_array($entry['slug'], $this->multiValueSlugs, true)) {
+                $this->resolveMultiValue($entry, $global, $unmatched);
+
+                continue;
+            }
+
+            // Regular taxonomy: resolve value → existing term (exact / ci /
+            // per-attribute normaliser candidate → existing term).
+            $term = $this->resolveValue($entry['slug'], $entry['attribute_id'], $entry['raw_value']);
 
             if ($term === null) {
                 $unmatched[] = $this->unmatched(
@@ -309,7 +349,7 @@ class SpecTaxonomyResolver
                 continue;
             }
 
-            $global[] = $this->global($entry['attribute_id'], $entry['slug'], $term, $entry['raw_label'], $entry['raw_value']);
+            $global[] = $this->globalRow($entry['attribute_id'], $entry['slug'], [$term], $entry['raw_label'], $entry['raw_value']);
         }
 
         return new ResolvedSpec($global, $local, $unmatched);
@@ -342,6 +382,13 @@ class SpecTaxonomyResolver
             $attributeId = null;
             if (! $localForced) {
                 [$slug, $attributeId] = $this->lookupAttribute($normLabel);
+
+                // Unit-routed labels (e.g. `brightness`): the target attribute is
+                // decided by the UNIT in the value, not the label. Only applies
+                // when the label isn't already a direct map/alias hit.
+                if ($slug === null) {
+                    [$slug, $attributeId] = $this->routeByUnit($normLabel, $rawValue);
+                }
             }
 
             $out[] = [
@@ -369,8 +416,8 @@ class SpecTaxonomyResolver
         if (isset(self::LABEL_MAP[$normLabel])) {
             return self::LABEL_MAP[$normLabel];
         }
-        if (isset(self::LABEL_ALIASES[$normLabel])) {
-            return self::LABEL_MAP[self::LABEL_ALIASES[$normLabel]];
+        if (isset($this->labelAliases[$normLabel]) && isset(self::LABEL_MAP[$this->labelAliases[$normLabel]])) {
+            return self::LABEL_MAP[$this->labelAliases[$normLabel]];
         }
 
         return [null, null];
@@ -461,7 +508,7 @@ class SpecTaxonomyResolver
             return;
         }
 
-        $global[] = $this->global($attributeId, $slug, $term, $entry['raw_label'], $entry['raw_value']);
+        $global[] = $this->globalRow($attributeId, $slug, [$term], $entry['raw_label'], $entry['raw_value']);
 
         // The exact raw figure ALSO stays as a LOCAL companion spec row.
         $local[] = [
@@ -488,43 +535,360 @@ class SpecTaxonomyResolver
     }
 
     /**
-     * RESOLVE-DON'T-INVENT: return the cached term matching $rawValue, or null.
-     * Order: exact term_name → case-insensitive/whitespace-normalised → value
-     * alias → canonical term name (exact / ci). null means UNMATCHED.
+     * Resolve a normalised label to a unit-routed target [slug, attribute_id]
+     * (config `unit_routed_labels`) based on the FIRST unit-needle found in the
+     * value, or [null, null] when the label isn't unit-routed / no unit matches.
      *
-     * @param  array<string, string>  $valueAliases  normalised raw value → canonical term name
+     * @return array{0:string|null, 1:int|null}
+     */
+    private function routeByUnit(string $normLabel, string $rawValue): array
+    {
+        $map = $this->unitRoutedLabels[$normLabel] ?? null;
+        if ($map === null) {
+            return [null, null];
+        }
+
+        $haystack = mb_strtolower($rawValue);
+        foreach ($map as $needle => $canonicalKey) {
+            if (mb_strpos($haystack, mb_strtolower((string) $needle)) !== false && isset(self::LABEL_MAP[$canonicalKey])) {
+                return self::LABEL_MAP[$canonicalKey];
+            }
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * RESOLVE-DON'T-INVENT (single-term): return the cached term matching
+     * $rawValue, or null. Order: exact/ci on the RAW value (highest fidelity —
+     * preserves slash/paren-bearing exact terms) → per-attribute NORMALISER
+     * candidate, itself resolved exact/ci against the cache. null → UNMATCHED.
+     *
+     * The normaliser runs AFTER the raw exact/ci pass so a value that already
+     * IS a cached term links verbatim (a broad keyword can never clobber it),
+     * while non-exact inputs ("Tilt Wall Mount", "Cat.6", "500 cd/m²") still map
+     * — the candidate is ONLY ever used when it resolves to a real cached term.
+     *
      * @return array{term_id:int, term_name:string, term_slug:string|null}|null
      */
-    private function resolveTermName(int $attributeId, string $rawValue, array $valueAliases): ?array
+    private function resolveValue(string $slug, int $attributeId, string $rawValue): ?array
     {
         $terms = $this->vocabulary->termsFor($attributeId);
         if ($terms === []) {
             return null;
         }
 
-        // 1) exact
+        $direct = $this->matchTerm($terms, $rawValue);
+        if ($direct !== null) {
+            return $direct;
+        }
+
+        $candidate = $this->normaliseValue($slug, $rawValue);
+        if ($candidate !== null) {
+            return $this->matchTerm($terms, $candidate);
+        }
+
+        return null;
+    }
+
+    /**
+     * Exact term_name → case-insensitive/whitespace-normalised match, or null.
+     *
+     * @param  array<int, array{term_id:int, term_name:string, term_slug:string|null}>  $terms
+     * @return array{term_id:int, term_name:string, term_slug:string|null}|null
+     */
+    private function matchTerm(array $terms, string $value): ?array
+    {
         foreach ($terms as $term) {
-            if ($term['term_name'] === $rawValue) {
+            if ($term['term_name'] === $value) {
                 return $term;
             }
         }
 
-        // 2) case-insensitive / whitespace-normalised
-        $needle = $this->ciValue($rawValue);
+        $needle = $this->ciValue($value);
         foreach ($terms as $term) {
             if ($this->ciValue($term['term_name']) === $needle) {
                 return $term;
             }
         }
 
-        // 3) per-attribute value alias → canonical term name, resolved (exact / ci)
-        if (isset($valueAliases[$needle])) {
-            $canonical = $valueAliases[$needle];
-            $canonicalCi = $this->ciValue($canonical);
-            foreach ($terms as $term) {
-                if ($term['term_name'] === $canonical || $this->ciValue($term['term_name']) === $canonicalCi) {
+        return null;
+    }
+
+    /**
+     * Per-attribute value NORMALISER: turn a raw value into a canonical CANDIDATE
+     * term name (still resolved against the cache by the caller), or null when no
+     * rule fires. The DATA lives in config `value_normalisers`; the strategy
+     * name selects the LOGIC here.
+     */
+    private function normaliseValue(string $slug, string $rawValue): ?string
+    {
+        $cfg = $this->valueNormalisers[$slug] ?? null;
+        if ($cfg === null) {
+            return null;
+        }
+
+        return match ($cfg['strategy'] ?? '') {
+            'resolution' => $this->normaliseResolution($rawValue, $cfg),
+            'keywords' => $this->normaliseKeywords($rawValue, $cfg),
+            'alnum_map' => $this->normaliseAlnumMap($rawValue, $cfg),
+            'warranty' => $this->normaliseWarranty($rawValue, $cfg),
+            'panel' => $this->normalisePanel($rawValue, $cfg),
+            'vesa' => $this->normaliseVesa($rawValue, $cfg),
+            default => null,
+        };
+    }
+
+    /**
+     * Resolution: normalise × → x + strip whitespace; map by WxH digit pair, else
+     * by contains-keyword.
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normaliseResolution(string $rawValue, array $cfg): ?string
+    {
+        $lower = mb_strtolower($rawValue);
+        $xnorm = str_replace(['×', '✕'], 'x', $lower);
+        $stripped = (string) preg_replace('/\s+/', '', $xnorm);
+
+        /** @var array<string, string> $pairs */
+        $pairs = $cfg['pairs'] ?? [];
+        if (preg_match('/(\d{3,5})x(\d{3,5})/', $stripped, $m) === 1) {
+            $pair = $m[1].'x'.$m[2];
+            if (isset($pairs[$pair])) {
+                return $pairs[$pair];
+            }
+        }
+
+        return $this->firstKeywordHit($lower, $cfg['keywords'] ?? []);
+    }
+
+    /**
+     * Contains-keyword strategy (Mount): first/most-specific keyword in the
+     * config order that the value contains wins.
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normaliseKeywords(string $rawValue, array $cfg): ?string
+    {
+        return $this->firstKeywordHit(mb_strtolower($rawValue), $cfg['keywords'] ?? []);
+    }
+
+    /**
+     * Alphanumeric-key strategy (Cable Category): strip non-alphanumerics +
+     * lowercase, then EXACT-match the config key ("Cat.8.1" → "cat81" → Cat8).
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normaliseAlnumMap(string $rawValue, array $cfg): ?string
+    {
+        /** @var array<string, string> $map */
+        $map = $cfg['map'] ?? [];
+        $key = mb_strtolower((string) preg_replace('/[^a-z0-9]+/i', '', $rawValue));
+
+        return $map[$key] ?? null;
+    }
+
+    /**
+     * Warranty: strip a trailing "warranty" word, then keyword (lifetime) or
+     * numeric year/month formatting ("3 year"→"3 Years", "1 year"→"1 Year",
+     * "6 months"→"6 Months").
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normaliseWarranty(string $rawValue, array $cfg): ?string
+    {
+        $v = mb_strtolower(trim($rawValue));
+        $v = trim((string) preg_replace('/\s+warranty$/', '', $v));
+
+        $keyword = $this->firstKeywordHit($v, $cfg['keywords'] ?? []);
+        if ($keyword !== null) {
+            return $keyword;
+        }
+
+        if (preg_match('/^(\d+)\s*year/', $v, $m) === 1) {
+            $n = (int) $m[1];
+
+            return $n === 1 ? '1 Year' : $n.' Years';
+        }
+
+        if (preg_match('/^(\d+)\s*month/', $v, $m) === 1) {
+            $n = (int) $m[1];
+
+            return $n === 1 ? '1 Month' : $n.' Months';
+        }
+
+        return null;
+    }
+
+    /**
+     * Panel: contains ips → IPS; word-boundary "va" → VA; else contains lcd →
+     * LCD. Keywords length ≤ 2 match on a word boundary (so "va" doesn't fire
+     * inside another word); longer keywords match on contains.
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normalisePanel(string $rawValue, array $cfg): ?string
+    {
+        $lower = mb_strtolower($rawValue);
+        /** @var array<string, string> $keywords */
+        $keywords = $cfg['keywords'] ?? [];
+        foreach ($keywords as $needle => $term) {
+            $needle = (string) $needle;
+            if (mb_strlen($needle) <= 2) {
+                if (preg_match('/\b'.preg_quote($needle, '/').'\b/', $lower) === 1) {
                     return $term;
                 }
+            } elseif (mb_strpos($lower, $needle) !== false) {
+                return $term;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * VESA: a "compatible" value → the compatible term; otherwise space-normalise
+     * around `x` and `/` ("200 x 200"→"200x200", "200x200 / 600x400" preserved).
+     * The candidate is still resolved against the cache by the caller.
+     *
+     * @param  array<string, mixed>  $cfg
+     */
+    private function normaliseVesa(string $rawValue, array $cfg): ?string
+    {
+        if (mb_stripos($rawValue, 'compatible') !== false) {
+            return isset($cfg['compatible_term']) ? (string) $cfg['compatible_term'] : null;
+        }
+
+        $v = (string) preg_replace('/\s*[x×]\s*/iu', 'x', trim($rawValue));
+        $v = (string) preg_replace('/\s*\/\s*/', ' / ', $v);
+
+        return trim((string) preg_replace('/\s+/', ' ', $v));
+    }
+
+    /**
+     * First config keyword (in declared order) that $haystack CONTAINS → its
+     * mapped term, or null. Needles are compared lowercase.
+     *
+     * @param  array<string, string>  $keywords
+     */
+    private function firstKeywordHit(string $haystack, array $keywords): ?string
+    {
+        foreach ($keywords as $needle => $term) {
+            if (mb_strpos($haystack, mb_strtolower((string) $needle)) !== false) {
+                return $term;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * MULTI-VALUE resolution (Connectivity): one raw value → one GLOBAL row
+     * carrying ALL tokens that resolve to a cached term; tokens that don't
+     * resolve are logged unmatched WITHOUT failing the row.
+     *
+     * A value that matches a single cached term verbatim (e.g. "IP / Network")
+     * is kept WHOLE — never split — so slash-bearing term names survive.
+     *
+     * @param  array{raw_label:string, raw_value:string, slug:string|null, attribute_id:int|null}  $entry
+     * @param  array<int, array<string, mixed>>  $global
+     * @param  array<int, array<string, mixed>>  $unmatched
+     */
+    private function resolveMultiValue(array $entry, array &$global, array &$unmatched): void
+    {
+        /** @var string $slug */
+        $slug = $entry['slug'];
+        /** @var int $attributeId */
+        $attributeId = $entry['attribute_id'];
+        $rawValue = $entry['raw_value'];
+
+        $terms = $this->vocabulary->termsFor($attributeId);
+
+        // Whole-value verbatim match first — keeps "IP / Network" etc. intact.
+        $whole = $terms === [] ? null : $this->matchTerm($terms, $rawValue);
+        if ($whole !== null) {
+            $global[] = $this->globalRow($attributeId, $slug, [$whole], $entry['raw_label'], $rawValue);
+
+            return;
+        }
+
+        $resolved = [];
+        $seenTermIds = [];
+        foreach ($this->splitMultiValue($rawValue) as $token) {
+            $term = $terms === [] ? null : $this->resolveToken($slug, $terms, $token);
+            if ($term === null) {
+                $unmatched[] = $this->unmatched($entry['raw_label'], $token, $slug, 'value_not_a_term');
+
+                continue;
+            }
+            if (! isset($seenTermIds[$term['term_id']])) {
+                $seenTermIds[$term['term_id']] = true;
+                $resolved[] = $term;
+            }
+        }
+
+        if ($resolved !== []) {
+            $global[] = $this->globalRow($attributeId, $slug, $resolved, $entry['raw_label'], $rawValue);
+        }
+    }
+
+    /**
+     * Split a multi-value string on [,/&]+, the word "and", and "+".
+     *
+     * @return list<string>
+     */
+    private function splitMultiValue(string $value): array
+    {
+        $parts = preg_split('/\s*(?:[,\/&]+|\band\b|\+)\s*/i', $value) ?: [];
+
+        $out = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $out[] = $part;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Resolve ONE multi-value token → cached term. Order: exact/ci on the token
+     * → config `token_map` contains-keyword → strip a trailing version number
+     * ("Bluetooth 5.1"→"Bluetooth") then retry. null → the token is unmatched.
+     *
+     * @param  array<int, array{term_id:int, term_name:string, term_slug:string|null}>  $terms
+     * @return array{term_id:int, term_name:string, term_slug:string|null}|null
+     */
+    private function resolveToken(string $slug, array $terms, string $token): ?array
+    {
+        $direct = $this->matchTerm($terms, $token);
+        if ($direct !== null) {
+            return $direct;
+        }
+
+        /** @var array<string, string> $tokenMap */
+        $tokenMap = $this->valueNormalisers[$slug]['token_map'] ?? [];
+
+        $candidate = $this->firstKeywordHit(mb_strtolower($token), $tokenMap);
+        if ($candidate !== null) {
+            $hit = $this->matchTerm($terms, $candidate);
+            if ($hit !== null) {
+                return $hit;
+            }
+        }
+
+        // Strip a trailing version number ("v2", "5.1", "3.0") and retry.
+        $stripped = trim((string) preg_replace('/\s+v?\d+(?:\.\d+)*\s*$/i', '', $token));
+        if ($stripped !== '' && $stripped !== $token) {
+            $retry = $this->matchTerm($terms, $stripped);
+            if ($retry !== null) {
+                return $retry;
+            }
+            $candidate = $this->firstKeywordHit(mb_strtolower($stripped), $tokenMap);
+            if ($candidate !== null) {
+                return $this->matchTerm($terms, $candidate);
             }
         }
 
@@ -590,18 +954,27 @@ class SpecTaxonomyResolver
     }
 
     /**
-     * Build a global bucket entry.
+     * Build a global bucket entry from one OR MORE resolved terms.
      *
-     * @param  array{term_id:int, term_name:string, term_slug:string|null}  $term
-     * @return array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, raw_label:string, raw_value:string}
+     * `term_ids`/`term_names` carry ALL resolved terms (multi-value support,
+     * 260728-fwx T9); the scalar `term_id`/`term_name` keys mirror the FIRST
+     * term for backward compatibility with pre-T9 single-term callers/tests.
+     *
+     * @param  non-empty-list<array{term_id:int, term_name:string, term_slug:string|null}>  $terms
+     * @return array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, term_ids:list<int>, term_names:list<string>, raw_label:string, raw_value:string}
      */
-    private function global(int $attributeId, string $slug, array $term, string $rawLabel, string $rawValue): array
+    private function globalRow(int $attributeId, string $slug, array $terms, string $rawLabel, string $rawValue): array
     {
+        $termIds = array_map(static fn (array $t): int => $t['term_id'], $terms);
+        $termNames = array_map(static fn (array $t): string => $t['term_name'], $terms);
+
         return [
             'attribute_id' => $attributeId,
             'attribute_slug' => $slug,
-            'term_id' => $term['term_id'],
-            'term_name' => $term['term_name'],
+            'term_id' => $termIds[0],
+            'term_name' => $termNames[0],
+            'term_ids' => $termIds,
+            'term_names' => $termNames,
             'raw_label' => $rawLabel,
             'raw_value' => $rawValue,
         ];

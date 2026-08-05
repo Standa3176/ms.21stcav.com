@@ -50,11 +50,14 @@ final class WooAttributePayloadBuilder
         $out = [];
         $position = 0;
 
-        // GLOBAL first — term-linked pa_* taxonomy rows (id + resolved term name).
+        // GLOBAL first — term-linked pa_* taxonomy rows (id + resolved term
+        // names). `term_names` carries ALL resolved terms (multi-value support,
+        // 260728-fwx T9); single-term rows yield a one-element `options` array,
+        // byte-identical to the pre-T9 output.
         foreach ($resolved->global() as $g) {
             $out[] = [
                 'id' => $g['attribute_id'],
-                'options' => [$g['term_name']],
+                'options' => $g['term_names'],
                 'position' => $position++,
                 'visible' => true,
                 'variation' => false,

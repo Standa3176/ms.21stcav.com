@@ -8,12 +8,19 @@ namespace App\Domain\ProductAutoCreate\Services;
  * 260728-fwx T2 — the classified plan {@see SpecTaxonomyResolver::resolve()}
  * returns for a product's whole raw spec set. Three buckets, no overlap:
  *
- *  - global    — rows that map to a `pa_*` taxonomy AND resolve to an EXISTING
- *                term. Each entry:
+ *  - global    — rows that map to a `pa_*` taxonomy AND resolve to one or MORE
+ *                EXISTING terms. Each entry:
  *                {attribute_id:int, attribute_slug:string, term_id:int,
- *                 term_name:string, raw_label:string, raw_value:string}
+ *                 term_name:string, term_ids:list<int>, term_names:list<string>,
+ *                 raw_label:string, raw_value:string}
  *                These are the ONLY rows T3 sends to Woo as taxonomy (`id`)
  *                attributes.
+ *                MULTI-TERM (260728-fwx T9): `term_ids`/`term_names` carry ALL
+ *                resolved terms (e.g. a "Bluetooth, 2.4 GHz Wireless"
+ *                Connectivity value → two terms). The scalar `term_id`/
+ *                `term_name` keys are kept for backward compatibility and always
+ *                mirror the FIRST resolved term; single-term rows have one-element
+ *                arrays. The builder emits `options` from `term_names`.
  *  - local     — spec-only rows kept as local WC attributes (label passthrough):
  *                {name:string, value:string}. Includes MPN/Model/Part Number,
  *                the EXACT brightness figures (D1), band companion figures, and
@@ -28,7 +35,7 @@ namespace App\Domain\ProductAutoCreate\Services;
 final class ResolvedSpec
 {
     /**
-     * @param  array<int, array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, raw_label:string, raw_value:string}>  $global
+     * @param  array<int, array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, term_ids:list<int>, term_names:list<string>, raw_label:string, raw_value:string}>  $global
      * @param  array<int, array{name:string, value:string}>  $local
      * @param  array<int, array{raw_label:string, raw_value:string, attribute_slug:string, reason:string}>  $unmatched
      */
@@ -39,7 +46,7 @@ final class ResolvedSpec
     ) {}
 
     /**
-     * @return array<int, array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, raw_label:string, raw_value:string}>
+     * @return array<int, array{attribute_id:int, attribute_slug:string, term_id:int, term_name:string, term_ids:list<int>, term_names:list<string>, raw_label:string, raw_value:string}>
      */
     public function global(): array
     {

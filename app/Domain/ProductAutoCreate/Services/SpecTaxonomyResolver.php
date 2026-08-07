@@ -139,13 +139,21 @@ class SpecTaxonomyResolver
         'brightness lumens',  // exact lumens figure — LOCAL per D1
     ];
 
-    /** @var list<string> */
+    /**
+     * Numeric BAND attributes handled by {@see self::resolveBand()}. NOTE: room
+     * size is band-derivable too, but it is MULTI-VALUE + text-mapped (T10 §2)
+     * so it has its own {@see self::resolveRoomSize()} dispatch and is NOT here.
+     *
+     * @var list<string>
+     */
     private const BAND_SLUGS = [
         'pa_screen-size-band',
         'pa_brightness-nits',
         'pa_brightness-lumens',
-        'pa_room-size-band',
     ];
+
+    /** Room-size slug — dedicated multi-value + text-map dispatch (T10 §2). */
+    private const ROOM_SIZE_SLUG = 'pa_room-size-band';
 
     /**
      * Band boundary tables — ascending [upperInclusive|null, canonicalLabel].
@@ -250,6 +258,32 @@ class SpecTaxonomyResolver
     private array $multiValueSlugs;
 
     /**
+     * NORMALISED labels dropped ENTIRELY — never global/local/unmatched
+     * (config `drop_labels`, e.g. EAN → native WooCommerce GTIN field).
+     *
+     * @var list<string>
+     */
+    private array $dropLabels;
+
+    /**
+     * Labels routed to an attribute ONLY when the VALUE matches a pattern
+     * (config `value_conditional_labels`); else LOCAL. E.g. `Cable Type` →
+     * Cable Category only for a CatN value.
+     *
+     * @var array<string, array<string, string>>
+     */
+    private array $valueConditionalLabels;
+
+    /**
+     * A VALUE under one attribute's label that actually belongs to a DIFFERENT
+     * attribute (config `value_reroutes`), keyed by SOURCE slug → target spec.
+     * E.g. a bare `Fixed`/`Tilt` under a Mount label → the Movement attribute.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    private array $valueReroutes;
+
+    /**
      * @param  array<string, mixed>|null  $config  overrides config('spec_taxonomy') (tests)
      */
     public function __construct(private SpecTermVocabulary $vocabulary, ?array $config = null)
@@ -271,6 +305,18 @@ class SpecTaxonomyResolver
         /** @var list<string> $multi */
         $multi = $config['multi_value'] ?? [];
         $this->multiValueSlugs = $multi;
+
+        /** @var list<string> $drop */
+        $drop = $config['drop_labels'] ?? [];
+        $this->dropLabels = array_map(fn (string $l): string => $this->normaliseLabel($l), $drop);
+
+        /** @var array<string, array<string, string>> $conditional */
+        $conditional = $config['value_conditional_labels'] ?? [];
+        $this->valueConditionalLabels = $conditional;
+
+        /** @var array<string, array<string, mixed>> $reroutes */
+        $reroutes = $config['value_reroutes'] ?? [];
+        $this->valueReroutes = $reroutes;
     }
 
     /**
@@ -316,6 +362,15 @@ class SpecTaxonomyResolver
                 continue;
             }
 
+            // Room size (T10 §2): MULTI-VALUE, text-mapped OR numeric-derived,
+            // emitting all applicable bands (sorted small→large) plus the raw
+            // figure as a LOCAL companion.
+            if ($entry['slug'] === self::ROOM_SIZE_SLUG) {
+                $this->resolveRoomSize($entry, $global, $local, $unmatched);
+
+                continue;
+            }
+
             // Band attributes: derive the band from the leading numeric, resolve
             // the band label to an EXISTING term, and emit the exact figure as a
             // LOCAL companion row.
@@ -323,6 +378,25 @@ class SpecTaxonomyResolver
                 $this->resolveBand($entry, $global, $local, $unmatched);
 
                 continue;
+            }
+
+            // Value re-routing (T10 §3): a value under this label may belong to a
+            // DIFFERENT attribute (e.g. a bare "Fixed"/"Tilt" under a Mount label
+            // → Movement). Only fires when the value is NOT a genuine source
+            // value AND IS a target value — so real mounts stay mounts.
+            if (isset($this->valueReroutes[$entry['slug']])) {
+                $reroute = $this->rerouteTarget($entry['slug'], $entry['raw_value']);
+                if ($reroute !== null) {
+                    [$targetSlug, $targetAttributeId] = $reroute;
+                    $term = $this->resolveValue($targetSlug, $targetAttributeId, $entry['raw_value']);
+                    if ($term === null) {
+                        $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $targetSlug, 'value_not_a_term');
+                    } else {
+                        $global[] = $this->globalRow($targetAttributeId, $targetSlug, [$term], $entry['raw_label'], $entry['raw_value']);
+                    }
+
+                    continue;
+                }
             }
 
             // Multi-value taxonomy (e.g. Connectivity): one raw value → many
@@ -376,6 +450,12 @@ class SpecTaxonomyResolver
             }
 
             $normLabel = $this->normaliseLabel($rawLabel);
+
+            // Dropped labels (T10 §4b): EAN etc. never surface anywhere.
+            if (in_array($normLabel, $this->dropLabels, true)) {
+                continue;
+            }
+
             $localForced = in_array($normLabel, self::LOCAL_FORCED_LABELS, true);
 
             $slug = null;
@@ -388,6 +468,12 @@ class SpecTaxonomyResolver
                 // when the label isn't already a direct map/alias hit.
                 if ($slug === null) {
                     [$slug, $attributeId] = $this->routeByUnit($normLabel, $rawValue);
+                }
+
+                // Value-conditional labels (T10 §4): e.g. `Cable Type` is only a
+                // Cable Category when the VALUE is an actual CatN grade; else LOCAL.
+                if ($slug === null) {
+                    [$slug, $attributeId] = $this->routeByValuePattern($normLabel, $rawValue);
                 }
             }
 
@@ -535,6 +621,125 @@ class SpecTaxonomyResolver
     }
 
     /**
+     * Room size (T10 §2): MULTI-VALUE. Split the raw value into tokens (comma /
+     * ampersand / "and" — NOT slash, so "Medium/Large" stays one descriptor),
+     * resolve each token via exact/ci → text-map (contains) → numeric band
+     * derivation, dedupe, sort small→large by `band_rank`, and emit ONE global
+     * row carrying all bands + the raw value as a LOCAL companion.
+     *
+     * @param  array{raw_label:string, raw_value:string, slug:string|null, attribute_id:int|null}  $entry
+     * @param  array<int, array<string, mixed>>  $global
+     * @param  array<int, array<string, mixed>>  $local
+     * @param  array<int, array<string, mixed>>  $unmatched
+     */
+    private function resolveRoomSize(array $entry, array &$global, array &$local, array &$unmatched): void
+    {
+        $slug = self::ROOM_SIZE_SLUG;
+        /** @var int $attributeId */
+        $attributeId = $entry['attribute_id'];
+        $rawValue = $entry['raw_value'];
+
+        /** @var array<string, mixed> $cfg */
+        $cfg = $this->valueNormalisers[$slug] ?? [];
+        /** @var array<string, string> $textMap */
+        $textMap = $cfg['text_map'] ?? [];
+        /** @var array<string, int> $bandRank */
+        $bandRank = $cfg['band_rank'] ?? [];
+
+        $terms = $this->vocabulary->termsFor($attributeId);
+
+        /** @var array<string, array{term_id:int, term_name:string, term_slug:string|null}> $resolved */
+        $resolved = [];
+        foreach ($this->splitRoomSize($rawValue) as $token) {
+            $term = $this->resolveRoomToken($attributeId, $terms, $token, $textMap);
+            if ($term !== null) {
+                $resolved[$term['term_name']] = $term;
+            }
+        }
+
+        if ($resolved === []) {
+            $unmatched[] = $this->unmatched($entry['raw_label'], $rawValue, $slug, 'value_not_a_term');
+
+            return;
+        }
+
+        $list = array_values($resolved);
+        usort($list, static function (array $a, array $b) use ($bandRank): int {
+            $ra = $bandRank[$a['term_name']] ?? PHP_INT_MAX;
+            $rb = $bandRank[$b['term_name']] ?? PHP_INT_MAX;
+
+            return $ra <=> $rb;
+        });
+
+        $global[] = $this->globalRow($attributeId, $slug, $list, $entry['raw_label'], $rawValue);
+
+        // The exact raw figure/text ALSO stays as a LOCAL companion spec row.
+        $local[] = [
+            'name' => self::BAND_COMPANION_LABEL[$slug] ?? $entry['raw_label'],
+            'value' => $rawValue,
+        ];
+    }
+
+    /**
+     * Split a room-size value into tokens on comma / ampersand / "and" — NOT on
+     * slash ("Medium/Large" is a single dominant descriptor, not two bands) and
+     * NOT on "to" (handled by numeric/text mapping of the whole token).
+     *
+     * @return list<string>
+     */
+    private function splitRoomSize(string $value): array
+    {
+        $parts = preg_split('/\s*(?:,|&|\band\b)\s*/i', $value) ?: [];
+
+        $out = [];
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if ($part !== '') {
+                $out[] = $part;
+            }
+        }
+
+        return $out === [] ? [$value] : $out;
+    }
+
+    /**
+     * Resolve ONE room-size token → cached band term. Order: exact/ci → text-map
+     * (contains) → numeric band derivation (tolerant band-term match).
+     *
+     * @param  array<int, array{term_id:int, term_name:string, term_slug:string|null}>  $terms
+     * @param  array<string, string>  $textMap
+     * @return array{term_id:int, term_name:string, term_slug:string|null}|null
+     */
+    private function resolveRoomToken(int $attributeId, array $terms, string $token, array $textMap): ?array
+    {
+        if ($terms === []) {
+            return null;
+        }
+
+        $direct = $this->matchTerm($terms, $token);
+        if ($direct !== null) {
+            return $direct;
+        }
+
+        $label = $this->firstKeywordHit(mb_strtolower($token), $textMap);
+        if ($label !== null) {
+            $hit = $this->matchTerm($terms, $label);
+            if ($hit !== null) {
+                return $hit;
+            }
+        }
+
+        $number = $this->leadingNumeric($token);
+        if ($number !== null) {
+            $bandLabel = $this->deriveBandLabel(self::ROOM_SIZE_SLUG, $number);
+
+            return $this->resolveBandTerm($attributeId, $bandLabel);
+        }
+
+        return null;
+    }
+
+    /**
      * Resolve a normalised label to a unit-routed target [slug, attribute_id]
      * (config `unit_routed_labels`) based on the FIRST unit-needle found in the
      * value, or [null, null] when the label isn't unit-routed / no unit matches.
@@ -559,6 +764,65 @@ class SpecTaxonomyResolver
     }
 
     /**
+     * Resolve a value-conditional label (config `value_conditional_labels`) to
+     * [slug, attribute_id] — routed ONLY when the RAW value matches one of the
+     * label's PCRE patterns (first match wins), else [null, null] → LOCAL.
+     *
+     * @return array{0:string|null, 1:int|null}
+     */
+    private function routeByValuePattern(string $normLabel, string $rawValue): array
+    {
+        $map = $this->valueConditionalLabels[$normLabel] ?? null;
+        if ($map === null) {
+            return [null, null];
+        }
+
+        foreach ($map as $pattern => $canonicalKey) {
+            if (preg_match((string) $pattern, $rawValue) === 1 && isset(self::LABEL_MAP[$canonicalKey])) {
+                return self::LABEL_MAP[$canonicalKey];
+            }
+        }
+
+        return [null, null];
+    }
+
+    /**
+     * Decide whether a value under $slug's label should RE-ROUTE to a different
+     * attribute (config `value_reroutes`). Re-routes ONLY when the value is NOT
+     * a genuine source value (does not hit the source normaliser) AND DOES hit
+     * the target normaliser — so a "Full-Motion Wall Mount" (a Wall mount) stays
+     * Mount while a bare "Fixed"/"Tilt"/"Full Motion – …" routes to Movement.
+     *
+     * @return array{0:string, 1:int}|null [targetSlug, targetAttributeId]
+     */
+    private function rerouteTarget(string $slug, string $rawValue): ?array
+    {
+        $cfg = $this->valueReroutes[$slug] ?? null;
+        if ($cfg === null) {
+            return null;
+        }
+
+        $targetKey = (string) ($cfg['target'] ?? '');
+        if (! isset(self::LABEL_MAP[$targetKey])) {
+            return null;
+        }
+
+        // Genuine source value (e.g. a real mount keyword) → keep with source.
+        if ($this->normaliseValue($slug, $rawValue) !== null) {
+            return null;
+        }
+
+        [$targetSlug, $targetAttributeId] = self::LABEL_MAP[$targetKey];
+
+        // Only re-route when the value actually reads as a TARGET value.
+        if ($this->normaliseValue($targetSlug, $rawValue) === null) {
+            return null;
+        }
+
+        return [$targetSlug, $targetAttributeId];
+    }
+
+    /**
      * RESOLVE-DON'T-INVENT (single-term): return the cached term matching
      * $rawValue, or null. Order: exact/ci on the RAW value (highest fidelity —
      * preserves slash/paren-bearing exact terms) → per-attribute NORMALISER
@@ -576,6 +840,31 @@ class SpecTaxonomyResolver
         $terms = $this->vocabulary->termsFor($attributeId);
         if ($terms === []) {
             return null;
+        }
+
+        /** @var array<string, mixed> $cfg */
+        $cfg = $this->valueNormalisers[$slug] ?? [];
+        $norm = $this->ciValue($rawValue);
+
+        // Force-drop (T10 §3): junk values that are STILL cached terms (e.g.
+        // Display Technology "Interactive Display") — unmatched, never sent.
+        /** @var list<string> $dropValues */
+        $dropValues = $cfg['drop_values'] ?? [];
+        foreach ($dropValues as $dropValue) {
+            if ($this->ciValue((string) $dropValue) === $norm) {
+                return null;
+            }
+        }
+
+        // Overrides (T10 §3): force a specific cached term AHEAD of the verbatim
+        // match, so a value that is itself a (different) cached term can be
+        // remapped — e.g. US "Aluminum" → UK "Aluminium".
+        /** @var array<string, string> $overrides */
+        $overrides = $cfg['overrides'] ?? [];
+        foreach ($overrides as $from => $to) {
+            if ($this->ciValue((string) $from) === $norm) {
+                return $this->matchTerm($terms, (string) $to);
+            }
         }
 
         $direct = $this->matchTerm($terms, $rawValue);
@@ -635,8 +924,27 @@ class SpecTaxonomyResolver
             'warranty' => $this->normaliseWarranty($rawValue, $cfg),
             'panel' => $this->normalisePanel($rawValue, $cfg),
             'vesa' => $this->normaliseVesa($rawValue, $cfg),
+            'length' => $this->normaliseLength($rawValue),
+            // 'room_size' has a dedicated dispatch ({@see self::resolveRoomSize})
+            // and never reaches here.
             default => null,
         };
+    }
+
+    /**
+     * Length (T10 §3): "0.6 m" / "2 m" / "3 metres" / "3 meters" → "0.6m" / "2m"
+     * / "3m" — strip the space and canonicalise the unit to a bare `m`. Other
+     * units (cm/km) are left to the verbatim cache match. The produced candidate
+     * is still resolved against the cache by the caller.
+     */
+    private function normaliseLength(string $rawValue): ?string
+    {
+        $v = mb_strtolower(trim($rawValue));
+        if (preg_match('/^([0-9]+(?:\.[0-9]+)?)\s*(?:m|metre|metres|meter|meters)$/', $v, $m) === 1) {
+            return $m[1].'m';
+        }
+
+        return null;
     }
 
     /**
@@ -748,9 +1056,12 @@ class SpecTaxonomyResolver
     }
 
     /**
-     * VESA: a "compatible" value → the compatible term; otherwise space-normalise
-     * around `x` and `/` ("200 x 200"→"200x200", "200x200 / 600x400" preserved).
-     * The candidate is still resolved against the cache by the caller.
+     * VESA (T10 §1): a "compatible" value → the compatible term; a RANGE
+     * ("AxB to|and|- CxD") → every standard pattern within the range (+ the
+     * stated endpoints), sorted ascending and joined by ' / '; a "VESA N, VESA
+     * M" / comma list → each NxN/NxM joined; a single "AxB" → "AxB". The
+     * produced compound string is resolved as ONE cached term by the caller
+     * (resolve-don't-invent: a produced string that isn't cached is unmatched).
      *
      * @param  array<string, mixed>  $cfg
      */
@@ -760,10 +1071,124 @@ class SpecTaxonomyResolver
             return isset($cfg['compatible_term']) ? (string) $cfg['compatible_term'] : null;
         }
 
-        $v = (string) preg_replace('/\s*[x×]\s*/iu', 'x', trim($rawValue));
-        $v = (string) preg_replace('/\s*\/\s*/', ' / ', $v);
+        // Normalise: lowercase, × → x, dash variants → '-', strip 'mm', tidy the
+        // spacing around x so "200 x 200" and "200×200 mm" both become "200x200".
+        $v = mb_strtolower(trim($rawValue));
+        $v = str_replace(['×', '✕'], 'x', $v);
+        $v = (string) preg_replace('/[\x{2010}-\x{2015}\x{2212}]/u', '-', $v);
+        $v = (string) preg_replace('/\bmm\b/', ' ', $v);
+        $v = (string) preg_replace('/\s*x\s*/', 'x', $v);
+        $v = trim((string) preg_replace('/\s+/', ' ', $v));
 
-        return trim((string) preg_replace('/\s+/', ' ', $v));
+        // Already a compound slash-list (pre-enumerated) → normalise spacing only.
+        if (str_contains($v, '/')) {
+            $v = (string) preg_replace('/\s*\/\s*/', ' / ', $v);
+
+            return trim((string) preg_replace('/\s+/', ' ', $v));
+        }
+
+        /** @var list<array{0:int, 1:int}> $patterns */
+        $patterns = $cfg['standard_patterns'] ?? [];
+
+        // Range: "AxB to CxD" | "AxB and CxD" | "AxB - CxD".
+        if (preg_match('/^(\d+)x(\d+)\s*(?:to|and|-)\s*(\d+)x(\d+)$/', $v, $m) === 1) {
+            return $this->enumerateVesaRange((int) $m[1], (int) $m[2], (int) $m[3], (int) $m[4], $patterns);
+        }
+
+        // Comma / "vesa N" list.
+        if (str_contains($v, ',') || str_contains($v, 'vesa')) {
+            $pairs = $this->parseVesaPairs($v);
+            if ($pairs !== []) {
+                return $this->joinVesaPairs($pairs);
+            }
+        }
+
+        // Single "AxB".
+        if (preg_match('/^(\d+)x(\d+)$/', $v, $m) === 1) {
+            return $m[1].'x'.$m[2];
+        }
+
+        // Single "vesa N" / bare "N" → NxN.
+        if (preg_match('/^(?:vesa\s*)?(\d+)$/', $v, $m) === 1) {
+            return $m[1].'x'.$m[1];
+        }
+
+        return $v === '' ? null : $v;
+    }
+
+    /**
+     * Enumerate the VESA standard patterns within a stated range, always
+     * including the stated endpoints, sorted ascending and joined by ' / '.
+     *
+     * @param  list<array{0:int, 1:int}>  $patterns
+     */
+    private function enumerateVesaRange(int $a, int $b, int $c, int $d, array $patterns): string
+    {
+        $minW = min($a, $c);
+        $maxW = max($a, $c);
+        $minH = min($b, $d);
+        $maxH = max($b, $d);
+
+        $pairs = [];
+        foreach ($patterns as $pattern) {
+            $w = (int) $pattern[0];
+            $h = (int) $pattern[1];
+            if ($w >= $minW && $w <= $maxW && $h >= $minH && $h <= $maxH) {
+                $pairs[] = [$w, $h];
+            }
+        }
+
+        // Always include the stated endpoints (even if not standard patterns).
+        $pairs[] = [$a, $b];
+        $pairs[] = [$c, $d];
+
+        return $this->joinVesaPairs($pairs);
+    }
+
+    /**
+     * Parse a comma / "vesa N" list into WxH pairs. "vesa 75"/"75" → [75,75];
+     * "200x200" → [200,200].
+     *
+     * @return list<array{0:int, 1:int}>
+     */
+    private function parseVesaPairs(string $v): array
+    {
+        $pairs = [];
+        foreach (preg_split('/\s*,\s*/', $v) ?: [] as $token) {
+            $token = trim($token);
+            if ($token === '') {
+                continue;
+            }
+            if (preg_match('/(\d+)x(\d+)/', $token, $m) === 1) {
+                $pairs[] = [(int) $m[1], (int) $m[2]];
+            } elseif (preg_match('/(\d+)/', $token, $m) === 1) {
+                $pairs[] = [(int) $m[1], (int) $m[1]];
+            }
+        }
+
+        return $pairs;
+    }
+
+    /**
+     * Dedupe, sort ascending (by width then height) and ' / '-join WxH pairs.
+     *
+     * @param  list<array{0:int, 1:int}>  $pairs
+     */
+    private function joinVesaPairs(array $pairs): string
+    {
+        $seen = [];
+        $unique = [];
+        foreach ($pairs as $pair) {
+            $key = $pair[0].'x'.$pair[1];
+            if (! isset($seen[$key])) {
+                $seen[$key] = true;
+                $unique[] = $pair;
+            }
+        }
+
+        usort($unique, static fn (array $x, array $y): int => $x[0] <=> $y[0] ?: $x[1] <=> $y[1]);
+
+        return implode(' / ', array_map(static fn (array $p): string => $p[0].'x'.$p[1], $unique));
     }
 
     /**
@@ -805,32 +1230,111 @@ class SpecTaxonomyResolver
 
         $terms = $this->vocabulary->termsFor($attributeId);
 
-        // Whole-value verbatim match first — keeps "IP / Network" etc. intact.
-        $whole = $terms === [] ? null : $this->matchTerm($terms, $rawValue);
-        if ($whole !== null) {
-            $global[] = $this->globalRow($attributeId, $slug, [$whole], $entry['raw_label'], $rawValue);
-
-            return;
-        }
+        /** @var array<string, mixed> $cfg */
+        $cfg = $this->valueNormalisers[$slug] ?? [];
+        /** @var array<string, list<string>> $expansions */
+        $expansions = $cfg['token_expansions'] ?? [];
+        /** @var array<string, list<string>> $bearerModes */
+        $bearerModes = $cfg['bearer_modes'] ?? [];
 
         $resolved = [];
         $seenTermIds = [];
-        foreach ($this->splitMultiValue($rawValue) as $token) {
-            $term = $terms === [] ? null : $this->resolveToken($slug, $terms, $token);
-            if ($term === null) {
-                $unmatched[] = $this->unmatched($entry['raw_label'], $token, $slug, 'value_not_a_term');
+        $directTermNames = [];
 
-                continue;
-            }
+        $addTerm = function (array $term) use (&$resolved, &$seenTermIds): void {
             if (! isset($seenTermIds[$term['term_id']])) {
                 $seenTermIds[$term['term_id']] = true;
                 $resolved[] = $term;
+            }
+        };
+
+        // Whole-value verbatim match first — keeps "IP / Network" etc. intact
+        // (never split on its slash). A single-bearer whole match (e.g. "HDMI")
+        // is still a DIRECT term, so bearer→mode below can add its mode facet.
+        $whole = $terms === [] ? null : $this->matchTerm($terms, $rawValue);
+        if ($whole !== null) {
+            $addTerm($whole);
+            $directTermNames[] = $whole['term_name'];
+        } else {
+            foreach ($this->splitMultiValue($rawValue) as $token) {
+                if ($terms === []) {
+                    $unmatched[] = $this->unmatched($entry['raw_label'], $token, $slug, 'value_not_a_term');
+
+                    continue;
+                }
+
+                // Token EXPANSION (T10 §3): one token → possibly MANY terms
+                // (e.g. "Network (LAN)" → Ethernet + IP / Network). Expansion-derived
+                // terms do NOT feed the bearer→mode inference below.
+                $expandNames = $this->matchExpansion($token, $expansions);
+                if ($expandNames !== null) {
+                    $any = false;
+                    foreach ($expandNames as $name) {
+                        $hit = $this->matchTerm($terms, $name);
+                        if ($hit !== null) {
+                            $addTerm($hit);
+                            $any = true;
+                        }
+                    }
+                    if (! $any) {
+                        $unmatched[] = $this->unmatched($entry['raw_label'], $token, $slug, 'value_not_a_term');
+                    }
+
+                    continue;
+                }
+
+                $term = $this->resolveToken($slug, $terms, $token);
+                if ($term === null) {
+                    $unmatched[] = $this->unmatched($entry['raw_label'], $token, $slug, 'value_not_a_term');
+
+                    continue;
+                }
+                $addTerm($term);
+                $directTermNames[] = $term['term_name'];
+            }
+        }
+
+        // Bearer → mode (T10 §3): a directly-resolved bearer implies a
+        // connection-MODE facet (HDMI/USB/Ethernet → Wired; Wi-Fi/Bluetooth/DECT
+        // → Wireless). resolve-don't-invent: the mode term is added only if it is
+        // itself a cached term.
+        if ($terms !== []) {
+            foreach ($bearerModes as $modeTerm => $bearers) {
+                foreach ($directTermNames as $name) {
+                    if (in_array($name, $bearers, true)) {
+                        $hit = $this->matchTerm($terms, (string) $modeTerm);
+                        if ($hit !== null) {
+                            $addTerm($hit);
+                        }
+
+                        break;
+                    }
+                }
             }
         }
 
         if ($resolved !== []) {
             $global[] = $this->globalRow($attributeId, $slug, $resolved, $entry['raw_label'], $rawValue);
         }
+    }
+
+    /**
+     * Match a token against the config `token_expansions` (contains-keyword →
+     * LIST of candidate term names), or null when no expansion fires.
+     *
+     * @param  array<string, list<string>>  $expansions
+     * @return list<string>|null
+     */
+    private function matchExpansion(string $token, array $expansions): ?array
+    {
+        $haystack = mb_strtolower($token);
+        foreach ($expansions as $needle => $termNames) {
+            if (mb_strpos($haystack, mb_strtolower((string) $needle)) !== false) {
+                return array_values($termNames);
+            }
+        }
+
+        return null;
     }
 
     /**

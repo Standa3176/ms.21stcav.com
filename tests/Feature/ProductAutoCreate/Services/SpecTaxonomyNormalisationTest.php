@@ -51,18 +51,26 @@ function seedT9Vocabulary(): void
         3543 => ['LCD', 'IPS', 'VA'],
         3533 => ['75x75', '100x100', 'VESA compatible', '200x200 / 600x400', '400x400', '600x400', '200x200', '800x400', '800x600', '200x200 / 300x300 / 400x200 / 400x400 / 600x400', '75x75 / 100x100'],
         3518 => ['Standard (up to 350)', 'Semi-bright (351-700)', 'High bright (701-2500)', 'Window facing (2500+)'],
-        3554 => ['Under 3000 lumens', '3000-4999 lumens', '5000-9999 lumens', '10000+ lumens'],
+        // T11 §3 — six lumens bands (retired: 3000-4999, 5000-9999).
+        3554 => ['Under 3000 lumens', '3000-3999 lumens', '4000-4999 lumens', '5000-6999 lumens', '7000-9999 lumens', '10000+ lumens'],
         // T10 additions.
         3522 => ['Tilt & Swivel', 'Fixed', 'Tilt', 'Swivel', 'Full Motion'],                              // Movement
         3537 => ['U/UTP', 'S/FTP'],                                                                       // Shielding
         3268 => ['Black', 'White', 'Grey', 'Silver', 'Graphite', 'Blue', 'Red', 'Green'],                // Colour
-        3520 => ['LCD', 'IPS', 'Direct View LED', 'Interactive Display', 'Commercial TV', 'Digital', 'Large Format Commercial Display', 'OLED'], // Display Technology
+        // T11 §1 — the 11 real Display Technology terms + a few LEAKED product-types
+        // (still cached in prod) to prove drop_values force-unmatch them.
+        3520 => ['LCD', 'LED', 'IPS', 'VA', 'TN', 'OLED', 'QLED', 'Direct View LED', 'NanoCell', 'Mini-LED', 'MicroLED', 'Interactive Display', 'Commercial Display', 'Commercial TV', 'Digital', 'Large Format Commercial Display'], // Display Technology
         3364 => ['Steel', 'Aluminium', 'Plastic', 'Polycarbonate', 'Glass', 'Aluminum'],                 // Material
         3534 => ['0.6m', '2m', '1m', '3m', '2 metres', '0.5m'],                                          // Length
         3542 => ['Laser', 'Lamp', 'LED'],                                                                // Light Source
         3553 => ['Huddle (2-4 people)', 'Small (4-6 people)', 'Medium (6-10 people)', 'Large (10+ people)'], // Room Size
         3550 => ['Yes', 'No'],                                                                           // Touchscreen
-        3547 => ['50kg', '25kg', '100kg'],                                                               // Max Load
+        // T11 §2 — Max Load exact ("{n} kg", space) + the 5 derived-band terms.
+        3547 => ['50 kg', '25 kg', '100 kg', '70 kg', '8 kg'],                                            // Max Load (exact kg)
+        3556 => ['Up to 10 kg', '11-25 kg', '26-50 kg', '51-100 kg', 'Over 100 kg'],                      // Max Load band (provisional attr id)
+        // T11 §4 — Touch Points + Touch Technology (for the 3-way touchscreen split).
+        3541 => ['20-point', '10-point', '40-point'],                                                    // Touch Points
+        3540 => ['PCAP', 'IR', 'InGlass', 'Optical', 'IR Touch'],                                        // Touch Technology
     ]);
 }
 
@@ -270,7 +278,8 @@ it('routes a "Brightness" lumens value to the pa_brightness-lumens band', functi
 
     expect($spec->global())->toHaveCount(1);
     expect($spec->global()[0]['attribute_slug'])->toBe('pa_brightness-lumens');
-    expect($spec->global()[0]['term_name'])->toBe('3000-4999 lumens');
+    // T11 §3: 6-band scheme — 3500 now falls in 3000-3999 (was 3000-4999, retired).
+    expect($spec->global()[0]['term_name'])->toBe('3000-3999 lumens');
 });
 
 // ── Resolve-don't-invent preserved ───────────────────────────────────────────
@@ -481,12 +490,18 @@ it('maps a 3.5mm Stereo Jack to the 3.5mm Audio term', function (): void {
 
 // ── Label aliases to ADD (§4) ────────────────────────────────────────────────
 
-it('aliases Max Load Capacity to pa_max-load-kg', function (): void {
+it('aliases Max Load Capacity to pa_max-load-kg AND emits the derived band', function (): void {
+    // T11 §2: a Max Load value now emits BOTH the exact kg facet and the band facet.
     $spec = t9Resolver()->resolve([['name' => 'Max Load Capacity', 'value' => '50kg']]);
 
-    expect($spec->global())->toHaveCount(1);
-    expect($spec->global()[0]['attribute_slug'])->toBe('pa_max-load-kg');
-    expect($spec->global()[0]['term_name'])->toBe('50kg');
+    expect($spec->global())->toHaveCount(2);
+
+    $bySlug = collect($spec->global())->keyBy('attribute_slug');
+    expect($bySlug->has('pa_max-load-kg'))->toBeTrue();
+    expect($bySlug->has('pa_max-load-band'))->toBeTrue();
+    // Exact normalised to "{n} kg" (space); band derived (26-50 kg).
+    expect($bySlug['pa_max-load-kg']['term_name'])->toBe('50 kg');
+    expect($bySlug['pa_max-load-band']['term_name'])->toBe('26-50 kg');
 });
 
 it('aliases Display Type to pa_display-tech', function (): void {
@@ -542,4 +557,195 @@ it('drops an EAN label entirely (not global, local, or unmatched)', function ():
     expect($spec->global())->toBe([]);
     expect($spec->local())->toBe([]);
     expect($spec->unmatched())->toBe([]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 260728-fwx T11 — display-tech drops/maps, dual Max Load, 6 lumens bands,
+| touchscreen 3-way split, Movement + general normalised-key tier
+|--------------------------------------------------------------------------
+*/
+
+// ── §1 Display Technology drops + maps ───────────────────────────────────────
+
+it('drops a leaked product-type Display Technology value (not global, not local)', function (string $raw): void {
+    $spec = t9Resolver()->resolve([['name' => 'Display Technology', 'value' => $raw]]);
+
+    expect($spec->global())->toBe([]);
+    expect($spec->local())->toBe([]);
+    expect($spec->unmatched())->toHaveCount(1);
+    expect($spec->unmatched()[0]['attribute_slug'])->toBe('pa_display-tech');
+})->with([
+    'Commercial Display',
+    'Interactive Flat Panel Display',
+    'Interactive Flat Panel',
+    'Video Wall Display',
+    'Commercial Signage Display',
+    'Interactive Touch Display',
+    'Stretch Display',
+    'Non-Interactive',
+    'Flat Panel',
+    'Interactive E-Board',
+    'Large Format Commercial Display',
+]);
+
+it('maps Direct-lit / Direct / D-LED Display Technology values to LCD', function (string $raw): void {
+    $spec = t9Resolver()->resolve([['name' => 'Display Technology', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_display-tech');
+    expect($spec->global()[0]['term_name'])->toBe('LCD');
+})->with([
+    'Direct-lit LED',
+    'Direct LED',
+    'D-LED',
+]);
+
+it('maps "Direct View LED, Flip-Chip CoB" to Direct View LED (never the leaked CoB term)', function (): void {
+    $spec = t9Resolver()->resolve([['name' => 'Display Technology', 'value' => 'Direct View LED, Flip-Chip CoB']]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_display-tech');
+    expect($spec->global()[0]['term_name'])->toBe('Direct View LED');
+});
+
+// ── §2 Max Load dual emit ────────────────────────────────────────────────────
+
+it('emits both the exact kg facet and the derived band from a Max Load value', function (string $raw, string $kg, string $band): void {
+    $spec = t9Resolver()->resolve([['name' => 'Max Load', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(2);
+    $bySlug = collect($spec->global())->keyBy('attribute_slug');
+    expect($bySlug['pa_max-load-kg']['term_name'])->toBe($kg);
+    expect($bySlug['pa_max-load-band']['term_name'])->toBe($band);
+})->with([
+    ['70kg', '70 kg', '51-100 kg'],
+    ['8 kg', '8 kg', 'Up to 10 kg'],
+    ['25kg', '25 kg', '11-25 kg'],
+    ['50 kg', '50 kg', '26-50 kg'],
+]);
+
+it('accepts the Max Weight Capacity / Load Rating labels for Max Load', function (string $label): void {
+    $spec = t9Resolver()->resolve([['name' => $label, 'value' => '70kg']]);
+
+    $bySlug = collect($spec->global())->keyBy('attribute_slug');
+    expect($bySlug['pa_max-load-kg']['term_name'])->toBe('70 kg');
+    expect($bySlug['pa_max-load-band']['term_name'])->toBe('51-100 kg');
+})->with([
+    'Max Weight Capacity',
+    'Load Rating',
+    'Weight Capacity',
+]);
+
+// ── §3 Lumens 6-band scheme + LOCAL companion ────────────────────────────────
+
+it('derives the lumens band with the T11 six-band scheme', function (string $raw, string $band): void {
+    $spec = t9Resolver()->resolve([['name' => 'Brightness Band (lumens)', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_brightness-lumens');
+    expect($spec->global()[0]['term_name'])->toBe($band);
+})->with([
+    ['4200 lumens', '4000-4999 lumens'],
+    ['6000 lumens', '5000-6999 lumens'],
+    ['2999 lumens', 'Under 3000 lumens'],
+    ['3000 lumens', '3000-3999 lumens'],
+    ['7000 lumens', '7000-9999 lumens'],
+    ['9999 lumens', '7000-9999 lumens'],
+    ['10000 lumens', '10000+ lumens'],
+]);
+
+it('never derives a retired lumens band term', function (string $raw): void {
+    $spec = t9Resolver()->resolve([['name' => 'Brightness Band (lumens)', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['term_name'])->not->toBe('3000-4999 lumens');
+    expect($spec->global()[0]['term_name'])->not->toBe('5000-9999 lumens');
+})->with(['4200 lumens', '3500 lumens', '6000 lumens', '8000 lumens']);
+
+it('emits the exact lumens figure as a LOCAL "Brightness (lumens)" ANSI companion', function (): void {
+    $spec = t9Resolver()->resolve([['name' => 'Brightness Band (lumens)', 'value' => '4200 lumens']]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->local())->toBe([['name' => 'Brightness (lumens)', 'value' => '4200 ANSI lumens']]);
+});
+
+// ── §4 Touchscreen boolean + 3-way split ─────────────────────────────────────
+
+it('normalises any touchscreen-describing value to Yes', function (string $raw): void {
+    $spec = t9Resolver()->resolve([['name' => 'Touchscreen', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_touchscreen-yn');
+    expect($spec->global()[0]['term_name'])->toBe('Yes');
+})->with([
+    'Multi-touch touchscreen',
+    'Multi-touch interactive touchscreen',
+    'Capacitive touch',
+]);
+
+it('keeps an explicit Yes / No touchscreen value verbatim', function (string $raw, string $term): void {
+    $spec = t9Resolver()->resolve([['name' => 'Touchscreen', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['term_name'])->toBe($term);
+})->with([
+    ['Yes', 'Yes'],
+    ['No', 'No'],
+]);
+
+it('splits a touchscreen value 3-way into Yes + Touch Points + Touch Technology', function (): void {
+    $spec = t9Resolver()->resolve([['name' => 'Touchscreen', 'value' => '20-point PCAP']]);
+
+    $bySlug = collect($spec->global())->keyBy('attribute_slug');
+    expect($bySlug->has('pa_touchscreen-yn'))->toBeTrue();
+    expect($bySlug['pa_touchscreen-yn']['term_name'])->toBe('Yes');
+    expect($bySlug['pa_touch-points']['term_name'])->toBe('20-point');
+    expect($bySlug['pa_touch-tech-2']['term_name'])->toBe('PCAP');
+});
+
+it('omits the extra touch facets when they are not cached terms', function (): void {
+    // "99-point" and "Resistive" are not seeded → only Touchscreen=Yes emits.
+    $spec = t9Resolver()->resolve([['name' => 'Touchscreen', 'value' => '99-point Resistive touch']]);
+
+    $bySlug = collect($spec->global())->keyBy('attribute_slug');
+    expect($bySlug->has('pa_touchscreen-yn'))->toBeTrue();
+    expect($bySlug['pa_touchscreen-yn']['term_name'])->toBe('Yes');
+    expect($bySlug->has('pa_touch-points'))->toBeFalse();
+    expect($bySlug->has('pa_touch-tech-2'))->toBeFalse();
+});
+
+// ── §5 Movement hyphen variants ──────────────────────────────────────────────
+
+it('maps Full-Motion hyphen variants to Full Motion', function (string $raw): void {
+    $spec = t9Resolver()->resolve([['name' => 'Movement', 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['attribute_slug'])->toBe('pa_movement');
+    expect($spec->global()[0]['term_name'])->toBe('Full Motion');
+})->with([
+    'Full-Motion',
+    'Full-motion',
+    'Full-Motion Articulating Arm',
+]);
+
+// ── §6 General normalised-key resolution tier ────────────────────────────────
+
+it('resolves case/hyphen/spacing variants generically via the normalised-key tier', function (string $label, string $raw, string $term): void {
+    $spec = t9Resolver()->resolve([['name' => $label, 'value' => $raw]]);
+
+    expect($spec->global())->toHaveCount(1);
+    expect($spec->global()[0]['term_name'])->toBe($term);
+})->with([
+    ['Cable Category', 'cat.6', 'Cat6'],
+    ['Movement', 'full-motion', 'Full Motion'],
+    ['Colour', 'g r a p h i t e', 'Graphite'],
+]);
+
+it('does not invent a term via the normalised-key tier (resolve-don\'t-invent preserved)', function (): void {
+    $spec = t9Resolver()->resolve([['name' => 'Movement', 'value' => 'Hover Levitation']]);
+
+    expect($spec->global())->toBe([]);
+    expect($spec->unmatched())->toHaveCount(1);
+    expect($spec->unmatched()[0]['reason'])->toBe('value_not_a_term');
 });

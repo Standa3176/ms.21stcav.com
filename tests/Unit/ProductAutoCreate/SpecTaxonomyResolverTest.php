@@ -213,9 +213,9 @@ it('derives the cd/m² brightness band at inclusive boundaries', function (float
 ]);
 
 it('derives the lumens brightness band at inclusive boundaries', function (string $raw, string $band): void {
-    // Seeded with the EXACT live pa_brightness-lumens (3554) term names.
+    // T11 §3 — six live pa_brightness-lumens (3554) term names (2 retired).
     $resolver = makeResolver([
-        ATTR_BRIGHTNESS_LUMENS => ['Under 3000 lumens', '3000-4999 lumens', '5000-9999 lumens', '10000+ lumens'],
+        ATTR_BRIGHTNESS_LUMENS => ['Under 3000 lumens', '3000-3999 lumens', '4000-4999 lumens', '5000-6999 lumens', '7000-9999 lumens', '10000+ lumens'],
     ]);
 
     $spec = $resolver->resolve([['name' => 'Brightness Band (lumens)', 'value' => $raw]]);
@@ -224,10 +224,14 @@ it('derives the lumens brightness band at inclusive boundaries', function (strin
     expect($spec->global()[0]['term_name'])->toBe($band);
 })->with([
     ['2999 lumens', 'Under 3000 lumens'],
-    ['3000 lumens', '3000-4999 lumens'],
-    ['4000 lumens', '3000-4999 lumens'],
-    ['4999 lumens', '3000-4999 lumens'],
-    ['5000 lumens', '5000-9999 lumens'],
+    ['3000 lumens', '3000-3999 lumens'],
+    ['3999 lumens', '3000-3999 lumens'],
+    ['4000 lumens', '4000-4999 lumens'],
+    ['4999 lumens', '4000-4999 lumens'],
+    ['5000 lumens', '5000-6999 lumens'],
+    ['6999 lumens', '5000-6999 lumens'],
+    ['7000 lumens', '7000-9999 lumens'],
+    ['9999 lumens', '7000-9999 lumens'],
     ['10000 lumens', '10000+ lumens'],
 ]);
 

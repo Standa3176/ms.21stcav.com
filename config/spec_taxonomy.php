@@ -28,6 +28,14 @@ declare(strict_types=1);
 | Colour / Display Technology / Material / Length / Light Source, plus a batch of
 | label aliases and the EAN label-drop.
 |
+| T11 added: Display Technology drop-list + Direct-lit/Direct/D-LED→LCD maps, a
+| dual-emit `max_load` section (exact pa_max-load-kg + derived pa_max-load-band),
+| six-band lumens derivation (in the resolver's BAND_TABLES) with an ANSI-lumens
+| LOCAL companion, a `touchscreen` boolean + 3-way split (Touch Points / Touch
+| Technology), a Full-Motion hyphen keyword, and a GENERAL normalised-key
+| resolution tier (case/hyphen/spacing-insensitive) applied across all attributes.
+| Projector Type inference is DEFERRED (needs product-name/lens/throw context).
+|
 */
 
 return [
@@ -238,9 +246,13 @@ return [
         // "Full Motion – Tilt, Swivel, 3 Pivots" resolves to Full Motion and a
         // "Tilt & Swivel" is never clipped to Tilt/Swivel. Used BOTH for the
         // Movement/Motion-Type label AND the Mount→Movement value re-route.
+        // T11 §5: the hyphenated "Full-Motion" variant (contains keyword) —
+        // "Full-Motion Articulating Arm" → Full Motion. (Bare "Full-Motion"
+        // ALSO resolves via the general normalised-key tier, T11 §6.)
         'pa_movement' => [
             'strategy' => 'keywords',
             'keywords' => [
+                'full-motion' => 'Full Motion',
                 'full motion' => 'Full Motion',
                 'tilt & swivel' => 'Tilt & Swivel',
                 'tilt and swivel' => 'Tilt & Swivel',
@@ -289,9 +301,19 @@ return [
             ],
         ],
 
-        // Display Technology (3520): T10 §3. "LED-backlit LCD" → LCD; "Direct
-        // View LED, …" → Direct View LED. drop_values force-unmatch the junk
-        // marketing terms that the live cache still carries (they are NOT facets).
+        // Display Technology (3520): T10 §3 + T11 §1. Only ever map to the 11
+        // REAL terms (LCD, LED, IPS, VA, TN, OLED, QLED, Direct View LED,
+        // NanoCell, Mini-LED, MicroLED) — NEVER into the leaked product-type
+        // terms the live cache still carries (they're being removed at source).
+        //
+        //  - keywords: "Direct-lit LED"/"Direct LED"/"D-LED" → LCD (a bare LED
+        //    panel is an LCD); "Direct View LED, Flip-Chip CoB" → Direct View LED
+        //    (the 'direct view led' keyword wins before any CoB match).
+        //  - overrides: the backlit-LCD product-type terms that ARE cached must
+        //    resolve to the real LCD term, never link verbatim to themselves.
+        //  - drop_values: force-unmatch the leaked product-types (whole value),
+        //    even when they exist as a cached term. Belt-and-braces against the
+        //    verbatim + general normalised-key tiers resurrecting a leaked term.
         'pa_display-tech' => [
             'strategy' => 'keywords',
             'keywords' => [
@@ -301,14 +323,39 @@ return [
                 'microled' => 'MicroLED',
                 'qled' => 'QLED',
                 'oled' => 'OLED',
+                'direct-lit led' => 'LCD',
+                'direct led' => 'LCD',
+                'd-led' => 'LCD',
                 'lcd' => 'LCD',
                 'ips' => 'IPS',
             ],
+            'overrides' => [
+                'led-backlit lcd' => 'LCD',
+                'direct led-backlit lcd' => 'LCD',
+                'direct-lit led-backlit lcd' => 'LCD',
+            ],
             'drop_values' => [
+                // Existing (T10).
                 'interactive display',
                 'commercial tv',
                 'large format commercial display',
                 'digital',
+                // T11 §1 operator drop-list.
+                'commercial display',
+                'interactive flat panel display',
+                'interactive flat panel',
+                'video wall display',
+                'commercial signage display',
+                'interactive touch display',
+                'stretch display',
+                'non-interactive',
+                'flat panel',
+                'interactive e-board',
+                // Other leaked product-types still in the live cache (no real
+                // mapping) — drop so the verbatim/normalised-key tiers can't emit them.
+                'indoor led',
+                'lcd / flat panel',
+                'flip-chip cob',
             ],
         ],
 
@@ -493,6 +540,81 @@ return [
     */
     'multi_value' => [
         'pa_connectivity',
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | max_load — one Max Load value → TWO global rows (T11 §2)
+    |----------------------------------------------------------------------
+    | A single Max Load spec ("70kg", "8 kg", "Max Load: 50 kg") emits BOTH:
+    |  (a) EXACT  → pa_max-load-kg  normalised to canonical "{n} kg" (space
+    |      before the unit; "70kg" → "70 kg"), resolved against the cache;
+    |  (b) BAND   → pa_max-load-band derived from the leading numeric kg via
+    |      the `bands` table below, resolved against the cache.
+    | Both are RESOLVE-DON'T-INVENT: each candidate must match a cached term or
+    | it is logged unmatched (never sent).
+    |
+    | ⚠ OPERATOR / T12: `band_attribute_id` (3556) is PROVISIONAL — the real
+    | `pa_max-load-band` Woo attribute id was not known at T11 time. Confirm it
+    | via `spec:sync-taxonomy-cache` and set the true id here BEFORE the T12
+    | retroactive push. Until then the band simply stays unmatched in prod
+    | (safe: resolve-don't-invent — no term is ever auto-created).
+    */
+    'max_load' => [
+        'exact_slug' => 'pa_max-load-kg',
+        'exact_attribute_id' => 3547,
+        'band_slug' => 'pa_max-load-band',
+        'band_attribute_id' => 3556, // PROVISIONAL — verify before T12 push.
+        // Ascending upper-inclusive [upperKg|null, band label].
+        'bands' => [
+            [10, 'Up to 10 kg'],
+            [25, '11-25 kg'],
+            [50, '26-50 kg'],
+            [100, '51-100 kg'],
+            [null, 'Over 100 kg'],
+        ],
+    ],
+
+    /*
+    |----------------------------------------------------------------------
+    | touchscreen — boolean + optional 3-way split (T11 §4)
+    |----------------------------------------------------------------------
+    | pa_touchscreen-yn is a BOOLEAN facet: any value that DESCRIBES a
+    | touchscreen ("Multi-touch touchscreen", "20-point PCAP", "Capacitive
+    | touch") resolves to Yes. An explicit Yes/No is kept verbatim; a negative
+    | ("Non-touch", "No touch") resolves to No.
+    |
+    | When the value ALSO carries a point count and/or a touch technology the
+    | resolver splits it 3-way, additionally emitting:
+    |  - pa_touch-points  → "{n}-point" (from "20-point" / "20 point")
+    |  - pa_touch-tech-2  → a `tech_keywords` term (PCAP / IR / InGlass / …)
+    | The extra rows emit ONLY when the candidate resolves to a cached term
+    | (resolve-don't-invent).
+    */
+    'touchscreen' => [
+        'slug' => 'pa_touchscreen-yn',
+        'yes_term' => 'Yes',
+        'no_term' => 'No',
+        'touch_points_slug' => 'pa_touch-points',
+        'touch_points_attribute_id' => 3541,
+        'touch_tech_slug' => 'pa_touch-tech-2',
+        'touch_tech_attribute_id' => 3540,
+        // Contains-keyword signals that the value describes a touchscreen → Yes.
+        'touch_keywords' => [
+            'touch', 'pcap', 'capacitive', 'infrared', 'inglass', 'optical bonding',
+        ],
+        // Negative signals → No (checked before the positive touch signals).
+        'negative_keywords' => [
+            'non-touch', 'non touch', 'no touch', 'not touch', 'without touch',
+        ],
+        // Contains-keyword → candidate Touch Technology term (most-specific first).
+        'tech_keywords' => [
+            'pcap' => 'PCAP',
+            'inglass' => 'InGlass',
+            'ir touch' => 'IR Touch',
+            'infrared' => 'IR',
+            'optical' => 'Optical',
+        ],
     ],
 
 ];

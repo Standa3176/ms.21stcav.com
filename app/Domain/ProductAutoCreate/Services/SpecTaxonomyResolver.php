@@ -193,10 +193,14 @@ class SpecTaxonomyResolver
             [null, 'Window facing (2500+)'],
         ],
         // Brightness lumens: live pa_brightness-lumens (3554) term names.
+        // T11 §3 — six bands. The two OLD bands "3000-4999 lumens" and
+        // "5000-9999 lumens" are RETIRED and must never be derived into.
         'pa_brightness-lumens' => [
             [2999, 'Under 3000 lumens'],
-            [4999, '3000-4999 lumens'],
-            [9999, '5000-9999 lumens'],
+            [3999, '3000-3999 lumens'],
+            [4999, '4000-4999 lumens'],
+            [6999, '5000-6999 lumens'],
+            [9999, '7000-9999 lumens'],
             [null, '10000+ lumens'],
         ],
         // Room size (people): live pa_room-size-band (3553) term names. Brief
@@ -284,6 +288,21 @@ class SpecTaxonomyResolver
     private array $valueReroutes;
 
     /**
+     * Max Load dual-emit config (config `max_load`): one value → exact
+     * pa_max-load-kg + derived pa_max-load-band (T11 §2).
+     *
+     * @var array<string, mixed>
+     */
+    private array $maxLoad;
+
+    /**
+     * Touchscreen boolean + 3-way-split config (config `touchscreen`, T11 §4).
+     *
+     * @var array<string, mixed>
+     */
+    private array $touchscreen;
+
+    /**
      * @param  array<string, mixed>|null  $config  overrides config('spec_taxonomy') (tests)
      */
     public function __construct(private SpecTermVocabulary $vocabulary, ?array $config = null)
@@ -317,6 +336,14 @@ class SpecTaxonomyResolver
         /** @var array<string, array<string, mixed>> $reroutes */
         $reroutes = $config['value_reroutes'] ?? [];
         $this->valueReroutes = $reroutes;
+
+        /** @var array<string, mixed> $maxLoad */
+        $maxLoad = $config['max_load'] ?? [];
+        $this->maxLoad = $maxLoad;
+
+        /** @var array<string, mixed> $touchscreen */
+        $touchscreen = $config['touchscreen'] ?? [];
+        $this->touchscreen = $touchscreen;
     }
 
     /**
@@ -376,6 +403,21 @@ class SpecTaxonomyResolver
             // LOCAL companion row.
             if (in_array($entry['slug'], self::BAND_SLUGS, true)) {
                 $this->resolveBand($entry, $global, $local, $unmatched);
+
+                continue;
+            }
+
+            // Max Load (T11 §2): ONE value → TWO global rows (exact kg + band).
+            if (($this->maxLoad['exact_slug'] ?? null) === $entry['slug']) {
+                $this->resolveMaxLoad($entry, $global, $unmatched);
+
+                continue;
+            }
+
+            // Touchscreen (T11 §4): boolean Yes/No + optional 3-way split
+            // (Touch Points / Touch Technology) when the value carries them.
+            if (($this->touchscreen['slug'] ?? null) === $entry['slug']) {
+                $this->resolveTouchscreen($entry, $global, $unmatched);
 
                 continue;
             }
@@ -596,11 +638,39 @@ class SpecTaxonomyResolver
 
         $global[] = $this->globalRow($attributeId, $slug, [$term], $entry['raw_label'], $entry['raw_value']);
 
-        // The exact raw figure ALSO stays as a LOCAL companion spec row.
+        // The exact raw figure ALSO stays as a LOCAL companion spec row. For
+        // lumens the companion is canonicalised to "{n} ANSI lumens" (T11 §3);
+        // every other band keeps the raw figure verbatim.
         $local[] = [
             'name' => self::BAND_COMPANION_LABEL[$slug] ?? $entry['raw_label'],
-            'value' => $entry['raw_value'],
+            'value' => $this->bandCompanionValue($slug, $number, $entry['raw_value']),
         ];
+    }
+
+    /**
+     * The LOCAL companion value for a band row. Lumens (T11 §3) canonicalises to
+     * "{n} ANSI lumens"; all other bands keep the exact raw figure verbatim.
+     */
+    private function bandCompanionValue(string $slug, float $number, string $rawValue): string
+    {
+        if ($slug === 'pa_brightness-lumens') {
+            return $this->formatNumber($number).' ANSI lumens';
+        }
+
+        return $rawValue;
+    }
+
+    /**
+     * Format a numeric for a canonical value string: drop a ".0" on whole
+     * numbers ("70.0" → "70") but keep genuine decimals ("12.5" → "12.5").
+     */
+    private function formatNumber(float $number): string
+    {
+        if ($number === floor($number) && is_finite($number)) {
+            return (string) (int) $number;
+        }
+
+        return rtrim(rtrim(sprintf('%.4f', $number), '0'), '.');
     }
 
     /**
@@ -618,6 +688,194 @@ class SpecTaxonomyResolver
         // Unreachable (last bucket is always the null catch-all) — fall back to
         // the final label defensively.
         return $table[count($table) - 1][1];
+    }
+
+    /**
+     * Max Load (T11 §2): one value → TWO global rows. Parse the leading numeric
+     * kg, then emit (a) the EXACT figure canonicalised to "{n} kg" under
+     * pa_max-load-kg and (b) the DERIVED band under pa_max-load-band. Each is
+     * independently resolve-don't-invent: an uncached candidate is logged
+     * unmatched (never sent) without blocking the other row.
+     *
+     * @param  array{raw_label:string, raw_value:string, slug:string|null, attribute_id:int|null}  $entry
+     * @param  array<int, array<string, mixed>>  $global
+     * @param  array<int, array<string, mixed>>  $unmatched
+     */
+    private function resolveMaxLoad(array $entry, array &$global, array &$unmatched): void
+    {
+        $exactSlug = (string) ($this->maxLoad['exact_slug'] ?? 'pa_max-load-kg');
+        $exactId = (int) ($this->maxLoad['exact_attribute_id'] ?? ($entry['attribute_id'] ?? 0));
+        $bandSlug = (string) ($this->maxLoad['band_slug'] ?? 'pa_max-load-band');
+        $bandId = (int) ($this->maxLoad['band_attribute_id'] ?? 0);
+        /** @var list<array{0:int|null, 1:string}> $bands */
+        $bands = $this->maxLoad['bands'] ?? [];
+
+        $kg = $this->leadingNumeric($entry['raw_value']);
+        if ($kg === null) {
+            $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $exactSlug, 'band_value_not_numeric');
+
+            return;
+        }
+
+        // (a) EXACT → canonical "{n} kg" (space before unit), resolved.
+        $exactCandidate = $this->formatNumber($kg).' kg';
+        $exactTerm = $this->resolveValue($exactSlug, $exactId, $exactCandidate);
+        if ($exactTerm === null) {
+            $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $exactSlug, 'value_not_a_term');
+        } else {
+            $global[] = $this->globalRow($exactId, $exactSlug, [$exactTerm], $entry['raw_label'], $entry['raw_value']);
+        }
+
+        // (b) DERIVED band → resolved (tolerant, resolve-don't-invent).
+        $bandLabel = null;
+        foreach ($bands as [$upper, $label]) {
+            if ($upper === null || $kg <= $upper) {
+                $bandLabel = $label;
+
+                break;
+            }
+        }
+        if ($bandLabel === null || $bandId <= 0) {
+            $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $bandSlug, 'band_term_not_cached');
+
+            return;
+        }
+
+        $bandTerm = $this->resolveBandTerm($bandId, $bandLabel);
+        if ($bandTerm === null) {
+            $unmatched[] = $this->unmatched($entry['raw_label'], $entry['raw_value'], $bandSlug, 'band_term_not_cached');
+
+            return;
+        }
+
+        $global[] = $this->globalRow($bandId, $bandSlug, [$bandTerm], $entry['raw_label'], $entry['raw_value']);
+    }
+
+    /**
+     * Touchscreen (T11 §4): BOOLEAN facet with an optional 3-way split. An
+     * explicit Yes/No (or a negative descriptor → No) is honoured; any other
+     * value that DESCRIBES a touchscreen resolves to Yes. When the value also
+     * carries a point count and/or a touch technology, additional
+     * pa_touch-points / pa_touch-tech-2 rows are emitted — ONLY when they
+     * resolve to a cached term (resolve-don't-invent).
+     *
+     * @param  array{raw_label:string, raw_value:string, slug:string|null, attribute_id:int|null}  $entry
+     * @param  array<int, array<string, mixed>>  $global
+     * @param  array<int, array<string, mixed>>  $unmatched
+     */
+    private function resolveTouchscreen(array $entry, array &$global, array &$unmatched): void
+    {
+        /** @var int $attributeId */
+        $attributeId = $entry['attribute_id'];
+        $rawValue = $entry['raw_value'];
+        $lower = mb_strtolower($rawValue);
+
+        $yesTerm = (string) ($this->touchscreen['yes_term'] ?? 'Yes');
+        $noTerm = (string) ($this->touchscreen['no_term'] ?? 'No');
+        /** @var list<string> $negatives */
+        $negatives = $this->touchscreen['negative_keywords'] ?? [];
+        /** @var list<string> $touchKeywords */
+        $touchKeywords = $this->touchscreen['touch_keywords'] ?? [];
+
+        $terms = $this->vocabulary->termsFor($attributeId);
+
+        // Explicit verbatim Yes/No wins (keeps a plain "Yes"/"No" as-is).
+        $direct = $terms === [] ? null : $this->matchTerm($terms, $rawValue);
+
+        // Negative descriptor ("Non-touch"/"No touch") → No.
+        $isNegative = false;
+        foreach ($negatives as $needle) {
+            if (mb_strpos($lower, mb_strtolower((string) $needle)) !== false) {
+                $isNegative = true;
+
+                break;
+            }
+        }
+
+        if ($direct !== null) {
+            $global[] = $this->globalRow($attributeId, $entry['slug'] ?? 'pa_touchscreen-yn', [$direct], $entry['raw_label'], $rawValue);
+            // A plain Yes/No carries no extra facets — but a value like
+            // "Yes, 20-point PCAP" still splits below.
+            if ($this->ciValue($rawValue) === $this->ciValue($yesTerm) || $this->ciValue($rawValue) === $this->ciValue($noTerm)) {
+                return;
+            }
+        } elseif ($isNegative) {
+            $noHit = $terms === [] ? null : $this->matchTerm($terms, $noTerm);
+            if ($noHit === null) {
+                $unmatched[] = $this->unmatched($entry['raw_label'], $rawValue, $entry['slug'] ?? 'pa_touchscreen-yn', 'value_not_a_term');
+
+                return;
+            }
+            $global[] = $this->globalRow($attributeId, $entry['slug'] ?? 'pa_touchscreen-yn', [$noHit], $entry['raw_label'], $rawValue);
+
+            return;
+        }
+
+        // Extract the optional Touch Points / Touch Technology candidates.
+        $pointsCandidate = $this->extractTouchPoints($rawValue);
+        $techCandidate = $this->firstKeywordHit($lower, $this->touchscreen['tech_keywords'] ?? []);
+
+        // Detect a touchscreen: a "touch" keyword, a point count, or a touch tech.
+        $describesTouch = $pointsCandidate !== null || $techCandidate !== null;
+        if (! $describesTouch) {
+            foreach ($touchKeywords as $needle) {
+                if (mb_strpos($lower, mb_strtolower((string) $needle)) !== false) {
+                    $describesTouch = true;
+
+                    break;
+                }
+            }
+        }
+
+        // Emit Touchscreen=Yes when the value describes a touchscreen (unless the
+        // verbatim Yes/No already emitted above).
+        if ($direct === null) {
+            if (! $describesTouch) {
+                $unmatched[] = $this->unmatched($entry['raw_label'], $rawValue, $entry['slug'] ?? 'pa_touchscreen-yn', 'value_not_a_term');
+
+                return;
+            }
+            $yesHit = $terms === [] ? null : $this->matchTerm($terms, $yesTerm);
+            if ($yesHit === null) {
+                $unmatched[] = $this->unmatched($entry['raw_label'], $rawValue, $entry['slug'] ?? 'pa_touchscreen-yn', 'value_not_a_term');
+
+                return;
+            }
+            $global[] = $this->globalRow($attributeId, $entry['slug'] ?? 'pa_touchscreen-yn', [$yesHit], $entry['raw_label'], $rawValue);
+        }
+
+        // Touch Points row (only if it resolves to a cached term).
+        if ($pointsCandidate !== null) {
+            $pointsSlug = (string) ($this->touchscreen['touch_points_slug'] ?? 'pa_touch-points');
+            $pointsId = (int) ($this->touchscreen['touch_points_attribute_id'] ?? 0);
+            $pointsTerm = $pointsId > 0 ? $this->resolveValue($pointsSlug, $pointsId, $pointsCandidate) : null;
+            if ($pointsTerm !== null) {
+                $global[] = $this->globalRow($pointsId, $pointsSlug, [$pointsTerm], $entry['raw_label'], $rawValue);
+            }
+        }
+
+        // Touch Technology row (only if it resolves to a cached term).
+        if ($techCandidate !== null) {
+            $techSlug = (string) ($this->touchscreen['touch_tech_slug'] ?? 'pa_touch-tech-2');
+            $techId = (int) ($this->touchscreen['touch_tech_attribute_id'] ?? 0);
+            $techTerm = $techId > 0 ? $this->resolveValue($techSlug, $techId, $techCandidate) : null;
+            if ($techTerm !== null) {
+                $global[] = $this->globalRow($techId, $techSlug, [$techTerm], $entry['raw_label'], $rawValue);
+            }
+        }
+    }
+
+    /**
+     * Extract a Touch Points candidate ("{n}-point") from a touchscreen value.
+     * "20-point"/"20 point"/"20 points"/"20pt" → "20-point"; else null.
+     */
+    private function extractTouchPoints(string $value): ?string
+    {
+        if (preg_match('/(\d+)\s*[- ]?(?:point|points|pt)\b/i', $value, $m) === 1) {
+            return $m[1].'-point';
+        }
+
+        return null;
     }
 
     /**
@@ -874,10 +1132,51 @@ class SpecTaxonomyResolver
 
         $candidate = $this->normaliseValue($slug, $rawValue);
         if ($candidate !== null) {
-            return $this->matchTerm($terms, $candidate);
+            $hit = $this->matchTerm($terms, $candidate);
+            if ($hit !== null) {
+                return $hit;
+            }
+        }
+
+        // General normalised-key tier (T11 §6): compare the alnum-lowercased raw
+        // value against the same-normalised cached term names so case / hyphen /
+        // spacing variants resolve generically across ALL attributes (subsumes
+        // many one-off variants like "Full-Motion", "Cat.6", "USB C"). Still
+        // RESOLVE-DON'T-INVENT — it can only ever return a real cached term.
+        return $this->matchNormalisedKey($terms, $rawValue);
+    }
+
+    /**
+     * General normalised-key match (T11 §6): strip every non-alphanumeric char
+     * and lowercase, then compare against the same-normalised cached term names.
+     * Returns the real cached term, or null (never fabricates).
+     *
+     * @param  array<int, array{term_id:int, term_name:string, term_slug:string|null}>  $terms
+     * @return array{term_id:int, term_name:string, term_slug:string|null}|null
+     */
+    private function matchNormalisedKey(array $terms, string $value): ?array
+    {
+        $key = $this->normaliseKey($value);
+        if ($key === '') {
+            return null;
+        }
+
+        foreach ($terms as $term) {
+            if ($this->normaliseKey($term['term_name']) === $key) {
+                return $term;
+            }
         }
 
         return null;
+    }
+
+    /**
+     * Normalised key for the general resolution tier: lowercase + strip every
+     * non-alphanumeric character ("Full-Motion" → "fullmotion", "Cat.6" → "cat6").
+     */
+    private function normaliseKey(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[^a-z0-9]/i', '', $value));
     }
 
     /**

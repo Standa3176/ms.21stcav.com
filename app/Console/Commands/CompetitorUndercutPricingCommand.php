@@ -10,6 +10,7 @@ use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
 use App\Domain\Pricing\Services\CompetitorUndercutPricer;
 use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Carbon;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -52,6 +53,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         'unchanged' => 0,
         'changed' => 0,
         'skipped' => 0,
+        'blocked_ceiling' => 0,
     ];
 
     public function __construct(
@@ -68,6 +70,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             ? $u
             : (int) config('competitor.beat_by_pennies', 1);
         $minFloorBps = (int) config('competitor.min_margin_floor_bps', 500);
+        $ceilingBps = (int) config('competitor.max_margin_ceiling_bps', 5000);
         $vatBps = (int) config('pricing.vat_basis_points', 2000);
         $maxAgeDays = max(1, (int) $this->option('max-age-days'));
         $cutoff = now()->subDays($maxAgeDays);
@@ -97,7 +100,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
 
         $processed = 0;
         $stop = false;
-        $query->orderBy('id')->chunkById(200, function ($products) use (&$processed, &$stop, $live, $undercut, $minFloorBps, $vatBps, $cutoff, $limit): bool {
+        $query->orderBy('id')->chunkById(200, function ($products) use (&$processed, &$stop, $live, $undercut, $minFloorBps, $ceilingBps, $vatBps, $cutoff, $limit): bool {
             foreach ($products as $product) {
                 if ($limit > 0 && $processed >= $limit) {
                     $stop = true;
@@ -105,7 +108,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
                     return false;
                 }
                 $processed++;
-                $this->priceOne($product, $live, $undercut, $minFloorBps, $vatBps, $cutoff);
+                $this->priceOne($product, $live, $undercut, $minFloorBps, $ceilingBps, $vatBps, $cutoff);
             }
 
             return ! $stop;
@@ -113,7 +116,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
 
         $this->newLine();
         $this->info(sprintf(
-            '%s — %d changed (%d undercut, %d floored, %d margin), %d unchanged, %d skipped of %d processed.',
+            '%s — %d changed (%d undercut, %d floored, %d margin), %d unchanged, %d skipped, %d blocked (margin ceiling) of %d processed.',
             $live ? 'Done' : 'DRY-RUN complete',
             $this->stats['changed'],
             $this->stats['competitor_undercut'],
@@ -121,6 +124,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             $this->stats['margin'],
             $this->stats['unchanged'],
             $this->stats['skipped'],
+            $this->stats['blocked_ceiling'],
             $processed,
         ));
         if (! $live && $this->stats['changed'] > 0) {
@@ -130,7 +134,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         return SymfonyCommand::SUCCESS;
     }
 
-    private function priceOne(Product $product, bool $live, int $undercut, int $minFloorBps, int $vatBps, Carbon $cutoff): void
+    private function priceOne(Product $product, bool $live, int $undercut, int $minFloorBps, int $ceilingBps, int $vatBps, Carbon $cutoff): void
     {
         $sku = trim((string) $product->sku);
         if ($sku === '') {
@@ -161,6 +165,36 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         }
 
         $decision = $this->pricer->decide($buyPennies, $lowest, $ruleMarginBps, $undercut, $minFloorBps, $vatBps);
+
+        // ── Guard 1 (2026-08-09 incident response) ── a competitor-driven price
+        // whose resulting margin blows past the ceiling is a near-certain feed
+        // error, not a real pricing opportunity. Block the write/dispatch and
+        // file a review Suggestion instead — fires in BOTH dry-run and --live,
+        // since this is a detection mechanism, not a price write.
+        if (($decision['source'] === 'competitor_undercut' || $decision['source'] === 'competitor_floor')
+            && (int) $decision['effective_margin_bps'] > $ceilingBps) {
+            $this->stats['blocked_ceiling']++;
+            $this->line(sprintf(
+                '  %s  BLOCKED (margin ceiling)  buy £%s  proposed £%s  margin %s%%  vs competitor £%s',
+                str_pad($sku, 16),
+                number_format($buyPennies / 100, 2),
+                number_format(((int) $decision['final_pennies']) / 100, 2),
+                number_format(((int) $decision['effective_margin_bps']) / 100, 2),
+                $lowest !== null ? number_format($lowest / 100, 2) : 'n/a',
+            ));
+            $this->recordCeilingBlockedSuggestion(
+                $product,
+                $sku,
+                $buyPennies,
+                (int) $decision['final_pennies'],
+                (int) $decision['effective_margin_bps'],
+                $lowest,
+                $ceilingBps,
+            );
+
+            return;
+        }
+
         $newPennies = (int) $decision['final_pennies'];
         $source = (string) $decision['source'];
         $oldPennies = $product->sell_price === null ? 0 : (int) round(((float) $product->sell_price) * 100);
@@ -229,5 +263,56 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         $positive = array_filter($latestPerCompetitor, static fn (int $p): bool => $p > 0);
 
         return $positive === [] ? null : min($positive);
+    }
+
+    /**
+     * Guard 1 (2026-08-09 incident response) — informational-only review flag,
+     * no registered SuggestionApplier (same shape as the existing
+     * auto_create_failed / crm_push_failed / quote_push_failed kinds). Keyed
+     * on (kind, evidence->sku, PENDING status) — same updateOrCreate-style
+     * dedup pattern OrphanDetector::record() already uses in this codebase, so
+     * a still-anomalous SKU refreshes one row instead of piling up duplicates.
+     */
+    private function recordCeilingBlockedSuggestion(
+        Product $product,
+        string $sku,
+        int $buyPennies,
+        int $proposedPennies,
+        int $marginBps,
+        ?int $competitorGrossPennies,
+        int $ceilingBps,
+    ): void {
+        $evidence = [
+            'sku' => $sku,
+            'buy_price_pennies' => $buyPennies,
+            'proposed_sell_price_pennies' => $proposedPennies,
+            'effective_margin_bps' => $marginBps,
+            'competitor_price_pennies' => $competitorGrossPennies,
+            'ceiling_bps' => $ceilingBps,
+            'blocked_at' => now()->toIso8601String(),
+        ];
+
+        $existing = Suggestion::query()
+            ->where('kind', 'competitor_price_ceiling_blocked')
+            ->where('status', Suggestion::STATUS_PENDING)
+            ->whereJsonContains('evidence->sku', $sku)
+            ->first();
+
+        if ($existing !== null) {
+            $existing->update([
+                'evidence' => $evidence,
+                'proposed_at' => now(),
+            ]);
+
+            return;
+        }
+
+        Suggestion::create([
+            'kind' => 'competitor_price_ceiling_blocked',
+            'status' => Suggestion::STATUS_PENDING,
+            'evidence' => $evidence,
+            'payload' => ['product_id' => $product->id, 'sku' => $sku],
+            'proposed_at' => now(),
+        ]);
     }
 }

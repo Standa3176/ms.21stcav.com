@@ -19,6 +19,17 @@ declare(strict_types=1);
 |   loss guard) and never recommend a rule change below it — that's a money-loser
 |   regardless of what competitors charge.
 |
+| max_margin_ceiling_bps — 50% safety guard (2026-08-09 incident response;
+|   upside counterpart to min_margin_floor_bps). SKU 9C941AA was repriced
+|   £1297.30 -> £4652.02 (280% markup) because competitor_id=3's feed price
+|   jumped overnight (almost certainly a bad feed row) and
+|   pricing:undercut-competitors faithfully undercut it by 1p. When a
+|   competitor-driven price would produce a margin above this ceiling, the
+|   command refuses to write it and instead files a
+|   'competitor_price_ceiling_blocked' Suggestion for human review — the same
+|   asymmetric-trust posture as min_margin_floor_bps but guarding the OTHER
+|   direction (a feed price that is implausibly HIGH, not implausibly low).
+|
 | consecutive_scrapes_required — 3 (REQUIREMENTS.md default). Prevents
 |   knee-jerk suggestions from a single anomalous scrape.
 |
@@ -53,6 +64,7 @@ return [
     'consecutive_scrapes_required' => (int) env('COMPETITOR_SCRAPES_REQUIRED', 3),
     'sales_threshold_90d' => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
     'min_margin_floor_bps' => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
+    'max_margin_ceiling_bps' => (int) env('COMPETITOR_MAX_MARGIN_CEILING_BPS', 5000), // 50% ceiling (2026-08-09 incident response)
     'beat_by_pennies' => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
     'csv_retention_days' => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
     'stale_feed_hours' => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),

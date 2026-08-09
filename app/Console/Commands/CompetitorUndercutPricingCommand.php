@@ -239,12 +239,19 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
      * per competitor (within the freshness window), then the minimum across
      * competitors. Null when no fresh competitor data exists. Matches on the
      * competitor row's sku OR mpn (mirrors how the feeds are keyed).
+     *
+     * Guard 2b (2026-08-09 incident response) — quarantined rows
+     * (is_price_anomaly=true, flagged by CompetitorCsvRowWriter's feed-jump
+     * detector) are excluded here so a single bad feed row can never drive a
+     * live sell-price change; the row still exists for audit/history, it is
+     * just invisible to this "current competitor" lookup.
      */
     private function lowestCurrentCompetitorGross(string $sku, Carbon $cutoff): ?int
     {
         $rows = CompetitorPrice::query()
             ->where(static fn ($q) => $q->where('sku', $sku)->orWhere('mpn', $sku))
             ->where('recorded_at', '>=', $cutoff)
+            ->where('is_price_anomaly', false)
             ->orderByDesc('recorded_at')
             ->get(['competitor_id', 'price_pennies_gross', 'recorded_at']);
 

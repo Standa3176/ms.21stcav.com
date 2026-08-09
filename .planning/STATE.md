@@ -315,7 +315,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent v1 decisions affe
 
 ### Pending Todos
 
-None yet — Phase 8 planning kicks off with `/gsd-plan-phase 8`.
+1 pending (`/gsd:capture --list`):
+
+- **Add multi-supplier SKU aliasing to stop duplicate products** (`sync`) — `2026-08-09-add-multi-supplier-sku-aliasing-to-stop-duplicate-products.md`. Restores the legacy Stock Updater's "alternative SKU" behaviour. `products` has no `mpn` column and `SkuMatcher` is an exact-match case-sensitive hashmap, so second-supplier rows become duplicate products; the `mpn → suppliersku[]` mapping already arrives from `feeds_products` and is discarded. Proposes a `product_supplier_skus` alias table + alias resolution in `SkuMatcher` + scanner exclusion, auto-seeded from normalised MPN/EAN. **Blocked behind the 2026-08-09 `pricing:undercut-competitors` guards** — multi-offer changes which cost feeds the margin bands.
 
 ### Blockers/Concerns
 

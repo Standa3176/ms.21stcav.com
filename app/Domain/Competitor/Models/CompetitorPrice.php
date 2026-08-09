@@ -37,12 +37,16 @@ final class CompetitorPrice extends Model
         'price_pennies_gross',
         'recorded_at',
         'ingest_run_id',
+        // Quick task 260809-jie — Guard 2a feed-jump quarantine flag.
+        'is_price_anomaly',
+        'price_anomaly_reason',
     ];
 
     protected $casts = [
         'price_pennies_ex_vat' => 'int',
         'price_pennies_gross' => 'int',
         'recorded_at' => 'datetime',
+        'is_price_anomaly' => 'bool',
     ];
 
     public function competitor(): BelongsTo

@@ -33,6 +33,8 @@ class CompetitorPriceFactory extends Factory
             'price_pennies_gross' => (int) round($exVat * 1.2),
             'recorded_at' => now(),
             'ingest_run_id' => null,
+            'is_price_anomaly' => false,
+            'price_anomaly_reason' => null,
         ];
     }
 

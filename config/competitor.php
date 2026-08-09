@@ -57,6 +57,15 @@ declare(strict_types=1);
 |   Files larger than `ftp.max_file_mb` are skipped (DoS guard). After
 |   `ftp.consecutive_failures_threshold` consecutive failures a source is
 |   auto-disabled and recipients are notified (D-12).
+|
+| max_row_move_pct — 50% (2026-08-09 incident response; Guard 2). A single
+|   competitor_prices row that moves more than this vs. its own immediately
+|   prior row (same competitor_id + sku) is quarantined: is_price_anomaly=true.
+|   The row still persists (this codebase's "persist everything, gate on
+|   consumption" convention — see the existing orphan-row precedent in
+|   CompetitorCsvRowWriter), but CompetitorUndercutPricingCommand's
+|   "lowest current competitor" query excludes flagged rows, so a single bad
+|   feed row can never drive a live sell-price change.
 */
 
 return [
@@ -65,6 +74,7 @@ return [
     'sales_threshold_90d' => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
     'min_margin_floor_bps' => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
     'max_margin_ceiling_bps' => (int) env('COMPETITOR_MAX_MARGIN_CEILING_BPS', 5000), // 50% ceiling (2026-08-09 incident response)
+    'max_row_move_pct' => (int) env('COMPETITOR_MAX_ROW_MOVE_PCT', 50), // feed-jump quarantine threshold (2026-08-09 incident response)
     'beat_by_pennies' => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
     'csv_retention_days' => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),
     'stale_feed_hours' => (int) env('COMPETITOR_STALE_FEED_HOURS', 48),

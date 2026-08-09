@@ -143,6 +143,44 @@ final class CompetitorCsvRowWriter
         $exVatPennies = $grossPennies;
         $grossInclPennies = $this->priceCalculator->addVat($grossPennies, $vatBps);
 
+        // Guard 2a (2026-08-09 incident response) — feed-jump quarantine.
+        // Compare this row's ex-VAT price against the most recent PRIOR row
+        // for the same (competitor_id, sku) pair. A single plain query against
+        // the existing UNIQUE(competitor_id, sku, recorded_at) index — NOT a
+        // correlated subquery — driver-portable on SQLite test / MariaDB prod.
+        $isAnomaly = false;
+        $anomalyReason = null;
+        $priorRow = CompetitorPrice::query()
+            ->where('competitor_id', $run->competitor_id)
+            ->where('sku', $sku)
+            ->orderByDesc('recorded_at')
+            ->first(['price_pennies_ex_vat']);
+
+        if ($priorRow !== null && (int) $priorRow->price_pennies_ex_vat > 0) {
+            $priorPennies = (int) $priorRow->price_pennies_ex_vat;
+            $movePct = abs($exVatPennies - $priorPennies) / $priorPennies * 100;
+            $maxMovePct = (float) config('competitor.max_row_move_pct', 50);
+
+            if ($movePct > $maxMovePct) {
+                $isAnomaly = true;
+                $anomalyReason = sprintf(
+                    'Price moved %.1f%% vs prior ex-VAT £%s -> £%s (threshold %.0f%%)',
+                    $movePct,
+                    number_format($priorPennies / 100, 2),
+                    number_format($exVatPennies / 100, 2),
+                    $maxMovePct,
+                );
+                Log::warning('competitor.price_move_flagged', [
+                    'competitor_id' => $run->competitor_id,
+                    'sku' => $sku,
+                    'prior_price_pennies_ex_vat' => $priorPennies,
+                    'new_price_pennies_ex_vat' => $exVatPennies,
+                    'move_pct' => $movePct,
+                    'ingest_run_id' => $run->id,
+                ]);
+            }
+        }
+
         try {
             CompetitorPrice::create([
                 'competitor_id' => $run->competitor_id,
@@ -152,6 +190,8 @@ final class CompetitorCsvRowWriter
                 'price_pennies_ex_vat' => $exVatPennies,
                 'recorded_at' => now(),
                 'ingest_run_id' => $run->id,
+                'is_price_anomaly' => $isAnomaly,
+                'price_anomaly_reason' => $anomalyReason,
             ]);
         } catch (QueryException $e) {
             // COMP-07 dedup: UNIQUE(competitor_id, sku, recorded_at) fired — same-second

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Pricing\Jobs;
 
 use App\Domain\Pricing\Services\PriceRecomputer;
+use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -40,6 +41,7 @@ use Illuminate\Queue\SerializesModels;
  */
 class RecomputePriceJob implements ShouldBeUnique, ShouldQueue
 {
+    use Batchable;
     use Dispatchable;
     use InteractsWithQueue;
     use Queueable;

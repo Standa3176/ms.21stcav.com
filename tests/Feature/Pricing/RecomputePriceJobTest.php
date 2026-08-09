@@ -6,9 +6,11 @@ use App\Domain\Pricing\Jobs\RecomputePriceJob;
 use App\Domain\Pricing\Services\PriceRecomputer;
 use App\Domain\Pricing\Services\RecomputeOutcome;
 use App\Domain\Pricing\Services\RecomputeOutcomeKind;
+use Illuminate\Bus\Batchable;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 
 uses(RefreshDatabase::class);
 
@@ -136,4 +138,39 @@ it('RecomputePriceJob tries property is 3', function () {
     );
 
     expect($job->tries)->toBe(3);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test J7 — Batchable: Bus::batch([RecomputePriceJob]) must not throw
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Regression guard for the crash behind `pricing:recompute --all`:
+//   PricingRecomputeCommand dispatches Bus::batch($jobs), but RecomputePriceJob
+//   originally lacked the Illuminate\Bus\Batchable trait. The REAL PendingBatch
+//   constructor (ensureJobIsBatchable) then threw:
+//     "Attempted to batch job [App\Domain\Pricing\Jobs\RecomputePriceJob],
+//      but it does not use the Batchable trait."
+//
+// NB: the existing command tests use Bus::fake(), whose PendingBatchFake skips
+// that validation — so they passed even while the command was unusable in prod.
+// This test uses the un-faked Bus facade so the real trait check runs: it FAILS
+// without the trait and PASSES with it.
+
+it('RecomputePriceJob uses the Batchable trait so Bus::batch accepts it', function () {
+    expect(in_array(Batchable::class, class_uses_recursive(RecomputePriceJob::class), true))->toBeTrue();
+
+    $job = new RecomputePriceJob(
+        wooProductId: 1,
+        wooVariationId: null,
+        sku: 'BATCH-SKU',
+        correlationId: '11111111-2222-4333-8444-555555555555',
+        persist: false,
+    );
+
+    // Un-faked Bus::batch() builds a real PendingBatch, whose constructor runs
+    // ensureJobIsBatchable() — the exact code path that crashed pre-fix.
+    $batch = Bus::batch([$job]);
+
+    expect($batch->jobs)->toHaveCount(1)
+        ->and($batch->jobs->first())->toBeInstanceOf(RecomputePriceJob::class);
 });

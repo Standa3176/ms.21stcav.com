@@ -82,6 +82,7 @@ class ImportIssueResource extends Resource
                     ImportIssue::TYPE_UNKNOWN_SKU => 'Unknown SKU',
                     ImportIssue::TYPE_MISSING_COST_PRICE => 'Missing cost/price',
                     ImportIssue::TYPE_EXCLUDE_FLAG_NO_METADATA => 'Exclude flag w/ no metadata',
+                    ImportIssue::STALE_COST_NO_SUPPLIER => 'Stale cost / no supplier',
                 ])
                 ->required()
                 ->disabled(fn () => ! (auth()->user()?->hasRole('admin') ?? false)),
@@ -103,6 +104,7 @@ class ImportIssueResource extends Resource
                         ImportIssue::TYPE_MISSING_AT_SUPPLIER => 'warning',
                         ImportIssue::TYPE_UNKNOWN_SKU => 'primary',
                         ImportIssue::TYPE_MISSING_COST_PRICE => 'danger',
+                        ImportIssue::STALE_COST_NO_SUPPLIER => 'danger',
                         ImportIssue::TYPE_EXCLUDE_FLAG_NO_METADATA => 'gray',
                         default => 'gray',
                     })
@@ -126,6 +128,7 @@ class ImportIssueResource extends Resource
                     ImportIssue::TYPE_UNKNOWN_SKU => 'Unknown SKU',
                     ImportIssue::TYPE_MISSING_COST_PRICE => 'Missing cost/price',
                     ImportIssue::TYPE_EXCLUDE_FLAG_NO_METADATA => 'Exclude flag no metadata',
+                    ImportIssue::STALE_COST_NO_SUPPLIER => 'Stale cost / no supplier',
                 ]),
                 TernaryFilter::make('resolved')
                     ->nullable()

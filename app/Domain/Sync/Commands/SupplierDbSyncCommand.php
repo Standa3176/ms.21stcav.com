@@ -11,10 +11,12 @@ use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Concerns\JoinsStockSeparate;
+use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
 /**
@@ -109,6 +111,11 @@ final class SupplierDbSyncCommand extends BaseCommand
         $this->info('supplier:db-sync — '.($dryRun ? 'DRY-RUN' : 'LIVE')
             .($limit > 0 ? " (limit={$limit})" : '')
             .($flagObsolete ? ' [+flag-obsolete]' : ''));
+
+        // Quick task 260809-uza PART 2 — one correlation_id per run, stamped on
+        // every STALE_COST_NO_SUPPLIER ImportIssue written below. import_issues
+        // .correlation_id is NOT NULL and this command has none today.
+        $correlationId = (string) Str::uuid();
 
         // ── Resolve credentials ──
         $creds = $this->resolver->for(IntegrationCredentialKind::SupplierDb);
@@ -210,10 +217,13 @@ final class SupplierDbSyncCommand extends BaseCommand
         $processed = 0;
         $flaggedObsolete = 0;
         $wouldFlagObsolete = 0;
+        $flaggedStaleCost = 0;
+        $wouldFlagStaleCost = 0;
 
         Product::whereNotNull('sku')->orderBy('id')->chunk(500, function ($batch) use (
             &$matched, &$unmatched, &$updated, &$unchanged, &$errored, &$wouldUpdate,
-            &$processed, &$flaggedObsolete, &$wouldFlagObsolete, $map, $dryRun, $limit, $flagObsolete
+            &$processed, &$flaggedObsolete, &$wouldFlagObsolete, &$flaggedStaleCost, &$wouldFlagStaleCost,
+            $map, $dryRun, $limit, $flagObsolete, $correlationId
         ) {
             foreach ($batch as $local) {
                 $processed++;
@@ -232,6 +242,19 @@ final class SupplierDbSyncCommand extends BaseCommand
                             Product::where('id', $local->id)->update(['status' => 'pending']);
                             $flaggedObsolete++;
                         }
+                    }
+
+                    // Quick task 260809-uza PART 2 — surface a stale cost. A
+                    // previously-costed product with no fresh in-stock supplier
+                    // offer keeps driving the sell-price recompute off a stale
+                    // buy_price. Runs BY DEFAULT (independent of --flag-obsolete)
+                    // so the scheduled bare supplier:db-sync catches it. Never
+                    // changes the cost.
+                    $staleResult = $this->surfaceStaleCostIssue($local, $key, $correlationId, $dryRun);
+                    if ($staleResult === 'flagged') {
+                        $flaggedStaleCost++;
+                    } elseif ($staleResult === 'would-flag') {
+                        $wouldFlagStaleCost++;
                     }
 
                     continue;
@@ -332,13 +355,14 @@ final class SupplierDbSyncCommand extends BaseCommand
         // ── Summary ──
         $this->info(str_repeat('-', 60));
         $this->info(sprintf(
-            'Done. matched=%d unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d%s',
+            'Done. matched=%d unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d %s%s',
             $matched,
             $unmatched,
             $updated,
             $unchanged,
             $errored,
             $offerSnapshotsWritten,
+            $dryRun ? "would_flag_stale_cost={$wouldFlagStaleCost}" : "stale_cost={$flaggedStaleCost}",
             $dryRun ? " would_update={$wouldUpdate}" : '',
         ));
 
@@ -367,14 +391,75 @@ final class SupplierDbSyncCommand extends BaseCommand
         if ((string) $product->status !== 'publish') {
             return false;
         }
+
+        return ! $this->hasAutoUpdateCarveOut($product);
+    }
+
+    /**
+     * Quick task 260809-uza — the shared auto-update carve-out matrix: products
+     * the sync must never mutate/flag automatically. Extracted from
+     * isObsoleteCandidate() so the PART-2 stale-cost surfacing reuses the exact
+     * same carve-out set (is_custom_ms OR exclude_from_auto_update OR 'custom-ms'
+     * tag). isObsoleteCandidate() keeps its additional publish-status gate.
+     */
+    private function hasAutoUpdateCarveOut(Product $product): bool
+    {
         if ((bool) $product->is_custom_ms === true) {
-            return false;
+            return true;
         }
         if ((bool) $product->exclude_from_auto_update === true) {
-            return false;
+            return true;
         }
 
-        return ! in_array('custom-ms', (array) ($product->tags ?? []), true);
+        return in_array('custom-ms', (array) ($product->tags ?? []), true);
+    }
+
+    /**
+     * Quick task 260809-uza PART 2 — surface a STALE_COST_NO_SUPPLIER ImportIssue
+     * for a previously-costed product that matched no fresh in-stock supplier
+     * offer (its only suppliers are now excluded/stale/OOS, so its SKU is absent
+     * from buildBestOfferMap). Neither --flag-obsolete (zero-offer only) nor
+     * products:flag-missing-buy-price (NULL only) catches this case, so the stale
+     * buy_price silently keeps driving the sell-price recompute. We emit an audit
+     * row for operator review and NEVER change the cost.
+     *
+     * Deliberately does NOT gate on publish status (unlike isObsoleteCandidate):
+     * a stale cost is a data-quality fact regardless of storefront visibility.
+     *
+     * Public + returns a small string result so the Product-loop decision is
+     * unit-testable without the mysqli remote pull (mirrors buildBestOfferMap /
+     * isObsoleteCandidate). Idempotent — updateOrCreate on the unresolved tuple
+     * means a same-day re-run refreshes last_seen_at instead of duplicating.
+     *
+     * @return 'flagged'|'would-flag'|'skipped'
+     */
+    public function surfaceStaleCostIssue(Product $local, string $key, string $correlationId, bool $dryRun): string
+    {
+        if ($key === '' || $local->buy_price === null || $this->hasAutoUpdateCarveOut($local)) {
+            return 'skipped';
+        }
+
+        if ($dryRun) {
+            return 'would-flag';
+        }
+
+        ImportIssue::updateOrCreate(
+            [
+                'sku' => $local->sku,
+                'woo_product_id' => $local->woo_product_id,
+                'woo_variation_id' => null,
+                'issue_type' => ImportIssue::STALE_COST_NO_SUPPLIER,
+                'resolved_at' => null,
+            ],
+            [
+                'detected_at' => now(),
+                'last_seen_at' => now(),
+                'notes' => 'Product has a non-null buy_price but no fresh in-stock supplier offer — cost may be stale (260809-uza); cost left unchanged.',
+                'correlation_id' => $correlationId,
+            ],
+        );
+
+        return 'flagged';
     }
 
     /**

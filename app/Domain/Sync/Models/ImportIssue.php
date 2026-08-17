@@ -12,11 +12,13 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * Phase 2 Plan 01 — Catalogue-health triage row (SYNC-12 + D-09).
  *
- * Four issue types (enum constants):
+ * Five issue types (enum constants):
  *   - missing_at_supplier       (Woo product, no supplier match → SYNC-06 pending)
  *   - unknown_sku               (Supplier SKU Woo doesn't know; D-09)
  *   - missing_cost_price        (Product in DB, buy_price NULL)
  *   - exclude_flag_no_metadata  (Has _exclude meta but no notes rationale)
+ *   - stale_cost_no_supplier    (260809-uza — costed product, no fresh in-stock
+ *                                supplier offer; buy_price left unchanged)
  *
  * resolved_at nullable — scopeUnresolved filters on IS NULL.
  * scopeOfType filters on issue_type for Filament ImportIssueResource tabs.
@@ -26,9 +28,18 @@ final class ImportIssue extends Model
     use HasFactory;
 
     public const TYPE_MISSING_AT_SUPPLIER = 'missing_at_supplier';
+
     public const TYPE_UNKNOWN_SKU = 'unknown_sku';
+
     public const TYPE_MISSING_COST_PRICE = 'missing_cost_price';
+
     public const TYPE_EXCLUDE_FLAG_NO_METADATA = 'exclude_flag_no_metadata';
+
+    // Quick task 260809-uza — a previously-costed product whose only suppliers are
+    // now excluded/stale/OOS matches no key in buildBestOfferMap; its stale
+    // buy_price silently keeps driving the sell-price recompute. Surfaced here for
+    // operator review (cost is NEVER changed by supplier:db-sync).
+    public const STALE_COST_NO_SUPPLIER = 'stale_cost_no_supplier';
 
     protected $fillable = [
         'sku', 'woo_product_id', 'woo_variation_id',

@@ -97,11 +97,13 @@ final class WooImportProductsCommand extends BaseCommand
 
                 if ($type === 'variation') {
                     $skippedVariation++;
+
                     continue;
                 }
                 if (! in_array($type, ['simple', 'variable'], true)) {
                     // grouped / external — out of scope per SyncSupplierCommand precedent
                     $skippedOther++;
+
                     continue;
                 }
 
@@ -115,6 +117,7 @@ final class WooImportProductsCommand extends BaseCommand
 
                 if ($wooProductId === 0) {
                     $errored++;
+
                     continue;
                 }
 
@@ -146,26 +149,52 @@ final class WooImportProductsCommand extends BaseCommand
                     'short_description' => (string) ($p['short_description'] ?? ''),
                     'long_description' => (string) ($p['description'] ?? ''),
                     'sell_price' => $this->parseDecimal($p['regular_price'] ?? $p['price'] ?? null),
-                    'buy_price' => $this->parseDecimal($cogCost),
                     'last_synced_at' => now(),
                 ];
 
-                // Supplier API enrichment overrides the meta-derived buy_price
-                // when present (supplier feed is more authoritative than the
-                // last-synced cost stored on the Woo product).
+                // Quick task 260809-uza PART 1 — break the circular cost-authority
+                // loop traced on SKU 9C941AA. woo:import-products USED to set
+                // buy_price from Woo's _alg_wc_cog_cost meta on EVERY update; combined
+                // with the nightly cutover:auto-sync push of local buy_price → Woo COG,
+                // that cemented any wrong cost forever (the supplier feed could never
+                // win durably). Now Woo COG may only SEED buy_price — never overwrite an
+                // existing non-null local cost — and the --with-supplier feed remains
+                // the sole authoritative overwrite. Because updateOrCreate applies the
+                // ENTIRE values array on update, buy_price must be CONDITIONALLY included.
+                //
+                // Resolve the existing row ONCE (reused by both the dry-run existence
+                // check below and the live write path — no second query in dry-run).
+                $existing = Product::where('woo_product_id', $wooProductId)->first(['id', 'buy_price']);
+
+                // Supplier API enrichment is the authoritative cost source: when
+                // --with-supplier carries a valid price for this SKU it wins on BOTH
+                // create and update (preserves the original override semantics).
+                $supplierBuy = null;
                 if ($withSupplier && $sku !== '' && isset($supplierFeed[$sku])) {
                     $supplierBuy = $this->parseDecimal($supplierFeed[$sku]['price'] ?? null);
-                    if ($supplierBuy !== null) {
-                        $payload['buy_price'] = $supplierBuy;
-                    }
                 }
 
+                if ($supplierBuy !== null) {
+                    $payload['buy_price'] = $supplierBuy;
+                } elseif ($existing === null || $existing->buy_price === null) {
+                    // SEED-only path: new row, or existing row whose cost is still NULL.
+                    // A genuinely null COG leaves buy_price null on create (matching the
+                    // prior behaviour) — never seed a null over nothing.
+                    $cog = $this->parseDecimal($cogCost);
+                    if ($cog !== null) {
+                        $payload['buy_price'] = $cog;
+                    }
+                }
+                // Else: existing row with a non-null buy_price and no supplier override
+                // → buy_price key is OMITTED, so updateOrCreate leaves the cost untouched.
+
                 if ($dryRun) {
-                    if (Product::where('woo_product_id', $wooProductId)->exists()) {
+                    if ($existing !== null) {
                         $updated++;
                     } else {
                         $created++;
                     }
+
                     continue;
                 }
 

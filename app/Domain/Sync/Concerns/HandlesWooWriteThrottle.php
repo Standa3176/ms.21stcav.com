@@ -6,7 +6,7 @@ namespace App\Domain\Sync\Concerns;
 
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
-use Illuminate\Support\Facades\Cache;
+use App\Domain\Sync\Support\WooWriteMetrics;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -88,7 +88,7 @@ trait HandlesWooWriteThrottle
     {
         $delay = $e->retryAfterSeconds();
 
-        self::recordWooThrottleMetric('deferred');
+        WooWriteMetrics::increment(WooWriteMetrics::DEFERRED);
 
         Log::info('woo.write_throttled_deferred', array_merge([
             'job' => static::class,
@@ -132,42 +132,4 @@ trait HandlesWooWriteThrottle
         );
     }
 
-    /**
-     * Daily counters answering the operator questions:
-     *   deferred — how many Woo writes were throttled + released today
-     *   failed   — how many genuinely failed today
-     *
-     * Cache (Redis in prod) keyed `woo:write:metrics:{name}:{Y-m-d}`, 48h TTL.
-     * Read back by `cutover:auto-sync` / `products:push-divergence-to-woo`
-     * summary output. Deliberately not a new subsystem — a counter is enough
-     * to tell "healthy" from "the write path is jammed again".
-     */
-    public static function recordWooThrottleMetric(string $name, int $by = 1): void
-    {
-        $key = self::wooThrottleMetricKey($name);
-
-        try {
-            // add() seeds the key WITH its TTL; increment() alone on a missing
-            // key creates it without expiry on some stores.
-            Cache::add($key, 0, now()->addHours(48));
-            Cache::increment($key, $by);
-        } catch (\Throwable $e) {
-            // Metrics must never break a write path.
-            Log::debug('woo.write_metric_failed', ['key' => $key, 'error' => $e->getMessage()]);
-        }
-    }
-
-    public static function readWooThrottleMetric(string $name, ?string $date = null): int
-    {
-        try {
-            return (int) Cache::get(self::wooThrottleMetricKey($name, $date), 0);
-        } catch (\Throwable) {
-            return 0;
-        }
-    }
-
-    public static function wooThrottleMetricKey(string $name, ?string $date = null): string
-    {
-        return 'woo:write:metrics:'.$name.':'.($date ?? now()->format('Y-m-d'));
-    }
 }

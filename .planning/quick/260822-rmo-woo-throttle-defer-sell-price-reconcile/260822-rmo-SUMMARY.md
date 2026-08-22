@@ -53,7 +53,8 @@ estimate was right; the earlier "~7.5 min" wrongly summed all three backoffs.
 | file | change |
 |---|---|
 | `app/Domain/Sync/Exceptions/WooWriteThrottleException.php` | carries `retryAfterSeconds` (min 1, default 60) |
-| `app/Domain/Sync/Services/WooClient.php` | passes the real `RateLimiter::availableIn()` / lock-wait; new read-only `writeThrottleRetryAfter()` preflight probe |
+| `app/Domain/Sync/Services/WooClient.php` | passes the real `RateLimiter::availableIn()` / lock-wait; `WRITE_RATE_LIMITER_KEY` made public |
+| `app/Domain/Sync/Support/WooWriteWindow.php` | **new** — read-only "is the write window open?" probe |
 | `app/Domain/Sync/Concerns/HandlesWooWriteThrottle.php` | **new** — `releaseForWooThrottle()`, `releaseIfWooWriteWindowClosed()`, `retryUntil()` |
 | `app/Domain/Sync/Support/WooWriteMetrics.php` | **new** — daily deferred/failed counters |
 | `app/Domain/Sync/Services/WooProductWriter.php` | re-throws the throttle instead of masking it as `status='error'`; new `sell_price` branch + sale guard; `fields_skipped` in the return shape |
@@ -61,7 +62,7 @@ estimate was right; the earlier "~7.5 min" wrongly summed all three backoffs.
 | `app/Domain/Pricing/Services/WooRegularPriceFormatter.php` | **new** — the single implementation (VAT basis lives in Pricing) |
 | `app/Providers/AppServiceProvider.php` | binds the contract to the implementation |
 | `app/Domain/Pricing/Listeners/PushPriceChangeToWoo.php` | trait + `maxExceptions` + throttle catch + `failed()` |
-| `app/Domain/ProductAutoCreate/Jobs/PublishProductJob.php` | trait + `maxExceptions` + preflight + catch on both write paths |
+| `app/Domain/ProductAutoCreate/Jobs/PublishProductJob.php` | trait + `maxExceptions` + catch on both write paths |
 | `app/Domain/ProductAutoCreate/Jobs/CreateWooProductJob.php` | trait + `maxExceptions` + **preflight only** (see risks) |
 | `app/Domain/ProductAutoCreate/Jobs/ProcessAutoCreateImageJob.php` | trait + `maxExceptions` + catch |
 | `app/Domain/ProductAutoCreate/Listeners/PushProductFieldsToWoo.php` | trait + `maxExceptions` + catch |
@@ -192,6 +193,11 @@ Results:
   Sync → Pricing violation stood — every one of those failures was mine, and
   all cleared once the inversion landed)
 - `deptrac analyse`: **0 violations**
+- `tests/Unit`: 41 failed / 695 passed — **pre-existing**, proven by checking out
+  `main` and re-running the representative file (`GoldenFixtureV2TradeTest`):
+  21 failed / 60 passed on BOTH main and this branch, byte-identical. Every
+  failure is Quotes / QuoteLine / TradePricing / PDF fixture work; none touch
+  Woo writes, the throttle or `WooProductWriter`.
 
 The full `php vendor/bin/pest` run cannot complete on this repo for reasons
 that predate this task: `tests/Feature/Agents/Marketing/ReadMarketingToolsTest.php`
@@ -222,7 +228,7 @@ accepts `--field=sell_price`, and the dry-run detail table.
   only, so a variation price lost to the throttle stays lost.
   `PushPriceChangeToWoo` does push variation prices, and it now defers rather
   than dying, but there is no backstop for that path.
-- **`CreateWooProductJob` gets preflight only.** Its `handle()` creates the
+- **`CreateWooProductJob` gets preflight only** (`WooWriteWindow::retryAfterSeconds()`). Its `handle()` creates the
   local `Product` row before the Woo POST, and the AUTO-08 duplicate gate
   would reject that row on a re-run. The preflight closes the common case; a
   ceiling hit in the race window still lands in its existing
@@ -232,6 +238,23 @@ accepts `--field=sell_price`, and the dry-run detail table.
 - **The dry-run's phase-1 scan is a full-catalogue Woo read** and takes real
   time on prod.
 
+## 11a. A design correction the tests forced
+
+The first cut put the preflight probe on `WooClient` as an instance method and
+called it from `PublishProductJob` too. That took `PublishProductJobTest` from
+green to 13 red: a dozen suites mock `WooClient` strictly, so a new instance
+method means `BadMethodCallException: Received writeThrottleRetryAfter(), but
+no expectations were specified` — for a call those tests do not care about.
+
+Two corrections rather than editing the mocks:
+
+1. The probe reads only config + the RateLimiter, so it does not belong on the
+   client at all → `App\Domain\Sync\Support\WooWriteWindow::retryAfterSeconds()`.
+2. `PublishProductJob` does not need a preflight — its `handle()` is
+   re-entrant, so the write-site catches were always the real guarantee.
+
+Only `CreateWooProductJob` keeps the preflight, where it is load-bearing.
+
 ## 12. Other jobs with the same throttle bug
 
 Audited every Woo writer. Seven classes had it:
@@ -239,7 +262,7 @@ Audited every Woo writer. Seven classes had it:
 | class | queue | tries/backoff | status |
 |---|---|---|---|
 | `PushPriceChangeToWoo` | woo-writes | 3 / [30,120,300] | **fixed** — the incident path |
-| `PublishProductJob` | woo-writes | 3 / [30,120,300] | **fixed** — died at T+150s too |
+| `PublishProductJob` | woo-writes | 3 / [30,120,300] | **fixed** (write-site catches) — died at T+150s too |
 | `CreateWooProductJob` | woo-writes | 3 / [30,300,1800] | **fixed** (preflight) — died at T+330s |
 | `ProcessAutoCreateImageJob` | sync-bulk | 3 / [30,300,1800] | **fixed** |
 | `PushProductFieldsToWoo` | woo-writes | 4 / default | **fixed** — throttle was masked as `status='error'` by `WooProductWriter`, then re-thrown as a generic RuntimeException |

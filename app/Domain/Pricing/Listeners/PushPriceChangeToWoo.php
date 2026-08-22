@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Pricing\Listeners;
 
 use App\Domain\Pricing\Events\ProductPriceChanged;
-use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\Pricing\Services\WooRegularPriceFormatter;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductVariant;
 use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
+use App\Domain\Sync\Support\WooWriteMetrics;
 use App\Foundation\Audit\Services\Auditor;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
@@ -64,7 +65,7 @@ final class PushPriceChangeToWoo implements ShouldQueue
 
     public function __construct(
         private readonly WooClient $woo,
-        private readonly PriceCalculator $calculator,
+        private readonly WooRegularPriceFormatter $priceFormatter,
     ) {}
 
     public function viaQueue(): string
@@ -103,12 +104,12 @@ final class PushPriceChangeToWoo implements ShouldQueue
             return;
         }
 
-        // sell_price (event newPennies) is VAT-inclusive. Push inc-VAT by default;
-        // strip to ex-VAT only when the store is configured ex-VAT.
-        $pennies = (bool) config('services.woo.push_prices_ex_vat', false)
-            ? $this->calculator->stripVat($event->newPennies)
-            : $event->newPennies;
-        $regularPrice = number_format($pennies / 100, 2, '.', '');
+        // sell_price (event newPennies) is VAT-inclusive. 260822-rmo — the
+        // inc/ex-VAT decision now lives in ONE place shared with the nightly
+        // sell_price reconciler, so the event-driven push and the backstop can
+        // never disagree about the basis (a divergence there is a silent 20%
+        // error on every reconciled product).
+        $regularPrice = $this->priceFormatter->fromPennies($event->newPennies);
 
         // No leading slash — the Woo SDK 404s ("rest_no_route") on a leading "/".
         if ($event->variantId !== null) {
@@ -213,7 +214,7 @@ final class PushPriceChangeToWoo implements ShouldQueue
      */
     public function failed(ProductPriceChanged $event, \Throwable $e): void
     {
-        self::recordWooThrottleMetric('failed');
+        WooWriteMetrics::increment(WooWriteMetrics::FAILED);
 
         $product = Product::query()->where('id', $event->productId)->first();
 

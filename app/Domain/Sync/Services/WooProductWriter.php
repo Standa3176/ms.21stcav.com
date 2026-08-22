@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
-use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Services\WooFieldComparator;
+use App\Domain\Sync\Contracts\SellPriceFormatter;
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 
 /**
@@ -46,7 +46,10 @@ class WooProductWriter
 {
     public function __construct(
         private readonly WooClient $woo,
-        private readonly PriceCalculator $calculator = new PriceCalculator,
+        // Sync must not depend on Pricing (deptrac layer rule), so the VAT
+        // basis arrives through a Sync-owned contract that the Pricing domain
+        // implements. See SellPriceFormatter.
+        private readonly SellPriceFormatter $sellPriceFormatter,
     ) {}
 
     /**
@@ -136,10 +139,14 @@ class WooProductWriter
         if (in_array('sell_price', $fields, true)) {
             $skipReason = $this->sellPriceSkipReason($product, $wooDict);
 
-            if ($skipReason !== null) {
-                $fieldsSkipped['sell_price'] = $skipReason;
+            $regularPrice = $skipReason === null
+                ? $this->sellPriceFormatter->formatForProduct($product)
+                : null;
+
+            if ($skipReason !== null || $regularPrice === null) {
+                $fieldsSkipped['sell_price'] = $skipReason ?? 'no_local_price';
             } else {
-                $putPayload['regular_price'] = $this->regularPriceString($product);
+                $putPayload['regular_price'] = $regularPrice;
                 $fieldsBeingPushed[] = 'sell_price';
             }
         }
@@ -223,24 +230,6 @@ class WooProductWriter
         }
 
         return null;
-    }
-
-    /**
-     * Local sell_price → Woo regular_price string.
-     *
-     * sell_price is VAT-inclusive; strip to ex-VAT only when the store is
-     * configured ex-VAT (services.woo.push_prices_ex_vat). Identical basis to
-     * PushPriceChangeToWoo — a mismatch here would be a silent 20% error.
-     */
-    private function regularPriceString(Product $product): string
-    {
-        $pennies = (int) round(((float) $product->sell_price) * 100);
-
-        if ((bool) config('services.woo.push_prices_ex_vat', false)) {
-            $pennies = $this->calculator->stripVat($pennies);
-        }
-
-        return number_format($pennies / 100, 2, '.', '');
     }
 
     /**

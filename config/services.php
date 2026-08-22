@@ -85,6 +85,16 @@ return [
         'write_lock_wait_seconds' => (int) env('WOO_WRITE_LOCK_WAIT_SECONDS', 30),
         'write_lock_seconds' => (int) env('WOO_WRITE_LOCK_SECONDS', 120),
 
+        //   write_retry_until_minutes — 260822-rmo. How long a THROTTLED Woo
+        //       write keeps deferring itself before it gives up and fails.
+        //       Read by HandlesWooWriteThrottle::retryUntil(). This is a
+        //       deferral window, NOT a retry-forever switch: genuine errors
+        //       still terminate after maxExceptions regardless of this value.
+        //       180 min outlasts a full-catalogue repricing burst at the
+        //       60/min ceiling (~10,800 writes) with headroom, and always
+        //       expires before the next daily run.
+        'write_retry_until_minutes' => (int) env('WOO_WRITE_RETRY_UNTIL_MINUTES', 180),
+
         // VAT basis for prices PUSHED to Woo's regular_price (PushPriceChangeToWoo).
         // sell_price is stored VAT-INCLUSIVE; default false = push inc-VAT (matches
         // the existing auto-create convention). Set WOO_PUSH_PRICES_EX_VAT=true if

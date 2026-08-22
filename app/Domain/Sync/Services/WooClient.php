@@ -261,8 +261,11 @@ class WooClient
             throw new WooWriteThrottleException(
                 "Could not acquire the 'woo:write' lock within {$lockWait}s — "
                 .'another worker is mid-write; requeueing rather than writing un-serialised.',
-                0,
-                $e,
+                // 260822-rmo — retry after roughly the lock's own wait window.
+                // The holder is mid-write, so a short deferral is right; a full
+                // limiter window here would idle the single woo-writes worker.
+                retryAfterSeconds: max(1, $lockWait),
+                previous: $e,
             );
         }
 
@@ -296,7 +299,11 @@ class WooClient
 
                 throw new WooWriteThrottleException(
                     "Woo live-write rate ceiling ({$maxPerMinute}/min) reached — "
-                    ."requeueing; window resets in {$availableIn}s.",
+                    ."deferring; window resets in {$availableIn}s.",
+                    // 260822-rmo — the real window reset, so a queued caller
+                    // releases for exactly as long as the ceiling is closed
+                    // instead of burning an attempt on a fixed backoff.
+                    retryAfterSeconds: $availableIn,
                 );
             }
 

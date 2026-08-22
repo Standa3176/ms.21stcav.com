@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\Sync\Services;
 
+use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Services\WooFieldComparator;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 
 /**
  * Quick task 260611-s2d — single source of truth for MS→Woo PUT payload
@@ -42,13 +44,16 @@ use App\Domain\Products\Services\WooFieldComparator;
  */
 class WooProductWriter
 {
-    public function __construct(private readonly WooClient $woo) {}
+    public function __construct(
+        private readonly WooClient $woo,
+        private readonly PriceCalculator $calculator = new PriceCalculator,
+    ) {}
 
     /**
      * PUT the requested fields to Woo for $product.
      *
-     * @param  array<int, string>  $fields  subset of {stock_quantity, buy_price, category_id}
-     * @return array{status: string, fields_pushed: array<int, string>, http_status: ?int, reason: ?string}
+     * @param  array<int, string>  $fields  subset of {stock_quantity, buy_price, category_id, sell_price}
+     * @return array{status: string, fields_pushed: array<int, string>, fields_skipped: array<string, string>, http_status: ?int, reason: ?string}
      */
     public function putProductFields(Product $product, array $fields, ?string $correlationId = null): array
     {
@@ -62,6 +67,7 @@ class WooProductWriter
                 return [
                     'status' => 'woo_not_found',
                     'fields_pushed' => [],
+                    'fields_skipped' => [],
                     'http_status' => 404,
                     'reason' => null,
                 ];
@@ -70,14 +76,24 @@ class WooProductWriter
             return [
                 'status' => 'error',
                 'fields_pushed' => [],
+                'fields_skipped' => [],
                 'http_status' => null,
                 'reason' => $e->getMessage(),
             ];
         }
 
+        // Woo SDK list/detail responses can arrive as stdClass. Deep-normalise
+        // so the array reads below (meta_data merge, on_sale / sale_price sale
+        // guard) behave uniformly — mirrors WooFieldComparator::diff().
+        if (is_object($wooDict)) {
+            $wooDict = json_decode((string) json_encode($wooDict), true);
+        }
+
         // ── Build PUT payload from requested $fields ─────────────────────
         $putPayload = [];
         $fieldsBeingPushed = [];
+        /** @var array<string, string> $fieldsSkipped  field => machine-readable reason */
+        $fieldsSkipped = [];
 
         if (in_array('stock_quantity', $fields, true)) {
             $putPayload['stock_quantity'] = (int) ($product->stock_quantity ?? 0);
@@ -103,13 +119,41 @@ class WooProductWriter
             $fieldsBeingPushed[] = 'buy_price';
         }
 
+        // ── sell_price (260822-rmo) ───────────────────────────────────────
+        //
+        // Mapping follows the app's authoritative price behaviour — see
+        // PushPriceChangeToWoo and PublishProductJob::buildCreatePayload:
+        // Product.sell_price is VAT-INCLUSIVE and lands on Woo's
+        // `regular_price` as a 2dp string; ex-VAT only when the store is
+        // configured that way.
+        //
+        // SALE SAFETY (non-negotiable): this app has no sale_price concept —
+        // a Woo sale is operator-owned. WooFieldComparator compares against
+        // Woo's `price`, which IS the sale price while a sale runs, so an
+        // on-sale product looks permanently diverged. Pushing regular_price
+        // there would silently rewrite the sale's reference ("was") price.
+        // We skip and report instead.
+        if (in_array('sell_price', $fields, true)) {
+            $skipReason = $this->sellPriceSkipReason($product, $wooDict);
+
+            if ($skipReason !== null) {
+                $fieldsSkipped['sell_price'] = $skipReason;
+            } else {
+                $putPayload['regular_price'] = $this->regularPriceString($product);
+                $fieldsBeingPushed[] = 'sell_price';
+            }
+        }
+
         if ($putPayload === []) {
             // Caller asked for fields but Product can't satisfy them
             // (e.g. category_id-only request but Product has neither
-            // category_id nor category_ids set). Treat as benign no-op.
+            // category_id nor category_ids set), or every requested field
+            // was skipped by a guard (e.g. sell_price on an on-sale product).
+            // Treat as benign no-op.
             return [
                 'status' => 'pushed',
                 'fields_pushed' => [],
+                'fields_skipped' => $fieldsSkipped,
                 'http_status' => null,
                 'reason' => null,
             ];
@@ -118,10 +162,19 @@ class WooProductWriter
         // ── Live PUT ──────────────────────────────────────────────────────
         try {
             $this->woo->put("products/{$wooId}", $putPayload);
+        } catch (WooWriteThrottleException $e) {
+            // 260822-rmo — a throttle is back-pressure, NOT a write error.
+            // Swallowing it into status='error' hid it from queued callers,
+            // which then threw a generic RuntimeException and burned a retry
+            // attempt. Re-throw so HandlesWooWriteThrottle can DEFER the job.
+            // The synchronous caller (PushDivergenceToWooCommand) catches it
+            // one level up and reports it as `throttled`, not as an error.
+            throw $e;
         } catch (\Throwable $e) {
             return [
                 'status' => 'error',
                 'fields_pushed' => [],
+                'fields_skipped' => $fieldsSkipped,
                 'http_status' => null,
                 'reason' => $e->getMessage(),
             ];
@@ -130,9 +183,64 @@ class WooProductWriter
         return [
             'status' => 'pushed',
             'fields_pushed' => $fieldsBeingPushed,
+            'fields_skipped' => $fieldsSkipped,
             'http_status' => 200,
             'reason' => null,
         ];
+    }
+
+    /**
+     * Why sell_price must NOT be pushed for this product — or null when it is
+     * safe to push.
+     *
+     *   no_local_price — local sell_price is null / zero / negative. Nothing
+     *                    to assert; pushing "0.00" would zero a live price.
+     *   on_sale        — Woo has an active sale. Operator-owned; see the
+     *                    SALE SAFETY note in putProductFields().
+     *
+     * @param  array<string, mixed>|mixed  $wooDict  pre-GET Woo product dict
+     */
+    private function sellPriceSkipReason(Product $product, mixed $wooDict): ?string
+    {
+        $local = $product->sell_price !== null ? (float) $product->sell_price : null;
+        if ($local === null || $local <= 0.0) {
+            return 'no_local_price';
+        }
+
+        if (! is_array($wooDict)) {
+            // Pre-GET returned something unusable — refuse rather than push
+            // blind, since we cannot rule out an active sale.
+            return 'woo_dict_unreadable';
+        }
+
+        if (($wooDict['on_sale'] ?? false) === true) {
+            return 'on_sale';
+        }
+
+        $salePrice = $wooDict['sale_price'] ?? null;
+        if ($salePrice !== null && trim((string) $salePrice) !== '' && (float) $salePrice > 0.0) {
+            return 'on_sale';
+        }
+
+        return null;
+    }
+
+    /**
+     * Local sell_price → Woo regular_price string.
+     *
+     * sell_price is VAT-inclusive; strip to ex-VAT only when the store is
+     * configured ex-VAT (services.woo.push_prices_ex_vat). Identical basis to
+     * PushPriceChangeToWoo — a mismatch here would be a silent 20% error.
+     */
+    private function regularPriceString(Product $product): string
+    {
+        $pennies = (int) round(((float) $product->sell_price) * 100);
+
+        if ((bool) config('services.woo.push_prices_ex_vat', false)) {
+            $pennies = $this->calculator->stripVat($pennies);
+        }
+
+        return number_format($pennies / 100, 2, '.', '');
     }
 
     /**

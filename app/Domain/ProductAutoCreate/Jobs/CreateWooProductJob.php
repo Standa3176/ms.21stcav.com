@@ -112,7 +112,7 @@ final class CreateWooProductJob implements ShouldQueue
         // state first, and the AUTO-08 duplicate gate would reject that very
         // row on a re-run — so deferring at the POST would leave the product
         // stranded local-only. Defer here, before anything is written.
-        if ($this->releaseIfWooWriteWindowClosed($woo, ['sku' => $this->sku])) {
+        if ($this->releaseIfWooWriteWindowClosed(['sku' => $this->sku])) {
             return;
         }
 

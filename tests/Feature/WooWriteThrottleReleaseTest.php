@@ -14,6 +14,7 @@ use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\Sync\Support\WooWriteMetrics;
+use App\Domain\Sync\Support\WooWriteWindow;
 use Illuminate\Contracts\Queue\Job as JobContract;
 use Illuminate\Support\Facades\Log;
 
@@ -409,7 +410,7 @@ it('reports no wait when the Woo write window is open', function (): void {
     config(['services.woo.write_enabled' => true]);
     config(['services.woo.write_max_per_minute' => 60]);
 
-    expect(app(WooClient::class)->writeThrottleRetryAfter())->toBeNull();
+    expect(WooWriteWindow::retryAfterSeconds())->toBeNull();
 });
 
 it('reports a wait once the per-minute ceiling is exhausted', function (): void {
@@ -419,7 +420,7 @@ it('reports a wait once the per-minute ceiling is exhausted', function (): void 
     RateLimiter::hit('woo-write-rate', 60);
     RateLimiter::hit('woo-write-rate', 60);
 
-    $wait = app(WooClient::class)->writeThrottleRetryAfter();
+    $wait = WooWriteWindow::retryAfterSeconds();
 
     expect($wait)->toBeInt()->toBeGreaterThanOrEqual(1)->toBeLessThanOrEqual(60);
 });
@@ -431,5 +432,5 @@ it('never reports a wait in shadow mode — a SyncDiff hits no external system',
     RateLimiter::hit('woo-write-rate', 60);
     RateLimiter::hit('woo-write-rate', 60);
 
-    expect(app(WooClient::class)->writeThrottleRetryAfter())->toBeNull();
+    expect(WooWriteWindow::retryAfterSeconds())->toBeNull();
 });

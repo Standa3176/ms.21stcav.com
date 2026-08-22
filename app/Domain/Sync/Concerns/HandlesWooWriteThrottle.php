@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Sync\Concerns;
 
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
-use App\Domain\Sync\Services\WooClient;
 use App\Domain\Sync\Support\WooWriteMetrics;
+use App\Domain\Sync\Support\WooWriteWindow;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -115,9 +115,9 @@ trait HandlesWooWriteThrottle
      * Returns true when the job was released and handle() must return
      * immediately; false when it is clear to proceed.
      */
-    protected function releaseIfWooWriteWindowClosed(WooClient $woo, array $context = []): bool
+    protected function releaseIfWooWriteWindowClosed(array $context = []): bool
     {
-        $retryAfter = $woo->writeThrottleRetryAfter();
+        $retryAfter = WooWriteWindow::retryAfterSeconds();
 
         if ($retryAfter === null) {
             return false;
@@ -131,5 +131,4 @@ trait HandlesWooWriteThrottle
             $context,
         );
     }
-
 }

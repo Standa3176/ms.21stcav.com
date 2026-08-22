@@ -180,6 +180,28 @@ SKU/Woo id/intended price to the audit log, `retryUntil` bounded + config-
 driven, a parameterised audit asserting every trait adopter declares
 `maxExceptions`, and the preflight probe (open / exhausted / shadow mode).
 
+Results:
+
+- new suites + directly-affected existing suites (`PushDivergenceToWooCommandTest`,
+  `AutoSyncDivergenceCommandTest`, `PushProductFieldsToWooTest`):
+  **53 passed, 221 assertions**
+- other suites touching the changed classes (`PushPriceChangeToWooStaleIdTest`,
+  `WooWriteQueueRoutingTest`, `ShadowModeTest`, `WooWriteThrottleTest`):
+  **24 passed, 75 assertions**
+- `tests/Architecture`: **121 passed** (was 14 failed / 107 passed while the
+  Sync → Pricing violation stood — every one of those failures was mine, and
+  all cleared once the inversion landed)
+- `deptrac analyse`: **0 violations**
+
+The full `php vendor/bin/pest` run cannot complete on this repo for reasons
+that predate this task: `tests/Feature/Agents/Marketing/ReadMarketingToolsTest.php`
+and `tests/Feature/Integrations/MarketingOverviewStatsTest.php` both declare
+`seedGaRow()`, and `tests/Unit/ProductAutoCreate/SpecTaxonomyResolverTest.php`
+and `tests/Feature/ProductAutoCreate/Services/ProductBrandTermResolverTest.php`
+both declare `makeResolver()` — PHP fatals on the redeclare. Both pairs were
+last touched on 2026-07-12 and 2026-07-03 respectively, well before this work.
+Suites therefore run per-directory.
+
 `tests/Feature/WooSellPriceReconcileTest.php` (13 cases) — string-vs-float and
 sub-penny tolerance produce no false mismatch, genuine difference is detected,
 push writes `regular_price` 2dp, ex-VAT stripping, no-local-price skip, on-sale

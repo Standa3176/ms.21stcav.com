@@ -94,15 +94,14 @@ final class PublishProductJob implements ShouldQueue
     ): void {
         $product = Product::findOrFail($this->productId);
 
-        // ── Throttle preflight (260822-rmo) ─────────────────────────────────
-        // Cheap defer before the local stock hydration + payload build below,
-        // so a closed window costs nothing. handle() is re-entrant either way
-        // (path A is an idempotent PUT; path B's create is guarded by the
-        // woo_product_id back-fill), so this is an optimisation — the
-        // write-site catch further down is the actual guarantee.
-        if ($this->releaseIfWooWriteWindowClosed($woo, ['product_id' => $this->productId])) {
-            return;
-        }
+        // NOTE (260822-rmo): deliberately NO throttle preflight here. handle()
+        // is re-entrant — path A is an idempotent PUT and path B's create is
+        // guarded by the woo_product_id back-fill — so the write-site catches
+        // below are the whole guarantee, and a preflight would only have been
+        // an optimisation. It also forced every existing WooClient test mock to
+        // grow an expectation for a call the job does not need.
+        // CreateWooProductJob keeps its preflight because there it IS
+        // load-bearing: that job writes local state before the Woo POST.
 
         // 260702-pes — hydrate local stock from the LIVE cheapest-fresh-in-stock
         // supplier offer BEFORE building either Woo payload, so a product created

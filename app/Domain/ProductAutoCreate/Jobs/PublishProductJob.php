@@ -11,6 +11,8 @@ use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooAttributePayloadBuilder;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\LiveSupplierStockResolver;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -55,11 +57,21 @@ final class PublishProductJob implements ShouldQueue
 {
     use BuildsWooStockPayload;
     use Dispatchable;
+    use HandlesWooWriteThrottle;
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
 
     public int $tries = 3;
+
+    /**
+     * 260822-rmo — genuine-failure budget (see HandlesWooWriteThrottle).
+     * A throttled publish now DEFERS instead of spending this budget, which
+     * matters most here: approving a backlog from the review inbox queues
+     * hundreds of publishes onto the single-worker woo-writes queue, so the
+     * ceiling is hit by design rather than by accident.
+     */
+    public int $maxExceptions = 3;
 
     /** @var array<int,int> */
     public array $backoff = [30, 120, 300];
@@ -82,6 +94,16 @@ final class PublishProductJob implements ShouldQueue
     ): void {
         $product = Product::findOrFail($this->productId);
 
+        // ── Throttle preflight (260822-rmo) ─────────────────────────────────
+        // Cheap defer before the local stock hydration + payload build below,
+        // so a closed window costs nothing. handle() is re-entrant either way
+        // (path A is an idempotent PUT; path B's create is guarded by the
+        // woo_product_id back-fill), so this is an optimisation — the
+        // write-site catch further down is the actual guarantee.
+        if ($this->releaseIfWooWriteWindowClosed($woo, ['product_id' => $this->productId])) {
+            return;
+        }
+
         // 260702-pes — hydrate local stock from the LIVE cheapest-fresh-in-stock
         // supplier offer BEFORE building either Woo payload, so a product created
         // today (stock_quantity=null, no snapshot yet) goes live in-stock.
@@ -94,7 +116,15 @@ final class PublishProductJob implements ShouldQueue
             // No leading slash — the Woo SDK 404s ("rest_no_route") on a leading "/".
             // Stock keys (manage_stock/stock_quantity/stock_status) ride along so the
             // flipped-live product shows a storefront stock line like legacy products.
-            $response = $woo->put("products/{$wooId}", array_merge(['status' => 'publish'], $this->wooStockPayload($product)));
+            try {
+                $response = $woo->put("products/{$wooId}", array_merge(['status' => 'publish'], $this->wooStockPayload($product)));
+            } catch (WooWriteThrottleException $e) {
+                // 260822-rmo — defer, don't die. Idempotent PUT, so a re-run
+                // simply repeats it.
+                $this->releaseForWooThrottle($e, ['product_id' => $product->id, 'woo_id' => $wooId, 'path' => 'A']);
+
+                return;
+            }
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
             $payload = $this->buildCreatePayload($product, $calculator);
@@ -116,6 +146,13 @@ final class PublishProductJob implements ShouldQueue
 
             try {
                 $response = $woo->post('products', $payload);
+            } catch (WooWriteThrottleException $e) {
+                // 260822-rmo — defer before the create. Nothing local has been
+                // mutated yet on this path beyond the stock hydration (itself
+                // idempotent), so a re-run rebuilds the payload cleanly.
+                $this->releaseForWooThrottle($e, ['product_id' => $product->id, 'sku' => $product->sku, 'path' => 'B']);
+
+                return;
             } catch (\Throwable $e) {
                 // WC 9.x rejects duplicate `global_unique_id` (GTIN/EAN) values.
                 // Some suppliers share one EAN across SKU variants (Optoma
@@ -163,6 +200,12 @@ final class PublishProductJob implements ShouldQueue
                     try {
                         $woo->put("products/{$wooId}", ['regular_price' => $deferredPrice]);
                     } catch (\Throwable $priceErr) {
+                        // Includes WooWriteThrottleException: the product is
+                        // ALREADY live at this point, so deferring the whole
+                        // job would re-publish rather than re-price. Leaving
+                        // the price unset is now self-healing — the 260822-rmo
+                        // sell_price reconciler picks it up on the next
+                        // cutover:auto-sync pass.
                         Log::warning('auto_create.publish.price_put_failed', [
                             'product_id' => $product->id,
                             'sku' => $product->sku,

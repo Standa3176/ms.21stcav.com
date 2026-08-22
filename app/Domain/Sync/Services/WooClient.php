@@ -242,6 +242,42 @@ class WooClient
      *
      * @throws WooWriteThrottleException Lock unavailable or rate ceiling hit (retryable).
      */
+    /**
+     * 260822-rmo — read-only probe: can a LIVE write be admitted right now?
+     *
+     * Returns null when a write would be admitted (or when shadow mode makes
+     * the throttle irrelevant), otherwise the seconds until the per-minute
+     * window reopens.
+     *
+     * Consumes NO token and takes NO lock — it only reads the limiter. It
+     * exists for jobs whose handle() performs local, non-idempotent work
+     * BEFORE the Woo write (CreateWooProductJob creates the local Product row
+     * first): those jobs preflight here and defer before mutating anything,
+     * so a release cannot strand half-built state. Jobs whose handle() is
+     * naturally re-entrant do not need this — catching the throttle at the
+     * write site is enough.
+     *
+     * Inherently racy (another worker may take the last token between probe
+     * and write) — the write-site catch remains the real guarantee.
+     */
+    public function writeThrottleRetryAfter(): ?int
+    {
+        if (! (bool) config('services.woo.write_enabled', false)) {
+            return null;
+        }
+
+        $maxPerMinute = (int) config('services.woo.write_max_per_minute', 60);
+        if ($maxPerMinute <= 0) {
+            return null;
+        }
+
+        if (! RateLimiter::tooManyAttempts(self::WRITE_RATE_LIMITER_KEY, $maxPerMinute)) {
+            return null;
+        }
+
+        return max(1, RateLimiter::availableIn(self::WRITE_RATE_LIMITER_KEY));
+    }
+
     private function throttledWriteLive(string $method, string $endpoint, array $payload): array
     {
         $lockTtl = max(1, (int) config('services.woo.write_lock_seconds', 120));

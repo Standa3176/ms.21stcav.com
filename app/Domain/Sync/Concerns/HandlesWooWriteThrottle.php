@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Sync\Concerns;
 
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
+use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -101,6 +102,34 @@ trait HandlesWooWriteThrottle
         $this->release($delay);
 
         return true;
+    }
+
+    /**
+     * Defer BEFORE doing any local work, when the write window is already shut.
+     *
+     * For jobs that mutate local state before reaching the Woo write
+     * (CreateWooProductJob creates the local Product row first, which its own
+     * duplicate gate would then reject on a re-run), releasing at the write
+     * site would strand half-built state. Those jobs call this first.
+     *
+     * Returns true when the job was released and handle() must return
+     * immediately; false when it is clear to proceed.
+     */
+    protected function releaseIfWooWriteWindowClosed(WooClient $woo, array $context = []): bool
+    {
+        $retryAfter = $woo->writeThrottleRetryAfter();
+
+        if ($retryAfter === null) {
+            return false;
+        }
+
+        return $this->releaseForWooThrottle(
+            new WooWriteThrottleException(
+                'Woo live-write window already closed at job start — deferring before any local work.',
+                retryAfterSeconds: $retryAfter,
+            ),
+            $context,
+        );
     }
 
     /**

@@ -9,6 +9,8 @@ use App\Domain\ProductAutoCreate\Services\ProductImageFetcher;
 use App\Domain\ProductAutoCreate\Services\ProductImageProcessor;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Bus\Queueable;
@@ -53,11 +55,19 @@ use Illuminate\Support\Str;
 final class ProcessAutoCreateImageJob implements ShouldQueue
 {
     use Dispatchable;
+    use HandlesWooWriteThrottle;
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
 
     public int $tries = 3;
+
+    /**
+     * 260822-rmo — genuine-failure budget (see HandlesWooWriteThrottle).
+     * retryUntil() suspends the `tries` check; this is what still routes a
+     * genuinely broken image push to failed().
+     */
+    public int $maxExceptions = 3;
 
     public array $backoff = [30, 300, 1800];
 
@@ -146,7 +156,22 @@ final class ProcessAutoCreateImageJob implements ShouldQueue
 
         // ── PUT to Woo (shadow-mode aware via WooClient::put) ────────────
         $payload = $payloadBuilder->build($product, $publicUrl);
-        $woo->put("/products/{$product->woo_product_id}", $payload);
+        try {
+            $woo->put("/products/{$product->woo_product_id}", $payload);
+        } catch (WooWriteThrottleException $e) {
+            // 260822-rmo — defer rather than fail. The image is already
+            // fetched, processed and stored on the public disk, so the re-run
+            // redoes that work idempotently (Storage::put overwrites) and
+            // re-attempts the PUT once the write window reopens. The local
+            // image_url persist below is deliberately NOT reached — a re-run
+            // must repeat the whole PUT-then-persist pair.
+            $this->releaseForWooThrottle($e, [
+                'product_id' => $product->id,
+                'woo_product_id' => $product->woo_product_id,
+            ]);
+
+            return;
+        }
 
         // ── PERSIST — forceFill + saveQuietly avoids the Phase 2 activity_log
         //    bloat pattern AND the Plan 01 A3 observer-suppression finding.

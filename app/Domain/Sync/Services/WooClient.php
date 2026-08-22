@@ -43,7 +43,10 @@ class WooClient
      * "unserialize(): Error at offset 0 of 16 bytes" on EVERY live write
      * (confirmed live on prod 2026-07-26). NEVER re-unify these two keys.
      */
-    private const WRITE_RATE_LIMITER_KEY = 'woo-write-rate';
+    // 260822-rmo — public so App\Domain\Sync\Support\WooWriteWindow can read
+    // the same key for its read-only "is the window open?" probe. One key,
+    // one definition; the 260726-wtc guard test still pins its value.
+    public const WRITE_RATE_LIMITER_KEY = 'woo-write-rate';
 
     public function __construct(
         private IntegrationLogger $logger,
@@ -261,8 +264,11 @@ class WooClient
             throw new WooWriteThrottleException(
                 "Could not acquire the 'woo:write' lock within {$lockWait}s — "
                 .'another worker is mid-write; requeueing rather than writing un-serialised.',
-                0,
-                $e,
+                // 260822-rmo — retry after roughly the lock's own wait window.
+                // The holder is mid-write, so a short deferral is right; a full
+                // limiter window here would idle the single woo-writes worker.
+                retryAfterSeconds: max(1, $lockWait),
+                previous: $e,
             );
         }
 
@@ -296,7 +302,11 @@ class WooClient
 
                 throw new WooWriteThrottleException(
                     "Woo live-write rate ceiling ({$maxPerMinute}/min) reached — "
-                    ."requeueing; window resets in {$availableIn}s.",
+                    ."deferring; window resets in {$availableIn}s.",
+                    // 260822-rmo — the real window reset, so a queued caller
+                    // releases for exactly as long as the ceiling is closed
+                    // instead of burning an attempt on a fixed backoff.
+                    retryAfterSeconds: $availableIn,
                 );
             }
 

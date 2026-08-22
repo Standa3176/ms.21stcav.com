@@ -18,6 +18,7 @@ use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
+use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -63,11 +64,19 @@ use Illuminate\Support\Facades\Log;
 final class CreateWooProductJob implements ShouldQueue
 {
     use Dispatchable;
+    use HandlesWooWriteThrottle;
     use InteractsWithQueue;
     use Queueable;
     use SerializesModels;
 
     public int $tries = 3;
+
+    /**
+     * 260822-rmo — genuine-failure budget (see HandlesWooWriteThrottle).
+     * retryUntil() suspends the `tries` check, so this is what still fails a
+     * genuinely broken create; a throttle is deferred and never counted.
+     */
+    public int $maxExceptions = 3;
 
     /** @var array<int, int> */
     public array $backoff = [30, 300, 1800];
@@ -97,6 +106,15 @@ final class CreateWooProductJob implements ShouldQueue
         // 260702-qd8 — method injection supplies the creator on the queue path;
         // the nullable default keeps the existing direct-call test harness green.
         $brandCreator ??= app(WooBrandCreator::class);
+
+        // ── Throttle preflight (260822-rmo) ─────────────────────────────────
+        // MUST come before the Product::create below. handle() builds local
+        // state first, and the AUTO-08 duplicate gate would reject that very
+        // row on a re-run — so deferring at the POST would leave the product
+        // stranded local-only. Defer here, before anything is written.
+        if ($this->releaseIfWooWriteWindowClosed(['sku' => $this->sku])) {
+            return;
+        }
 
         event(new AutoCreateAttempted($this->sku));
 

@@ -545,7 +545,20 @@ if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
 // 260728-fwx / D2(a): category_id deliberately dropped — the app must NOT push
 // categories over the WP-side FacetWP category cleanup. Re-add only after a
 // deliberate local→Woo category reconcile (plan D2(b)).
-Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price --max-products=500')
+// 260822-rmo — sell_price ADDED to the nightly push set.
+//
+// Until now the ONLY thing that pushed a price to Woo was the event-driven
+// PushPriceChangeToWoo listener, and when it lost a write to the Woo write
+// throttle nothing reconciled it: 5,319 dead failed_jobs rows between
+// 2026-08-18 and 2026-08-22, every one a price applied locally and never sent.
+// stock_quantity and buy_price already had this nightly safety net; sell_price
+// did not. Now it does.
+//
+// --max-products=500 is unchanged and intentional: at the 60/min write ceiling
+// a large backlog drains over several nights rather than hammering the WP box
+// the storefront shares. Products with an active Woo sale are reported and
+// skipped, never repriced (WooProductWriter SALE SAFETY).
+Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price,sell_price --max-products=500')
     ->cron('0 23 * * *')
     ->timezone('Europe/London')
     ->onOneServer()

@@ -6,6 +6,8 @@ namespace App\Domain\ProductAutoCreate\Listeners;
 
 use App\Domain\Products\Events\ProductFieldsChangedEvent;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooProductWriter;
 use App\Foundation\Audit\Services\Auditor;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -48,6 +50,7 @@ use Illuminate\Queue\InteractsWithQueue;
  */
 final class PushProductFieldsToWoo implements ShouldQueue
 {
+    use HandlesWooWriteThrottle;
     use InteractsWithQueue;
 
     /**
@@ -65,6 +68,14 @@ final class PushProductFieldsToWoo implements ShouldQueue
      */
     public int $tries = 4;
 
+    /**
+     * 260822-rmo — genuine-failure budget (see HandlesWooWriteThrottle).
+     * 4 mirrors the historical tries=4 budget, now counting only UNCAUGHT
+     * exceptions: a throttle is deferred by the catch in handle() and never
+     * spends a life.
+     */
+    public int $maxExceptions = 4;
+
     public function __construct(private readonly WooProductWriter $writer) {}
 
     public function handle(ProductFieldsChangedEvent $event): void
@@ -77,11 +88,26 @@ final class PushProductFieldsToWoo implements ShouldQueue
             return;
         }
 
-        $result = $this->writer->putProductFields(
-            $product,
-            $event->changedFields,
-            $event->correlationId,
-        );
+        try {
+            $result = $this->writer->putProductFields(
+                $product,
+                $event->changedFields,
+                $event->correlationId,
+            );
+        } catch (WooWriteThrottleException $e) {
+            // 260822-rmo — WooProductWriter used to swallow the throttle into
+            // status='error', which this listener then re-threw as a generic
+            // RuntimeException, burning one of its 4 attempts per burst. It
+            // now propagates so the push can DEFER instead. putProductFields()
+            // is a pre-GET + single PUT, so a re-run is clean.
+            $this->releaseForWooThrottle($e, [
+                'product_id' => $event->productId,
+                'sku' => $event->sku,
+                'changed_fields' => $event->changedFields,
+            ]);
+
+            return;
+        }
 
         app(Auditor::class)->record('events.product_pushed', [
             'product_id' => $event->productId,

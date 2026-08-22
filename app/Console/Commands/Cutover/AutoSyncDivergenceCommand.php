@@ -67,6 +67,24 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  *   php artisan cutover:auto-sync --skip-scan                       (reuse latest sync_diffs)
  *   php artisan cutover:auto-sync --field=stock_quantity            (single field)
  *   php artisan cutover:auto-sync --max-products=100                (cap push count)
+ *   php artisan cutover:auto-sync --field=sell_price --dry-run      (price divergence report)
+ *
+ * ─────────────────────────────────────────────────────────────────────────
+ * 260822-rmo — the --field default is now stock_quantity,buy_price,sell_price.
+ *
+ *   + sell_price   The event-driven price push (PushPriceChangeToWoo) could
+ *                  lose a write to the Woo throttle with nothing to catch it:
+ *                  5,319 dead failed_jobs rows between 2026-08-18 and 08-22,
+ *                  each one a price MS had applied locally and Woo never
+ *                  heard about. Reconciling sell_price here makes that class
+ *                  of loss self-healing instead of permanent.
+ *
+ *   - category_id  Dropped from the default to match what the 23:00 cron has
+ *                  actually been passing since 260728-fwx/D2(a): the app must
+ *                  NOT push categories over the WP-side FacetWP category
+ *                  cleanup. The old default contradicted that note; anyone
+ *                  who wants it can still pass --field=category_id explicitly.
+ * ─────────────────────────────────────────────────────────────────────────
  */
 class AutoSyncDivergenceCommand extends BaseCommand
 {
@@ -83,7 +101,7 @@ class AutoSyncDivergenceCommand extends BaseCommand
     ];
 
     protected $signature = 'cutover:auto-sync
-        {--field=stock_quantity,buy_price,category_id : Fields to push (subset of WooFieldComparator pushable set)}
+        {--field=stock_quantity,buy_price,sell_price : Fields to push (subset of WooFieldComparator pushable set)}
         {--max-products=500 : Cap product count for the push phase (safety)}
         {--skip-scan : Reuse latest divergence-scan correlation_id (default = run fresh scan)}
         {--skip-rescan : Skip the parity-after measurement (for operator manual runs)}

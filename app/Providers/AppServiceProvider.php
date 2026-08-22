@@ -137,6 +137,7 @@ use App\Domain\Quotes\Console\Commands\QuotesExpireCommand;
 use App\Domain\Quotes\Models\Quote;
 use App\Domain\Quotes\Models\QuoteLine;
 use App\Domain\Quotes\Observers\QuoteLineImmutabilityObserver;
+use App\Domain\Pricing\Services\WooRegularPriceFormatter;
 use App\Domain\Quotes\Observers\QuoteTotalRecomputeObserver;
 use App\Domain\Quotes\Policies\QuoteLinePolicy;
 use App\Domain\Quotes\Policies\QuotePolicy;
@@ -147,6 +148,7 @@ use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
+use App\Domain\Sync\Contracts\SellPriceFormatter;
 use App\Domain\Sync\Commands\ProbeSourceabilityGapCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
@@ -191,6 +193,16 @@ class AppServiceProvider extends ServiceProvider
         // Plan 04: SuggestionApplierResolver must be a singleton so every producer,
         // job and admin action resolves the SAME registry instance (not a fresh, empty copy).
         $this->app->singleton(SuggestionApplierResolver::class);
+
+        // 260822-rmo — sell_price → Woo regular_price, resolved through a
+        // Sync-owned contract implemented in the Pricing domain.
+        //
+        // WooProductWriter (Sync) needs the VAT basis, but the layer graph
+        // forbids Sync → Pricing while allowing Pricing → Sync. Dependency
+        // inversion keeps deptrac green AND keeps a single definition of the
+        // mapping shared with PushPriceChangeToWoo — duplicating the ex-VAT
+        // maths inside Sync would be a silent 20% error waiting to drift.
+        $this->app->bind(SellPriceFormatter::class, WooRegularPriceFormatter::class);
 
         // Phase 3 Plan 04 Task 1 — PriceRecomputer is the shared "recompute a
         // SKU's price" core used by BOTH the event-driven RecomputePriceListener

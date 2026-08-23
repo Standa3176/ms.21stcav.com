@@ -118,6 +118,16 @@ return [
     // non-null and FAILS when unset, so a missing key is itself diagnostic.
     // Bound here (not read via env() inline) to survive config:cache — same
     // cached-config rationale as the woo_db block above.
+    // 260822-rmo / 260823 — nightly sell_price reconciliation toggle.
+    // DEFAULT FALSE and deliberately so: the first prod dry-run surfaced 828
+    // divergences including a -99.2% outlier and whole ranges at an identical
+    // -38.7%, i.e. a cost-basis fault rather than writes lost to the throttle.
+    // Reconciling on a schedule would publish that fault to the storefront.
+    // Flip to true only once local sell_price is trusted for these products.
+    // Same env()-broken-in-cached-config rationale as the toggles above — read
+    // via config() from routes/console.php, never env() inline.
+    'sell_price_reconcile_enabled' => (bool) env('CUTOVER_SELL_PRICE_RECONCILE_ENABLED', false),
+
     'woo_write_enabled' => env('WOO_WRITE_ENABLED'),
 
     // Quick task 260611-s2d — feature flag for event-driven MS→Woo

@@ -545,7 +545,27 @@ if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
 // 260728-fwx / D2(a): category_id deliberately dropped — the app must NOT push
 // categories over the WP-side FacetWP category cleanup. Re-add only after a
 // deliberate local→Woo category reconcile (plan D2(b)).
-// 260822-rmo — sell_price ADDED to the nightly push set.
+// 260822-rmo — sell_price in the nightly push set is GATED OFF by default.
+//
+// It was added, deployed, and then immediately gated again on 2026-08-23 when
+// the first dry-run came back with 828 divergences whose shape disproves the
+// premise. A price lost to the write throttle leaves Woo holding an OLDER BUT
+// SANE value — a few percent out. What the scan actually found:
+//
+//   TE9804MIS-B1AG   internal    33.15  vs Woo  4240.78   (-99.2%)
+//   15486IMPACTLUX   internal   380.85  vs Woo  3119.98   (-87.8%)
+//   every Sapphire MPCT/MPC/RAPT SKU        exactly       (-38.7%)
+//   a second cluster (Acer/Epson/Optoma)    exactly       (+15.1%)
+//
+// Identical ratios across whole ranges are a cost-basis or margin-rule fault,
+// not independent competitor repricing. Reconciling would have propagated it
+// to the live storefront on 828 products, 312 of them downward.
+//
+// The throttle fix stands on its own and stays live. Turning this back on is a
+// one-line env change AFTER the pricing question is answered:
+//   CUTOVER_SELL_PRICE_RECONCILE_ENABLED=true
+// Operators can still reconcile deliberately and in batches at any time:
+//   php artisan cutover:auto-sync --field=sell_price --max-products=50
 //
 // Until now the ONLY thing that pushed a price to Woo was the event-driven
 // PushPriceChangeToWoo listener, and when it lost a write to the Woo write
@@ -558,7 +578,11 @@ if ((bool) config('cutover.divergence_scan_schedule_enabled', false)) {
 // a large backlog drains over several nights rather than hammering the WP box
 // the storefront shares. Products with an active Woo sale are reported and
 // skipped, never repriced (WooProductWriter SALE SAFETY).
-Schedule::command('cutover:auto-sync --field=stock_quantity,buy_price,sell_price --max-products=500')
+Schedule::command('cutover:auto-sync --field='
+    .((bool) config('cutover.sell_price_reconcile_enabled', false)
+        ? 'stock_quantity,buy_price,sell_price'
+        : 'stock_quantity,buy_price')
+    .' --max-products=500')
     ->cron('0 23 * * *')
     ->timezone('Europe/London')
     ->onOneServer()

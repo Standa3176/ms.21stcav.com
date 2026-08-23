@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\ProductAutoCreate\Services;
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductSupplierSku;
 
 /**
  * Phase 6 Plan 01 — ProductMatcher (AUTO-08 v1 + D-05 slug-collision gate).
@@ -27,8 +28,22 @@ final class ProductMatcher
     {
         $needle = strtolower(trim($sku));
 
-        return Product::query()
+        $onProducts = Product::query()
             ->whereRaw('LOWER(TRIM(sku)) = ?', [$needle])
+            ->exists();
+
+        if ($onProducts) {
+            return true;
+        }
+
+        // Quick task 260823-clp — an ALTERNATIVE supplier code counts as
+        // "already stocked". This is the AUTO-08 gate immediately before a Woo
+        // POST, so it is the last line of defence against the duplicate class
+        // the 2026-08-09 TODO describes: supplier B lists the same physical
+        // part under its own code, nothing links it, and the pipeline creates
+        // a second Woo product for a part already on the storefront.
+        return ProductSupplierSku::query()
+            ->where('normalised_sku', ProductSupplierSku::normalise($sku))
             ->exists();
     }
 

@@ -7,6 +7,7 @@ namespace App\Domain\Sync\Services;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductSupplierSku;
 
 /**
  * Catalogue-expansion scan: parts our suppliers carry that we DON'T sell yet.
@@ -84,6 +85,18 @@ final class SupplierAddCandidateScanner
             ->pluck('sku')
             ->mapWithKeys(static fn ($s): array => [strtolower(trim((string) $s)) => true])
             ->all();
+
+        // Quick task 260823-clp — alternative supplier codes count as stocked.
+        // Without this the scanner proposes supplier B's code for a part we
+        // already sell under supplier A's, which is precisely how the duplicate
+        // products got created. Same normalisation as the SKU set above and as
+        // ProductSupplierSku::normalise().
+        foreach (ProductSupplierSku::query()->pluck('normalised_sku') as $alias) {
+            $alias = (string) $alias;
+            if ($alias !== '') {
+                $localSkus[$alias] = true;
+            }
+        }
 
         $candidates = [];
         $count = 0;

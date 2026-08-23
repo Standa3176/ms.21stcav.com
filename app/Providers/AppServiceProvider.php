@@ -22,6 +22,7 @@ use App\Console\Commands\Dashboard\PruneDashboardSnapshotsCommand;
 use App\Console\Commands\DedupeBrandsCommand;
 use App\Console\Commands\HydrateLiveStockCommand;
 use App\Console\Commands\HydrateProductStockFromOffersCommand;
+use App\Console\Commands\ProposeSkuAliasesCommand;
 use App\Console\Commands\PushDivergenceToWooCommand;
 use App\Console\Commands\PushVisibilityToWooCommand;
 use App\Console\Commands\ReconcileStaleWooIdsCommand;
@@ -1086,7 +1087,8 @@ class AppServiceProvider extends ServiceProvider
                 // No Claude spend, no storefront writes. Lives under
                 // app/Console/Commands/ (auto-discovered dir) but registered
                 // explicitly alongside the other product commands.
-                RefreshBrandsToAddCommand::class,
+                ProposeSkuAliasesCommand::class,
+            RefreshBrandsToAddCommand::class,
                 // Phase 15 Plan 15a-02 — google:pull-ga4. READ-ONLY daily pull of
                 // GA4 channel/campaign metrics into ga_channel_metrics_daily.
                 // Lives under app/Domain/Integrations/Commands/ so explicit

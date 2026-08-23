@@ -6,6 +6,7 @@ namespace App\Domain\Products\Filament\Resources;
 
 use App\Domain\ProductAutoCreate\Services\FieldPinManager;
 use App\Domain\Products\Filament\Resources\ProductResource\Pages;
+use App\Domain\Products\Filament\Resources\ProductResource\RelationManagers\SupplierSkusRelationManager;
 use App\Domain\Products\Filament\Resources\ProductResource\RelationManagers\VariantsRelationManager;
 use App\Domain\Products\Models\Product;
 use App\Filament\Actions\QueueCsvExportAction;
@@ -294,6 +295,8 @@ class ProductResource extends Resource
     {
         return [
             VariantsRelationManager::class,
+            // 260823-clp — the legacy plugin's "alternative SKU" field, restored.
+            SupplierSkusRelationManager::class,
         ];
     }
 

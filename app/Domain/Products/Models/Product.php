@@ -104,6 +104,19 @@ final class Product extends Model
         return $this->hasMany(ProductVariant::class);
     }
 
+    /**
+     * Quick task 260823-clp — alternative supplier codes for this part.
+     *
+     * The successor to the legacy Stock Updater plugin's single "alternative
+     * SKU" field. One product, many suppliers, each with its own code; without
+     * this the second supplier's row looks like an unknown part and gets
+     * auto-created as a duplicate on Woo.
+     */
+    public function supplierSkus(): HasMany
+    {
+        return $this->hasMany(ProductSupplierSku::class);
+    }
+
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()

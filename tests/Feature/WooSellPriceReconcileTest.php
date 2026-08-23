@@ -365,3 +365,22 @@ it('reports SKU, internal price, Woo price and the difference in dry-run', funct
     // …and dry-run must write nothing.
     expect($woo->putCalls)->toBeEmpty();
 });
+
+it('never reconciles a price for a product that is not on the storefront', function (): void {
+    // 260823 — DivergenceScanner walks EVERY product, so drafts/pending rows
+    // dominate the diff set. PushPriceChangeToWoo has skipped non-published
+    // products since 260701-n4y; the reconciler must not undo that rule and
+    // start pushing prices for things the storefront doesn't sell.
+    $product = Product::factory()->create([
+        'sku' => 'SP-011',
+        'woo_product_id' => 7011,
+        'sell_price' => 12.99,
+        'status' => 'draft',
+    ]);
+
+    $woo = sellPriceWooStub([7011 => ['id' => 7011, 'price' => '10.50', 'meta_data' => []]]);
+    $result = sellPriceWriter($woo)->putProductFields($product, ['sell_price'], 'cid-sp11');
+
+    expect($woo->putCalls)->toBeEmpty()
+        ->and($result['fields_skipped'])->toBe(['sell_price' => 'not_published']);
+});

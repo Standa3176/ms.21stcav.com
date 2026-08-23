@@ -209,6 +209,17 @@ class WooProductWriter
      */
     private function sellPriceSkipReason(Product $product, mixed $wooDict): ?string
     {
+        // 260823 — publish-only, matching the rule PushPriceChangeToWoo has
+        // enforced since 260701-n4y. DivergenceScanner walks EVERY Product
+        // (Product::query()->cursor(), no status filter), so the diff set is
+        // dominated by 'manual' and 'draft' rows whose prices the event-driven
+        // push has never sent and was never meant to send. Reconciling them
+        // would not be repairing a lost write — it would be pushing prices for
+        // products that are not on the storefront.
+        if ($product->status !== 'publish') {
+            return 'not_published';
+        }
+
         $local = $product->sell_price !== null ? (float) $product->sell_price : null;
         if ($local === null || $local <= 0.0) {
             return 'no_local_price';

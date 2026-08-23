@@ -153,9 +153,48 @@ today's deferred/failed Woo-write counters, and a
 
 ## 8. Current mismatch count
 
-NOT measured — this machine cannot reach the VPS (ssh port 22 times out to
+MEASURED 2026-08-23 — see 8a. **828 total, 281 published.** Run from the VPS;
+this machine cannot reach it (ssh port 22 times out to
 both `ms.21stcav.com` and `46.202.141.242`; 443 is open). The operator runs
 the dry-run above to establish it.
+
+## 8a. What the prod dry-run actually found (2026-08-23)
+
+**828 sell_price divergences — but two-thirds are not live products.**
+
+| product status | divergences |
+|---|---|
+| pending | 546 |
+| **publish** | **281** |
+| draft | 1 |
+
+`DivergenceScanner::scan()` walks `Product::query()->cursor()` with NO status
+filter, so the raw 828 is dominated by rows the storefront does not sell.
+Every alarming outlier is in the non-published set — TE9804MIS-B1AG (-99.2%),
+15486IMPACTLUX (-87.8%), the entire Sapphire MPCT/MPC/RAPT block at exactly
+-38.7%. `pending` products have never had a price pushed (PushPriceChangeToWoo
+has skipped non-published rows since 260701-n4y), so their local price has
+drifted freely since cutover. Real, but not urgent, and NOT a lost write.
+
+The reconciler was missing that same rule and would have pushed all 828 —
+fixed by the publish-only guard (`skipped:sell_price:not_published`).
+
+**The published 281 splits in two:**
+
+- **178 rises, tightly clustered +11% to +17%** (V11HA64940 / V11HA68840 /
+  GX186G-V4-5A / SBID-GX165 / LH75BEFHLGKXXU all at exactly +15.1%). THIS is
+  the lost-writes signature: the repricer raised prices, the pushes died in
+  the throttle, Woo stayed low. Reconciling these is the repair this task was
+  built for, and it raises prices — low commercial risk.
+- **103 drops, 20 of which move >25%.** The Epson lamp family is the standout
+  (V13H010L93/94/91/97 all -65% to -75%). A whole family at a consistent ratio
+  is the Sapphire fingerprint again: a cost-basis problem, not a lost write.
+  These need individual review before any push.
+
+**Revised conclusion.** The nightly gate stays OFF, but the reason is narrower
+than first stated: it is the ~20 published outliers that must not be pushed
+unattended, not the whole set. Once those are resolved, the remaining ~261 are
+a legitimate, largely upward reconciliation.
 
 ## 9. Repair process
 

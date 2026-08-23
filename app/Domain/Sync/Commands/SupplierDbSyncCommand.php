@@ -8,6 +8,7 @@ use App\Console\Commands\BaseCommand;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductSupplierSku;
 use App\Domain\Products\Models\ProductPriceSnapshot;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Concerns\JoinsStockSeparate;
@@ -156,6 +157,36 @@ final class SupplierDbSyncCommand extends BaseCommand
             $localSkus,
         ), static fn (string $s): bool => $s !== '')));
 
+        // ── Quick task 260823-elz — alternative supplier codes ──────────────
+        //
+        // Some suppliers list the same physical part under a different code.
+        // Biamp is the worst case on this catalogue: local SKUs follow the
+        // dotted 9xx.xxxx.900 scheme that Nimans quotes, while Midwich quotes
+        // a dashed 920-0xxxx-00003 scheme — so 99 Biamp products sat pending
+        // with no stock while Midwich held 20 lines in stock, structurally
+        // invisible.
+        //
+        // Alias codes join the remote query so their offers are FETCHED. They
+        // are only USED where the product's own SKU found nothing — see the
+        // fallback in the match loop below. That ordering is the whole safety
+        // property: a product that already sources keeps the offer it has, so
+        // this cannot re-rank suppliers or move an existing buy_price.
+        $aliasesByProductId = [];
+        $aliasKeys = [];
+        foreach (ProductSupplierSku::query()->get(['product_id', 'normalised_sku']) as $alias) {
+            $code = (string) $alias->normalised_sku;
+            if ($code === '') {
+                continue;
+            }
+            $aliasesByProductId[(int) $alias->product_id][] = $code;
+            $aliasKeys[] = $code;
+        }
+
+        if ($aliasKeys !== []) {
+            $lowered = array_values(array_unique(array_merge($lowered, $aliasKeys)));
+            $this->info('Alternative supplier SKUs in play: '.count($aliasKeys));
+        }
+
         // ── Chunked remote pull ──
         $supplierRows = [];
         $chunkSize = 2000;
@@ -219,15 +250,30 @@ final class SupplierDbSyncCommand extends BaseCommand
         $wouldFlagObsolete = 0;
         $flaggedStaleCost = 0;
         $wouldFlagStaleCost = 0;
+        $matchedViaAlias = 0;
 
         Product::whereNotNull('sku')->orderBy('id')->chunk(500, function ($batch) use (
             &$matched, &$unmatched, &$updated, &$unchanged, &$errored, &$wouldUpdate,
             &$processed, &$flaggedObsolete, &$wouldFlagObsolete, &$flaggedStaleCost, &$wouldFlagStaleCost,
-            $map, $dryRun, $limit, $flagObsolete, $correlationId
+            &$matchedViaAlias,
+            $map, $dryRun, $limit, $flagObsolete, $correlationId, $aliasesByProductId
         ) {
             foreach ($batch as $local) {
                 $processed++;
                 $key = strtolower(trim((string) $local->sku));
+
+                // 260823-elz — NARROW alias fallback (see resolveMatchKey).
+                $aliasKey = $this->resolveMatchKey($key, $aliasesByProductId[(int) $local->id] ?? [], $map);
+                if ($aliasKey !== null) {
+                    $key = $aliasKey;
+                    $matchedViaAlias++;
+                    Log::info('supplier_db_sync.matched_via_alias', [
+                        'product_id' => $local->id,
+                        'sku' => $local->sku,
+                        'alias' => $aliasKey,
+                    ]);
+                }
+
                 if ($key === '' || ! isset($map[$key])) {
                     $unmatched++;
 
@@ -355,8 +401,9 @@ final class SupplierDbSyncCommand extends BaseCommand
         // ── Summary ──
         $this->info(str_repeat('-', 60));
         $this->info(sprintf(
-            'Done. matched=%d unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d %s%s',
+            'Done. matched=%d (via_alt_sku=%d) unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d %s%s',
             $matched,
+            $matchedViaAlias,
             $unmatched,
             $updated,
             $unchanged,
@@ -489,6 +536,18 @@ final class SupplierDbSyncCommand extends BaseCommand
             ->mapWithKeys(static fn ($id, $sku) => [strtolower(trim((string) $sku)) => $id])
             ->all();
 
+        // 260823-elz — alternative supplier codes resolve to their product here
+        // too, so an offer arriving under a second supplier's code is captured
+        // against the right product instead of being dropped. Product SKUs are
+        // seeded FIRST and never overwritten below, so a code that is both a
+        // product SKU and someone's alias stays with the product that owns it.
+        foreach (ProductSupplierSku::query()->get(['product_id', 'normalised_sku']) as $alias) {
+            $code = (string) $alias->normalised_sku;
+            if ($code !== '' && ! isset($localSkuToProductId[$code])) {
+                $localSkuToProductId[$code] = $alias->product_id;
+            }
+        }
+
         $written = 0;
 
         foreach (array_chunk($localSkusLowercased, 2000) as $chunkIndex => $chunk) {
@@ -571,6 +630,39 @@ final class SupplierDbSyncCommand extends BaseCommand
      * Parse the supplier price column. Strips currency symbols + commas; returns
      * null for empty / non-numeric input. Public for unit tests.
      */
+    /**
+     * Quick task 260823-elz — which alternative supplier code, if any, should
+     * stand in for a product whose own SKU found no offer?
+     *
+     * Returns null when the product's own SKU already matched (the offer it
+     * has is the offer it keeps) or when no alias has an offer either.
+     *
+     * THE INVARIANT THIS ENCODES: an alias is consulted ONLY when the product
+     * is otherwise unmatched. That is what keeps this change out of pricing
+     * territory — a product with an offer can never have it replaced by a
+     * second supplier's, so no existing buy_price moves and no supplier
+     * ranking is re-decided. Sourcing from several suppliers at once is
+     * separate, deliberately-deferred work (2026-08-09 TODO, step 5).
+     *
+     * @param  string  $ownKey  normalised product SKU
+     * @param  array<int, string>  $aliasKeys  normalised alternative codes for this product
+     * @param  array<string, mixed>  $map  best-offer map keyed by normalised code
+     */
+    public function resolveMatchKey(string $ownKey, array $aliasKeys, array $map): ?string
+    {
+        if ($ownKey === '' || isset($map[$ownKey])) {
+            return null;
+        }
+
+        foreach ($aliasKeys as $aliasKey) {
+            if ($aliasKey !== '' && isset($map[$aliasKey])) {
+                return $aliasKey;
+            }
+        }
+
+        return null;
+    }
+
     public function parsePrice(?string $raw): ?string
     {
         if ($raw === null || trim($raw) === '') {

@@ -148,3 +148,61 @@ it('isObsoleteCandidate skips non-published / custom-ms (field or tag) / exclude
         ->and($cmd->isObsoleteCandidate(new Product(['status' => 'publish', 'exclude_from_auto_update' => true, 'tags' => []])))->toBeFalse()
         ->and($cmd->isObsoleteCandidate(new Product(['status' => 'publish', 'tags' => ['custom-ms']])))->toBeFalse();
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260823-elz — narrow alias fallback
+|--------------------------------------------------------------------------
+|
+| Biamp exposed the gap: local SKUs use the dotted 9xx.xxxx.900 scheme Nimans
+| quotes, Midwich quotes a dashed 920-0xxxx-00003 scheme, so 99 Biamp products
+| sat pending with no stock while Midwich held 20 lines in stock.
+|
+| The safety property under test is the ORDERING: an alias is consulted only
+| when the product's own SKU found nothing, so this can never replace an offer
+| a product already had, and therefore never moves an existing buy_price.
+*/
+
+it('ignores aliases when the product SKU already has an offer', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+    $map = ['913.0091.900' => ['buy' => '10.00'], '920-00091-00003' => ['buy' => '5.00']];
+
+    // The alias is CHEAPER and still must not win — picking the cheaper offer
+    // across suppliers is step 5, deliberately not this change.
+    expect($cmd->resolveMatchKey('913.0091.900', ['920-00091-00003'], $map))->toBeNull();
+});
+
+it('falls back to an alias when the product SKU found nothing', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+    $map = ['920-00395-00003' => ['buy' => '2391.70']];
+
+    expect($cmd->resolveMatchKey('913.0395.900', ['920-00395-00003'], $map))->toBe('920-00395-00003');
+});
+
+it('returns null when neither the SKU nor any alias has an offer', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    expect($cmd->resolveMatchKey('913.1470.900', ['920-01470-00003'], ['something-else' => []]))->toBeNull();
+});
+
+it('takes the first alias that has an offer, in recorded order', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+    $map = ['second' => ['buy' => '1.00'], 'third' => ['buy' => '2.00']];
+
+    expect($cmd->resolveMatchKey('own', ['first', 'second', 'third'], $map))->toBe('second');
+});
+
+it('ignores an empty product SKU entirely', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    // A blank SKU is not "unmatched", it is unmatchable — the existing loop
+    // treats it as such and the alias path must not resurrect it.
+    expect($cmd->resolveMatchKey('', ['alias'], ['alias' => ['buy' => '1.00']]))->toBeNull();
+});
+
+it('skips blank alias entries', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+    $map = ['' => ['buy' => '9.99'], 'real' => ['buy' => '1.00']];
+
+    expect($cmd->resolveMatchKey('own', ['', 'real'], $map))->toBe('real');
+});

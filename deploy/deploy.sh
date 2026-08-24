@@ -73,8 +73,16 @@ php artisan storage:link >/dev/null 2>&1 || true
 
 # ── 7. File ownership (storage + cache must be writable by web user) ──────
 echo "==> chown storage + bootstrap/cache to ${USER}:${WEB_GROUP}"
-sudo chown -R "${USER}:${WEB_GROUP}" storage bootstrap/cache 2>/dev/null \
+sudo -n chown -R "${USER}:${WEB_GROUP}" storage bootstrap/cache 2>/dev/null \
     || chmod -R 775 storage bootstrap/cache
+# 260824 — `sudo -n` (non-interactive) is REQUIRED above, not cosmetic.
+# This script refuses to run as root and its usage says to invoke it as
+# `sudo -u stcav`. stcav has no passwordless sudo, so a bare `sudo chown` does
+# not fail — it BLOCKS on a password prompt nobody can answer, the `|| chmod`
+# fallback never runs, and the deploy stops before printing the deployed SHA.
+# Every deploy on 2026-08-24 hit this and had to be Ctrl-C'd. -n makes sudo
+# exit immediately instead of prompting. Ownership is then a one-off root task:
+#   chown -R stcav:nginx /home/stcav/ms.21stcav.com/{storage,bootstrap/cache}
 # (chown needs sudo. If sudo isn't allowed for stcav, the chmod fallback
 #  keeps things working as long as the initial setup-vps.sh got ownership
 #  right.)

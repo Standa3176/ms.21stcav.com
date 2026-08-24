@@ -193,7 +193,19 @@ class PushProductStatusToWooCommand extends BaseCommand
             $this->line('Shadowed rows = WOO_WRITE_ENABLED=false (review the sync_diffs table). '
                 .'Re-run AT flip with WOO_WRITE_ENABLED=true to push for real.');
         }
-        if ($errors === 0 && $shadowed === 0 && $pushedLive > 0) {
+        // 260824-lsd — $throttled is part of the gate condition.
+        //
+        // Reported by review 2026-08-24: leftovers from a closed write ceiling
+        // are not errors, so without this the command warned "18 left unpushed"
+        // and then, in the same breath, told the operator to mark the cutover
+        // gate PASSED. Those products stay published in Woo and get copied back
+        // locally by the next import — precisely the gate's job to prevent.
+        //
+        // Exit stays 0 deliberately: leftovers are expected and self-healing
+        // (the next run re-selects by local status), so failing the daily cron
+        // over them would be noise. The gate instruction is what must not
+        // appear.
+        if ($errors === 0 && $shadowed === 0 && $throttled === 0 && $pushedLive > 0) {
             $this->line('Mark the checklist gate: cutover:checklist --update-status=obsolete-statuses-pushed:pass');
         }
 

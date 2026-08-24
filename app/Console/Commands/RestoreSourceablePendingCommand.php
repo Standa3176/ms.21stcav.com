@@ -274,6 +274,22 @@ class RestoreSourceablePendingCommand extends BaseCommand
             $this->warn("Dry-run: {$restored} product(s) WOULD be restored to publish. Re-run with --live to apply.");
         }
 
+        // 260824-lsd — a failed Woo push must not look like a successful run.
+        //
+        // Reported by review 2026-08-24: push failures were counted, the local
+        // restore was rolled back to pending, and the command still exited 0.
+        // On the 07:25 cron that means a product stays hidden on the storefront
+        // while cron and Horizon report a clean run — the failure is invisible
+        // until someone notices the product is not selling.
+        //
+        // The rollback is correct and stays; only the exit code changes, so the
+        // scheduler surfaces it.
+        if ($pushFailed > 0) {
+            $this->error("{$pushFailed} product(s) restored locally but FAILED to push to Woo — rolled back to pending. They remain hidden on the storefront.");
+
+            return SymfonyCommand::FAILURE;
+        }
+
         return SymfonyCommand::SUCCESS;
     }
 

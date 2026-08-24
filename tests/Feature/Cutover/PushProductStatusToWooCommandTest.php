@@ -266,3 +266,34 @@ it('still reports a genuine Woo failure as an error', function (): void {
 
     expect(Artisan::output())->toContain('errors=1');
 });
+
+it('does NOT print the checklist pass instruction when products were left unpushed', function (): void {
+    // Review finding 2026-08-24: the command warned "18 left unpushed" and then
+    // told the operator to mark obsolete-statuses-pushed:pass in the same
+    // breath. Those products stay published in Woo and get copied back locally
+    // by the next import — exactly what the gate exists to prevent.
+    Product::factory()->create(['type' => 'simple', 'sku' => 'MIX-OK', 'status' => 'pending', 'woo_product_id' => 910]);
+    Product::factory()->create(['type' => 'simple', 'sku' => 'MIX-THR', 'status' => 'pending', 'woo_product_id' => 911]);
+
+    $double = Mockery::mock(WooClient::class);
+    $double->shouldReceive('put')->andReturnUsing(function (string $endpoint): array {
+        // 910 always succeeds; 911 is throttled on both the first attempt and
+        // the retry, so it is left for the next run.
+        if (str_contains($endpoint, '911')) {
+            throw new App\Domain\Sync\Exceptions\WooWriteThrottleException('closed', retryAfterSeconds: 1);
+        }
+
+        return ['id' => 910];
+    });
+    app()->instance(WooClient::class, $double);
+
+    $exit = Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'pending']);
+    $output = Artisan::output();
+
+    expect($output)->toContain('live_pushed=1')
+        ->and($output)->toContain('left unpushed')
+        ->and($output)->not->toContain('obsolete-statuses-pushed:pass')
+        // Still exit 0 — leftovers are expected and self-healing, so failing
+        // the daily cron over them would be noise. The gate line is the harm.
+        ->and($exit)->toBe(0);
+});

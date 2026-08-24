@@ -399,11 +399,17 @@ it('rolls the local restore back to pending when the Woo push fails', function (
         'status' => 'pending', 'sku' => 'FAIL-1', 'woo_product_id' => 606,
     ]);
 
-    Artisan::call('products:restore-sourceable-pending', [
+    $exit = Artisan::call('products:restore-sourceable-pending', [
         '--live' => true,
         '--push-to-woo' => true,
     ]);
     $output = Artisan::output();
+
+    // 260824-lsd (review finding) — the run must FAIL. On the 07:25 cron a
+    // silent success means the product stays hidden on the storefront while
+    // cron and Horizon report a clean run, and nobody finds out until someone
+    // notices it isn't selling.
+    expect($exit)->toBe(1);
 
     // Local status must NOT diverge from Woo — leaving it publish locally would
     // mean nothing ever retries (the row drops out of the pending cohort).

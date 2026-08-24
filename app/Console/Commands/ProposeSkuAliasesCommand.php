@@ -182,6 +182,11 @@ class ProposeSkuAliasesCommand extends BaseCommand
             return null;
         }
 
+        // stock-separate-not-applicable: this query selects mpn / suppliersku /
+        // supplierid only — it never reads fp.stock, so the 260609-rie
+        // stockseparate LEFT JOIN (Ingram stores stock in a separate table)
+        // has nothing to contribute. Alias proposal is an identity question,
+        // not an availability one.
         $sql = 'SELECT DISTINCT TRIM(mpn) AS mpn, TRIM(suppliersku) AS suppliersku, supplierid
                 FROM feeds_products
                 WHERE product_excluded = 0

@@ -206,3 +206,85 @@ it('skips blank alias entries', function (): void {
 
     expect($cmd->resolveMatchKey('own', ['', 'real'], $map))->toBe('real');
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260824-lsd — "a live SKU must have at least one supplier"
+|--------------------------------------------------------------------------
+|
+| Operator rule, 2026-08-24: demote when NO supplier lists the product. Zero
+| stock does not matter.
+|
+| Before this, the obsolete decision used buildBestOfferMap, which filters by
+| stock, supplier freshness and the operator exclusion list — right for picking
+| a price, wrong for deciding whether a supplier exists. That conflation made
+| demote and restore contradict each other on 2026-08-23: 64 products demoted
+| at 07:00 and restored at 07:25, each listed by a supplier that merely had no
+| stock or no recent snapshot.
+*/
+
+it('counts a listing even when the supplier has zero stock', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    // The whole point of the rule. buildBestOfferMap would drop this row.
+    $listed = $cmd->buildListedKeySet([
+        ['mpn' => 'ABC-1', 'suppliersku' => 'SUP-ABC-1', 'stock' => '0', 'price' => '10.00'],
+    ]);
+
+    expect($listed)->toHaveKey('abc-1')
+        ->and($listed)->toHaveKey('sup-abc-1');
+});
+
+it('indexes a listing under both the part number and the supplier code', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    // Either side can be what the local product carries as its SKU.
+    $listed = $cmd->buildListedKeySet([
+        ['mpn' => '913.0395.900', 'suppliersku' => 'BIATESFORTAVBCI', 'stock' => '18'],
+    ]);
+
+    expect(array_keys($listed))->toEqualCanonicalizing(['913.0395.900', 'biatesfortavbci']);
+});
+
+it('normalises case and padding when building the listed set', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    $listed = $cmd->buildListedKeySet([['mpn' => '  Abc-2  ', 'suppliersku' => 'SUP-2']]);
+
+    expect($listed)->toHaveKey('abc-2');
+});
+
+it('ignores blank part numbers and supplier codes', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    $listed = $cmd->buildListedKeySet([['mpn' => '', 'suppliersku' => '   ']]);
+
+    expect($listed)->toBe([]);
+});
+
+it('treats a product as listed when its own SKU appears', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    expect($cmd->isListedForProduct('abc-1', [], ['abc-1' => true]))->toBeTrue();
+});
+
+it('treats a product as listed when only an ALTERNATIVE code appears', function (): void {
+    // The Biamp case: the local dotted SKU is nowhere in the feed, but Midwich
+    // lists the same part under its dashed code.
+    $cmd = makeSupplierDbSyncCommand();
+
+    expect($cmd->isListedForProduct('913.0395.900', ['920-00395-00003'], ['920-00395-00003' => true]))->toBeTrue();
+});
+
+it('treats a product as unlisted when neither its SKU nor any alias appears', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    // This — and only this — is what may demote a live product.
+    expect($cmd->isListedForProduct('913.1470.900', ['920-01470-00003'], ['something-else' => true]))->toBeFalse();
+});
+
+it('never treats a blank SKU as listed', function (): void {
+    $cmd = makeSupplierDbSyncCommand();
+
+    expect($cmd->isListedForProduct('', [], ['' => true]))->toBeFalse();
+});

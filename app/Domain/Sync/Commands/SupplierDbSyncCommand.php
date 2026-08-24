@@ -238,6 +238,26 @@ final class SupplierDbSyncCommand extends BaseCommand
         $map = $this->buildBestOfferMap($supplierRows);
         $this->info('Built best-offer map: '.count($map).' unique keys (cheapest in-stock) from '.count($supplierRows).' supplier offers.');
 
+        // ── Quick task 260824-lsd — the LISTED set (operator rule) ──────────
+        //
+        // "All live SKUs must have at least one supplier. Zero stock does not
+        // matter." — operator, 2026-08-24.
+        //
+        // The obsolete decision must NOT use $map. buildBestOfferMap drops
+        // offers from stale and operator-excluded suppliers and ranks by
+        // in-stock price, so a product listed by a supplier who happens to be
+        // out of stock, or whose snapshots lapsed, looked obsolete. That
+        // mismatch is what made demote and restore contradict each other on
+        // 2026-08-23 — 64 products demoted at 07:00 and restored at 07:25.
+        //
+        // This set is derived from the SAME rows already fetched, before any
+        // filtering: the remote query is `product_excluded = 0 AND (mpn IN ...
+        // OR suppliersku IN ...)`, so a row existing IS the listing. Free —
+        // no extra query. Nuvias is absent because its rows were excluded at
+        // source on 2026-08-23 when the company went out of business.
+        $listedKeys = $this->buildListedKeySet($supplierRows);
+        $this->info('Listed set: '.count($listedKeys).' keys carried by at least one supplier (stock-agnostic).');
+
         // ── Iterate local Products ──
         $matched = 0;
         $unmatched = 0;
@@ -256,7 +276,7 @@ final class SupplierDbSyncCommand extends BaseCommand
             &$matched, &$unmatched, &$updated, &$unchanged, &$errored, &$wouldUpdate,
             &$processed, &$flaggedObsolete, &$wouldFlagObsolete, &$flaggedStaleCost, &$wouldFlagStaleCost,
             &$matchedViaAlias,
-            $map, $dryRun, $limit, $flagObsolete, $correlationId, $aliasesByProductId
+            $map, $listedKeys, $dryRun, $limit, $flagObsolete, $correlationId, $aliasesByProductId
         ) {
             foreach ($batch as $local) {
                 $processed++;
@@ -281,7 +301,12 @@ final class SupplierDbSyncCommand extends BaseCommand
                     // demote published / non-custom / non-excluded products to
                     // status=pending for review (operator rule 2026-05-25; mirrors
                     // MarkMissingSkusJob on the supplier_api path).
-                    if ($flagObsolete && $key !== '' && $this->isObsoleteCandidate($local)) {
+                    // 260824-lsd — obsolete means NO SUPPLIER LISTS IT, not
+                    // "no usable in-stock offer". Check the product's own SKU
+                    // and every alternative code before demoting.
+                    $listed = $this->isListedForProduct($key, $aliasesByProductId[(int) $local->id] ?? [], $listedKeys);
+
+                    if ($flagObsolete && ! $listed && $key !== '' && $this->isObsoleteCandidate($local)) {
                         if ($dryRun) {
                             $wouldFlagObsolete++;
                         } else {
@@ -648,6 +673,69 @@ final class SupplierDbSyncCommand extends BaseCommand
      * @param  array<int, string>  $aliasKeys  normalised alternative codes for this product
      * @param  array<string, mixed>  $map  best-offer map keyed by normalised code
      */
+    /**
+     * Quick task 260824-lsd — every supplier code present in the fetched rows.
+     *
+     * Operator rule (2026-08-24): "All live SKUs must have at least one
+     * supplier. Zero stock does not matter."
+     *
+     * Deliberately UNFILTERED. It does not consult stock, supplier freshness,
+     * or the operator exclusion list — buildBestOfferMap does all three, which
+     * is right for choosing a PRICE and wrong for deciding whether a product
+     * still has a supplier at all. Conflating the two is what made demote and
+     * restore contradict each other on 2026-08-23: 64 products demoted at
+     * 07:00 and restored at 07:25, every one of them listed by a supplier who
+     * simply had no stock or no recent snapshot.
+     *
+     * The rows arrive from a query already scoped `product_excluded = 0`, so a
+     * row existing IS the listing — including Nuvias's absence, whose rows were
+     * excluded at source when the company folded.
+     *
+     * @param  array<int, array<string, mixed>>  $supplierRows
+     * @return array<string, true>  normalised code => true
+     */
+    public function buildListedKeySet(array $supplierRows): array
+    {
+        $listed = [];
+
+        foreach ($supplierRows as $row) {
+            foreach (['mpn', 'suppliersku'] as $column) {
+                $key = strtolower(trim((string) ($row[$column] ?? '')));
+                if ($key !== '') {
+                    $listed[$key] = true;
+                }
+            }
+        }
+
+        return $listed;
+    }
+
+    /**
+     * Quick task 260824-lsd — does ANY supplier list this product, under its
+     * own SKU or any alternative code recorded for it?
+     *
+     * The alias arm matters as much as the primary: a Biamp product whose only
+     * supplier quotes the dashed 920-0xxxx-00003 scheme is listed, even though
+     * its own dotted SKU appears nowhere in the feed.
+     *
+     * @param  array<int, string>  $aliasKeys  normalised alternative codes
+     * @param  array<string, true>  $listedKeys
+     */
+    public function isListedForProduct(string $ownKey, array $aliasKeys, array $listedKeys): bool
+    {
+        if ($ownKey !== '' && isset($listedKeys[$ownKey])) {
+            return true;
+        }
+
+        foreach ($aliasKeys as $aliasKey) {
+            if ($aliasKey !== '' && isset($listedKeys[$aliasKey])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function resolveMatchKey(string $ownKey, array $aliasKeys, array $map): ?string
     {
         if ($ownKey === '' || isset($map[$ownKey])) {

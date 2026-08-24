@@ -116,7 +116,17 @@ Schedule::command('suppliers:sync-feed-dates')
 // freshest supplier price + stock with start-of-day decisions and skips weekends
 // (supplier feed source itself doesn't refresh weekends per their cron cadence).
 // LIVE — no kill-switch (idempotent + ops verified manually pre-deployment).
-Schedule::command('supplier:db-sync')
+// 260824-lsd — --flag-obsolete ADDED. Operator rule 2026-08-24: "all live SKUs
+// must have at least one supplier; zero stock does not matter". Demotion is
+// now decided by the LISTED set (any non-excluded supplier row, stock- and
+// freshness-agnostic), not by the best-offer map — see buildListedKeySet().
+//
+// THE PUSH AT 07:35 IS LOAD-BEARING. woo:import-products copies Woo's status
+// onto every local product on every run (WooImportProductsCommand:143 —
+// updateOrCreate applies the whole values array), so a local-only demotion is
+// silently reverted by the 09:00 import. That is exactly what happened to the
+// 689 products demoted by hand on 2026-08-23: all back to publish by morning.
+Schedule::command('supplier:db-sync --flag-obsolete')
     ->cron('0 7 * * 1-5') // Mon-Fri at 07:00 (cron DOW: 1=Mon ... 5=Fri)
     ->withoutOverlapping(60)
     ->onOneServer()
@@ -183,15 +193,43 @@ Schedule::command('products:hydrate-stock-from-offers --only-stale=24')
 // SHADOW NO-OP UNTIL CUTOVER: with WOO_WRITE_ENABLED=false each push records a
 // SyncDiff and performs NO live write, so this entry is behaviourally inert
 // today — it becomes effective the moment WOO_WRITE_ENABLED=true is flipped.
+// 260824-lsd — --include-listed-out-of-stock ADDED so promote and demote share
+// ONE definition of "has a supplier". Without it the two disagreed daily: the
+// demote asks "is it listed?" while the restore asked "is it listed AND in
+// stock?", so a listed-but-out-of-stock product was demoted at 07:00 and never
+// restored, and an in-stock-on-a-stale-feed product was restored at 07:25 after
+// being demoted at 07:00. Same question, same answer, both directions.
 Schedule::command('products:restore-sourceable-pending', [
     '--live' => true,
     '--push-to-woo' => true,
+    '--include-listed-out-of-stock' => true,
 ])
     ->dailyAt('07:25')
     ->withoutOverlapping()
     ->onOneServer()
     ->timezone('Europe/London')
     ->description('Auto-promote products that became sourceable again — restore to publish + push status to Woo (daily 07:25 London; shadow no-op until WOO_WRITE_ENABLED=true; 260721-apr)');
+
+// 260824-lsd — push local status onto Woo, 07:35 London.
+//
+// The closing step of the publish/pending loop. 07:00 demotes unlisted
+// products, 07:25 promotes re-listed ones and pushes those, and this pushes
+// the demotions — all BEFORE the 09:00 woo:import-products reads Woo's status
+// back onto local rows. Without it a demotion lives a few hours and dies: the
+// import overwrites local status from Woo unconditionally.
+//
+// --statuses=pending is the command's own default, stated explicitly here
+// because it is the whole point: only the demoted cohort is pushed. Promotions
+// already went out at 07:25 with --push-to-woo.
+//
+// Writes go through WooClient's throttle, which since 260822-rmo DEFERS rather
+// than dying, so a large morning cohort drains instead of filling failed_jobs.
+Schedule::command('products:push-status-to-woo --live --statuses=pending')
+    ->cron('35 7 * * 1-5')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('Push demoted (pending) status to Woo before the 09:00 import reads it back (260824-lsd)');
 
 // Stock-updater parity glue — auto-apply margin_change Suggestions whose delta
 // crosses pricing.auto_apply_threshold_bps (default 800bps = 8pp). Port of

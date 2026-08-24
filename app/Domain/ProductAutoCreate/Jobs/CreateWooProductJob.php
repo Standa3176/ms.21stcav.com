@@ -17,8 +17,10 @@ use App\Domain\ProductAutoCreate\Services\ProductSlugGenerator;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
+use App\Domain\Products\Models\ProductSupplierSku;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\SupplierClient;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Bus\Queueable;
@@ -119,7 +121,15 @@ final class CreateWooProductJob implements ShouldQueue
         event(new AutoCreateAttempted($this->sku));
 
         // ── Duplicate gate (AUTO-08) ────────────────────────────────────────
-        if ($matcher->existsNormalised($this->sku)) {
+        // 260824-vkc — the gate must tell "someone already stocks this part"
+        // apart from "this is MY OWN row from a run that died after creating
+        // it". Before this, a throttle at the Woo POST below stranded the
+        // product local-only FOREVER: the retry matched the half-created row,
+        // recorded reason=duplicate, and gave up. The same bug broke Replay
+        // (AutoCreateRetryApplier) for every failure occurring after the create.
+        $resumable = $this->findResumableOrphan();
+
+        if ($resumable === null && $matcher->existsNormalised($this->sku)) {
             event(new AutoCreateFailed($this->sku, reason: 'duplicate'));
 
             return;
@@ -137,7 +147,12 @@ final class CreateWooProductJob implements ShouldQueue
         $compiled = $content->compile($supplierData);
 
         // ── Client-side slug uniqueness (D-05) ──────────────────────────────
-        $uniqueSlug = $slugGenerator->generate($compiled['title'], $this->sku);
+        // On a resume, keep the slug the orphan already holds: it was never
+        // POSTed so it is still free on Woo, and regenerating would append a
+        // "-2" suffix by colliding with the orphan's own row.
+        $uniqueSlug = ($resumable !== null && (string) $resumable->slug !== '')
+            ? (string) $resumable->slug
+            : $slugGenerator->generate($compiled['title'], $this->sku);
 
         // ── Pre-POST Woo slug collision probe (Pitfall P6-G) ────────────────
         $uniqueSlug = $this->ensureSlugFreeOnWoo($woo, $uniqueSlug);
@@ -152,6 +167,15 @@ final class CreateWooProductJob implements ShouldQueue
         }
         $categoryId = $taxonomy->resolveCategory((string) ($supplierData['category'] ?? ''));
 
+        // A resumed row may already carry brand/category an operator assigned
+        // by hand in the review inbox. Automatic resolution returning null must
+        // not throw that away and re-park the row — acting on that assignment is
+        // exactly what Replay is normally invoked to do.
+        if ($resumable !== null) {
+            $brandId ??= $resumable->brand_id !== null ? (int) $resumable->brand_id : null;
+            $categoryId ??= $resumable->category_id !== null ? (int) $resumable->category_id : null;
+        }
+
         $buyPennies = (int) round(((float) ($supplierData['price'] ?? 0)) * 100);
 
         // ── Create local Product row ───────────────────────────────────────
@@ -159,7 +183,7 @@ final class CreateWooProductJob implements ShouldQueue
             ? 'needs_brand_or_category_assignment'
             : 'draft';
 
-        $product = Product::create([
+        $attributes = [
             'sku' => $this->sku,
             'name' => $compiled['title'],
             'slug' => $uniqueSlug,
@@ -172,7 +196,11 @@ final class CreateWooProductJob implements ShouldQueue
             'auto_create_status' => $autoCreateStatus,
             'status' => 'draft',
             'type' => 'simple',
-        ]);
+        ];
+
+        $product = $resumable !== null
+            ? $this->resumeOrphan($resumable, $attributes)
+            : Product::create($attributes);
 
         // ── Needs-assignment short-circuit — no Woo POST, no image, no success ─
         if ($autoCreateStatus === 'needs_brand_or_category_assignment') {
@@ -198,24 +226,40 @@ final class CreateWooProductJob implements ShouldQueue
 
         // ── Build Woo payload ──────────────────────────────────────────────
         $payload = [
-            'name' => $compiled['title'],
-            'slug' => $uniqueSlug,
+            // Read from $product, not $compiled: on a resume the ROW is the
+            // truth (it may carry operator edits), and on a fresh create the
+            // two are identical — so the normal path is unchanged.
+            'name' => (string) $product->name,
+            'slug' => (string) $product->slug,
             'status' => 'draft',  // AUTO-07 draft-first lock
             'type' => 'simple',
             'sku' => $this->sku,
             'regular_price' => $sellPennies > 0
                 ? (string) number_format($sellPennies / 100, 2, '.', '')
                 : '0.00',
-            'short_description' => $compiled['short_description'],
-            'description' => $compiled['long_description'],
+            'short_description' => (string) $product->short_description,
+            'description' => (string) $product->long_description,
             'meta_data' => [
-                ['key' => '_yoast_wpseo_metadesc', 'value' => $compiled['meta_description']],
+                ['key' => '_yoast_wpseo_metadesc', 'value' => (string) $product->meta_description],
             ],
             'categories' => [['id' => $categoryId]],
             'images' => [],
         ];
 
-        $response = $woo->post('/products', $payload);
+        // Deferring here is safe ONLY because the duplicate gate above can now
+        // resume: the local row survives, the retry finds it, and the POST is
+        // re-attempted rather than rejected as its own duplicate.
+        try {
+            $response = $woo->post('/products', $payload);
+        } catch (WooWriteThrottleException $e) {
+            $this->releaseForWooThrottle($e, [
+                'sku' => $this->sku,
+                'product_id' => $product->id,
+                'stage' => 'woo_create',
+            ]);
+
+            return;
+        }
 
         // ── Reconcile Woo-returned slug + id (Pitfall P6-G) ────────────────
         $wooId = (int) ($response['id'] ?? 0);
@@ -250,6 +294,99 @@ final class CreateWooProductJob implements ShouldQueue
             completenessScore: (int) ($fresh->completeness_score ?? 0),
             autoCreateStatus: (string) $fresh->auto_create_status,
         ));
+    }
+
+    /**
+     * 260824-vkc — the local row left behind by a run that died AFTER creating
+     * it but BEFORE the Woo POST landed.
+     *
+     * This is what makes the AUTO-08 duplicate gate safe to retry. Without it a
+     * throttle at the POST was terminal: the retry saw the job's own half-made
+     * row, called it a duplicate, and the product stayed local-only forever with
+     * woo_product_id = null — the exact symptom reported on 2026-08-23
+     * ("products sent to be created in the Woo store never appear"). It also
+     * broke Replay, since AutoCreateRetryApplier re-dispatches THIS job and every
+     * post-create failure therefore replayed straight into 'duplicate'.
+     *
+     * Deliberately narrow. A row qualifies only when all three hold:
+     *
+     *   - it is not on Woo yet (woo_product_id IS NULL) — anything with an id is
+     *     already live and re-POSTing it WOULD duplicate it
+     *   - it came from the auto-create pipeline, via the canonical autoCreated()
+     *     scope (260606-mx9: `whereNotNull` is vacuous — the column defaults to
+     *     'manual' — and AutoCreatedPredicateTest fails CI if that returns)
+     *   - no ALTERNATIVE supplier code maps this SKU to a DIFFERENT product
+     *
+     * That last clause is the one that keeps 260823-clp intact: if an alias says
+     * this part is already stocked under another product, the orphan is itself
+     * the mistake, and resuming would put a second listing of one physical part
+     * on the storefront. Refuse, and let the duplicate gate do its job.
+     */
+    private function findResumableOrphan(): ?Product
+    {
+        $orphan = Product::query()
+            ->autoCreated()
+            ->whereRaw('LOWER(TRIM(sku)) = ?', [strtolower(trim($this->sku))])
+            ->whereNull('woo_product_id')
+            ->orderBy('id')
+            ->first();
+
+        if ($orphan === null) {
+            return null;
+        }
+
+        $aliasedElsewhere = ProductSupplierSku::query()
+            ->where('normalised_sku', ProductSupplierSku::normalise($this->sku))
+            ->where('product_id', '!=', $orphan->id)
+            ->exists();
+
+        return $aliasedElsewhere ? null : $orphan;
+    }
+
+    /**
+     * Re-use the orphan instead of creating a second row.
+     *
+     * Compiled content is REGENERATED from supplier data on every run, so
+     * re-filling it wholesale would silently revert copy an operator edited in
+     * the review inbox — a resumed row has by definition been sitting in that
+     * inbox, visible and editable. So: fill blanks, always refresh buy_price
+     * (supplier cost genuinely moves between the failed run and the retry), and
+     * leave every populated operator-facing field exactly as it stands.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function resumeOrphan(Product $orphan, array $attributes): Product
+    {
+        $operatorEditable = [
+            'name',
+            'slug',
+            'short_description',
+            'long_description',
+            'meta_description',
+        ];
+
+        $preserved = [];
+        foreach ($operatorEditable as $field) {
+            if (trim((string) $orphan->{$field}) !== '') {
+                unset($attributes[$field]);
+                $preserved[] = $field;
+            }
+        }
+
+        // Identity is already correct and must never be rewritten.
+        unset($attributes['sku']);
+
+        $orphan->forceFill($attributes)->save();
+
+        Log::info('CreateWooProductJob: resumed an interrupted run', [
+            'sku' => $this->sku,
+            'product_id' => $orphan->id,
+            'auto_create_status' => $attributes['auto_create_status'] ?? null,
+            'preserved_fields' => $preserved,
+            'correlation_id' => Context::get('correlation_id'),
+        ]);
+
+        return $orphan->refresh();
     }
 
     /**

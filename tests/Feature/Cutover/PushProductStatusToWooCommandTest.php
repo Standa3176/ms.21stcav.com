@@ -194,3 +194,75 @@ it('reports shadow vs live counts and surfaces error rows without throwing', fun
         ->and($output)->toContain('shadowed=1')
         ->and($output)->toContain('errors=1');
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260824-lsd — the Woo write ceiling is back-pressure, not a failure
+|--------------------------------------------------------------------------
+|
+| Prod 2026-08-24: a 2,249-product run reported live_pushed=35, errors=2214.
+| Every "error" was WooWriteThrottleException — about one minute's allowance
+| got through and the rest hit the 60/min ceiling. It was invisible in
+| laravel.log because this command prints the exception instead of logging it.
+|
+| The 260822-rmo fix does not cover this path: it made QUEUED jobs release and
+| retry, and this is a synchronous console command with no queue to release to.
+| It has to pace itself.
+*/
+
+it('waits out the write ceiling and retries rather than counting it as an error', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'THR-1', 'status' => 'pending', 'woo_product_id' => 900]);
+
+    $attempts = 0;
+    $double = Mockery::mock(WooClient::class);
+    $double->shouldReceive('put')->andReturnUsing(function () use (&$attempts): array {
+        $attempts++;
+        if ($attempts === 1) {
+            throw new App\Domain\Sync\Exceptions\WooWriteThrottleException('ceiling reached', retryAfterSeconds: 1);
+        }
+
+        return ['id' => 900];
+    });
+    app()->instance(WooClient::class, $double);
+
+    $exit = Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'pending']);
+
+    // Two attempts, one success, and crucially exit 0 — a throttle must not
+    // make the whole run report failure.
+    expect($attempts)->toBe(2)
+        ->and($exit)->toBe(0)
+        ->and(Artisan::output())->toContain('live_pushed=1');
+});
+
+it('leaves a product for the next run when the ceiling is still closed', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'THR-2', 'status' => 'pending', 'woo_product_id' => 901]);
+
+    $double = Mockery::mock(WooClient::class);
+    $double->shouldReceive('put')->andReturnUsing(function (): array {
+        throw new App\Domain\Sync\Exceptions\WooWriteThrottleException('still closed', retryAfterSeconds: 1);
+    });
+    app()->instance(WooClient::class, $double);
+
+    $exit = Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'pending']);
+    $output = Artisan::output();
+
+    // Not an error: the command re-selects by local status, so an unpushed
+    // product is simply picked up next time.
+    expect($output)->toContain('errors=0')
+        ->and($output)->toContain('left unpushed')
+        ->and($exit)->toBe(0);
+});
+
+it('still reports a genuine Woo failure as an error', function (): void {
+    Product::factory()->create(['type' => 'simple', 'sku' => 'ERR-1', 'status' => 'pending', 'woo_product_id' => 902]);
+
+    $double = Mockery::mock(WooClient::class);
+    $double->shouldReceive('put')->andReturnUsing(function (): array {
+        throw new RuntimeException('Woo 500 Internal Server Error');
+    });
+    app()->instance(WooClient::class, $double);
+
+    Artisan::call('products:push-status-to-woo', ['--live' => true, '--statuses' => 'pending']);
+
+    expect(Artisan::output())->toContain('errors=1');
+});

@@ -6,6 +6,7 @@ namespace App\Console\Commands\Cutover;
 
 use App\Console\Commands\BaseCommand;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
 
@@ -131,13 +132,33 @@ class PushProductStatusToWooCommand extends BaseCommand
         $pushedLive = 0;
         $shadowed = 0;
         $errors = 0;
+        $throttled = 0;
 
         foreach ($products as $product) {
             $wooId = (int) $product->woo_product_id;
             $localStatus = (string) $product->status;
 
             try {
-                $result = $this->woo->put("products/{$wooId}", ['status' => $localStatus]);
+                // 260824-lsd — WAIT OUT the Woo write ceiling instead of
+                // counting it as a failure.
+                //
+                // Found on prod 2026-08-24: a 2,249-product run reported
+                // live_pushed=35, errors=2214. Every one of those "errors" was
+                // WooWriteThrottleException — roughly one minute's allowance
+                // succeeded and the rest hit the 60/min ceiling. It was
+                // invisible in laravel.log because this command prints the
+                // exception rather than logging it.
+                //
+                // The 260822-rmo throttle fix does not help here: that made
+                // QUEUED jobs release and retry. This is a synchronous console
+                // command with no queue to release to, so it must pace itself
+                // — the same treatment products:push-divergence-to-woo got.
+                $result = $this->pushWithThrottleWait($wooId, $localStatus, $throttled);
+
+                if ($result === null) {
+                    continue; // still throttled after waiting — left for the next run
+                }
+
                 if (($result['shadow_mode'] ?? false) === true) {
                     $shadowed++;
                 } else {
@@ -153,6 +174,13 @@ class PushProductStatusToWooCommand extends BaseCommand
                     $e->getMessage(),
                 ));
             }
+        }
+
+        if ($throttled > 0) {
+            $this->warn(sprintf(
+                '%d product(s) left unpushed — the Woo write ceiling was still closed after waiting. Re-run to continue.',
+                $throttled,
+            ));
         }
 
         $this->info(sprintf(
@@ -183,5 +211,46 @@ class PushProductStatusToWooCommand extends BaseCommand
             array_map('trim', explode(',', $raw)),
             static fn (string $s): bool => $s !== '',
         ));
+    }
+
+    /**
+     * PUT the status, waiting out the Woo write ceiling once if it is closed.
+     *
+     * Returns the Woo response, or null when the window was STILL shut after
+     * waiting — that product is simply left for the next run, which is safe
+     * because the command re-selects by local status every time.
+     *
+     * Bounded wait: never longer than one limiter window plus a margin, so a
+     * pathological retry-after cannot hang an operator's terminal.
+     *
+     * @param  int  $throttled  by-ref counter of products left unpushed
+     * @return array<string, mixed>|null
+     */
+    private function pushWithThrottleWait(int $wooId, string $localStatus, int &$throttled): ?array
+    {
+        try {
+            return $this->woo->put("products/{$wooId}", ['status' => $localStatus]);
+        } catch (WooWriteThrottleException $e) {
+            $wait = $e->retryAfterSeconds();
+            $this->line("  … Woo write ceiling reached, waiting {$wait}s");
+            $this->sleepSeconds($wait);
+        }
+
+        try {
+            return $this->woo->put("products/{$wooId}", ['status' => $localStatus]);
+        } catch (WooWriteThrottleException) {
+            $throttled++;
+
+            return null;
+        }
+    }
+
+    /**
+     * Seam so tests can exercise the throttle-wait branch without really
+     * sleeping.
+     */
+    protected function sleepSeconds(int $seconds): void
+    {
+        sleep(max(0, min($seconds, 90)));
     }
 }

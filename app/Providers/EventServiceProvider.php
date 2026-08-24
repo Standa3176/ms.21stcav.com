@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Competitor\Events\CompetitorCsvIngested;
+use App\Domain\Competitor\Listeners\FlagEmptyFeedRegression;
 use App\Domain\Agents\Events\AgentRunFailed;
 use App\Domain\Agents\Listeners\NotifyOnAgentRunFailed;
 use App\Domain\Agents\Listeners\NotifyOnGuardrailBlocked;
@@ -88,6 +90,18 @@ class EventServiceProvider extends ServiceProvider
         // WooClient (WOO_WRITE_ENABLED=false → records a SyncDiff instead of
         // calling Woo). Runs on the rate-limited sync-woo-push queue. Emitted by
         // PriceRecomputer AND pricing:undercut-competitors.
+        // Quick task 260823-gua — an EMPTY feed from a competitor that already
+        // holds prices is a REGRESSION, not a completion. screenmoove shipped a
+        // 23-byte CSV for five weeks; every pull succeeded, every ingest said
+        // `completed`, every one wrote zero rows, and nothing alerted — while
+        // 66% of all competitor data silently went stale.
+        //
+        // Hangs off the event rather than living in IngestCompetitorCsvJob,
+        // which Phase 11.2 D-07 freezes (Phase5IngestUntouchedTest).
+        CompetitorCsvIngested::class => [
+            FlagEmptyFeedRegression::class,
+        ],
+
         ProductPriceChanged::class => [
             PushPriceChangeToWoo::class,
         ],

@@ -110,7 +110,7 @@ it('grades a group that disagrees with itself as low confidence', function (): v
     policyProduct('MIXED-4', 100.00, 145.00);   //  ~21%
 
     $this->artisan('pricing:margin-policy-report --min-group=2')
-        ->expectsOutputToContain('NEEDS A HUMAN DECISION')
+        ->expectsOutputToContain('MEMBERS DISAGREE')
         ->assertExitCode(0);
 });
 
@@ -194,5 +194,95 @@ it('never proposes a margin below the minimum-margin floor', function (): void {
 
     $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
         ->expectsOutputToContain('6.00,0.00,22.00,6.00')   // proposed clamped UP to the floor
+        ->assertExitCode(0);
+});
+
+// ── separating coarse name groups, and the C2G question ───────────────────
+
+it('forces SKU-prefix grouping so the screen families stop hiding', function (): void {
+    // Their names all begin "Screen…", so auto-grouping swept 139 heterogeneous
+    // products into name:screen and reported a 28.0% median — burying families
+    // running near 99%. --group-by=sku-prefix separates them.
+    policyProduct('TT400X225', 1557.20, 3716.70, ['name' => 'Screen 400x225']);
+    policyProduct('TT350X197', 1400.00, 3341.00, ['name' => 'Screen 350x197']);
+    policyProduct('TT300X169', 1250.00, 2983.00, ['name' => 'Screen 300x169']);
+    policyProduct('COM160X120', 500.00, 654.90, ['name' => 'Screen 160x120']);
+    policyProduct('COM180X135', 550.00, 720.40, ['name' => 'Screen 180x135']);
+    policyProduct('COM200X150', 600.00, 786.00, ['name' => 'Screen 200x150']);
+
+    // Auto lumps them together under one name.
+    $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
+        ->expectsOutputToContain('name:screen')
+        ->assertExitCode(0);
+
+    // Forced SKU grouping splits the families apart.
+    $this->artisan('pricing:margin-policy-report --group-by=sku-prefix --min-group=2 --format=csv')
+        ->expectsOutputToContain('sku:TT')
+        ->expectsOutputToContain('sku:COM')
+        ->doesntExpectOutputToContain('name:screen')
+        ->assertExitCode(0);
+});
+
+it('breaks a mixed name group down by sub-family without being asked', function (): void {
+    // Same data, default grouping: the report must SHOW the structure it is
+    // hiding, or the median quietly describes nobody.
+    policyProduct('TT400X225', 1557.20, 3716.70, ['name' => 'Screen 400x225']);
+    policyProduct('TT350X197', 1400.00, 3341.00, ['name' => 'Screen 350x197']);
+    policyProduct('TT300X169', 1250.00, 2983.00, ['name' => 'Screen 300x169']);
+    policyProduct('COM160X120', 500.00, 654.90, ['name' => 'Screen 160x120']);
+    policyProduct('COM180X135', 550.00, 720.40, ['name' => 'Screen 180x135']);
+    policyProduct('COM200X150', 600.00, 786.00, ['name' => 'Screen 200x150']);
+
+    $this->artisan('pricing:margin-policy-report --min-group=2')
+        ->expectsOutputToContain('INSIDE THE MIXED GROUPS')
+        ->assertExitCode(0);
+});
+
+it('drills into one group at product level for the C2G question', function (): void {
+    // Four cheap cable SKUs at ~400%: internally consistent? competitor data?
+    // would a brand rule preserve prices? The detail view answers all three.
+    policyProduct('88501', 1.62, 15.33, ['brand_id' => 4242]);
+    policyProduct('88502', 2.22, 16.49, ['brand_id' => 4242]);
+    policyProduct('88503', 3.13, 18.64, ['brand_id' => 4242]);
+
+    $this->artisan('pricing:margin-policy-report --detail=brand:#4242')
+        ->expectsOutputToContain('DETAIL: brand:#4242')
+        ->expectsOutputToContain('88501')
+        ->expectsOutputToContain('Competitor data on 0 of 3')
+        ->assertExitCode(0);
+});
+
+it('says so plainly when a detail key matches nothing', function (): void {
+    policyProduct('ANY-1', 100.00, 162.00);
+
+    $this->artisan('pricing:margin-policy-report --detail=brand:Nonexistent')
+        ->expectsOutputToContain('No products in that group')
+        ->assertExitCode(0);
+});
+
+it('rejects an unknown --group-by rather than silently using auto', function (): void {
+    $this->artisan('pricing:margin-policy-report --group-by=nonsense')->assertExitCode(1);
+});
+
+it('groups every decision that needs a human under a named reason', function (): void {
+    config(['competitor.min_margin_floor_bps' => 600]);
+
+    // On the floor — being beaten, not choosing.
+    policyProduct('FLOOR-1', 100.00, 127.20);
+    policyProduct('FLOOR-2', 200.00, 254.40);
+
+    $this->artisan('pricing:margin-policy-report --min-group=2')
+        ->expectsOutputToContain('DECISION NEEDED')
+        ->expectsOutputToContain('SITTING ON THE MARGIN FLOOR')
+        ->assertExitCode(0);
+});
+
+it('leads with the headline that most brands are already tier-consistent', function (): void {
+    policyProduct('TIER-1', 100.00, 146.40);
+    policyProduct('TIER-2', 200.00, 292.80);
+
+    $this->artisan('pricing:margin-policy-report --min-group=2')
+        ->expectsOutputToContain('HEADLINE')
+        ->expectsOutputToContain('already sit within 1pp of their tier')
         ->assertExitCode(0);
 });

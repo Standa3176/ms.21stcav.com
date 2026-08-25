@@ -628,6 +628,45 @@ Schedule::command('cutover:auto-sync --field='
     ->name('cutover:auto-sync')
     ->description('Quick task 260611-rl4 — nightly MS↔Woo drift self-heal (23:00 Europe/London)');
 
+// ── 260825-n5v — pricing monitoring ──────────────────────────────────────
+// Every pricing fault found in August 2026 was found by a human deciding to go
+// looking: the 5,319 lost price pushes surfaced only from reading failed_jobs by
+// hand, the CP4 homonym had been live for weeks, and the projection-screen
+// families turned up while chasing an unrelated question. There WERE tools and
+// none of them were scheduled. Tools that run when someone remembers are not
+// monitoring.
+//
+// 09:30 — the STATIC question: is the live catalogue priced correctly right
+// now? Runs after 07:00 supplier:db-sync (cost), 08:00 undercut (price) and
+// 09:00 woo:import-products (snapshots), so it reads the settled state.
+// --notify emails on hard faults only (below cost / below floor); a non-zero
+// exit is the durable signal even when nobody is subscribed.
+Schedule::command('pricing:health-check --notify')
+    ->dailyAt('09:30')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('260825-n5v — live catalogue vs cost + margin floor (alarms on hard faults)');
+
+// 09:35 — the DYNAMIC question: were today's price CHANGES correct? Distinct
+// from the check above, which cannot see a product that is wrong and simply not
+// moving (CP4 sat wrong for weeks without ever moving).
+Schedule::command('pricing:audit-movements --limit=250')
+    ->dailyAt('09:35')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('260824-p3f — audit each day of sell_price movements against the pricing contract');
+
+// Monday 09:45 — the ceiling-block queue. Weekly, not daily: it is a review
+// list to work through, not an alarm, and daily would train people to skim it.
+Schedule::command('pricing:review-ceiling-blocks --limit=40')
+    ->weeklyOn(1, '09:45')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('260825-t4m — weekly margin-ceiling review (cost faults, competitor faults, opportunities)');
+
 // Phase 11 Plan 05 (QUOT-08) — quotes:expire daily 00:30 Europe/London.
 // Flips status=sent → status=expired for quotes whose expires_at has passed.
 // --live opt-in is REQUIRED here (the command itself defaults to dry-run per

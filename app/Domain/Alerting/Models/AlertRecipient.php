@@ -70,6 +70,7 @@ class AlertRecipient extends Model
         'receives_agent_alerts',
         'receives_quote_alerts',
         'receives_competitor_ftp_alerts',
+        'receives_pricing_alerts',
     ];
 
     protected $casts = [
@@ -82,6 +83,7 @@ class AlertRecipient extends Model
         'receives_agent_alerts' => 'boolean',
         'receives_quote_alerts' => 'boolean',
         'receives_competitor_ftp_alerts' => 'boolean',
+        'receives_pricing_alerts' => 'boolean',
     ];
 
     /** Scope: only rows with is_active=true. */

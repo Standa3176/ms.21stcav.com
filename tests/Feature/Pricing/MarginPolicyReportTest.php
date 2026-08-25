@@ -67,7 +67,7 @@ it('proposes the margin the group already earns, not the default tier', function
     policyProduct('RAPT250X190', 1895.00, 4526.04);
 
     $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
-        ->expectsOutputToContain('100.00')  // median 99.01% rounded to the nearest 2.5pp step
+        ->expectsOutputToContain('99.00')   // median 99.01% on the 0.5pp grid
         ->assertExitCode(0);
 });
 
@@ -165,5 +165,34 @@ it('emits csv for taking into a commercial conversation', function (): void {
 
     $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
         ->expectsOutputToContain('priority,group,basis,count')
+        ->assertExitCode(0);
+});
+
+// ── calibration fixes found by the first live run ─────────────────────────
+
+it('proposes no change for a group already sitting exactly on its tier', function (): void {
+    // The first live run rounded to a 2.5pp grid and invented its own headline:
+    // Samsung's median was 22.0% — its tier exactly — and a 22.5% proposal moved
+    // 79 products for £69,397 of synthetic movement. A grid coarser than the
+    // tiers cannot express "leave this group alone".
+    policyProduct('TIER-1', 100.00, 146.40);   // 22.0%
+    policyProduct('TIER-2', 200.00, 292.80);   // 22.0%
+    policyProduct('TIER-3', 300.00, 439.20);   // 22.0%
+
+    $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
+        ->expectsOutputToContain('22.00,0.00,22.00,22.00')   // median,spread,rule,proposed
+        ->assertExitCode(0);
+});
+
+it('never proposes a margin below the minimum-margin floor', function (): void {
+    // A group at 6.0% is being FLOORED by competitor undercut, not choosing 6%.
+    // Proposing 5% describes a price the floor would refuse to set.
+    config(['competitor.min_margin_floor_bps' => 600]);
+
+    policyProduct('FLOORED-1', 100.00, 127.20);   // 6.0%
+    policyProduct('FLOORED-2', 200.00, 254.40);   // 6.0%
+
+    $this->artisan('pricing:margin-policy-report --min-group=2 --format=csv')
+        ->expectsOutputToContain('6.00,0.00,22.00,6.00')   // proposed clamped UP to the floor
         ->assertExitCode(0);
 });

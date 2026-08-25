@@ -287,6 +287,7 @@ final class MarginPolicyReportCommand extends BaseCommand
     private function summarise(array $groups, int $vatBps, int $minGroup): array
     {
         $rows = [];
+        $floorBps = (int) config('competitor.min_margin_floor_bps', 600);
 
         foreach ($groups as $g) {
             $count = count($g['margins']);
@@ -303,7 +304,19 @@ final class MarginPolicyReportCommand extends BaseCommand
 
             // The proposal is a DESCRIPTION of current practice, rounded to a
             // number a human would actually write down.
-            $proposed = (int) (round($median / 250) * 250);
+            //
+            // 50bps, NOT 250bps. The first live run rounded to a 2.5pp grid and
+            // manufactured its own headline: Samsung's median is 22.0% —
+            // exactly its tier, so nothing should move — and rounding to 22.5%
+            // pushed 79 products up for GBP 69,397 of entirely synthetic
+            // movement. A grid coarser than the tiers themselves cannot
+            // represent 'leave this group alone'.
+            $proposed = (int) (round($median / 50) * 50);
+
+            // Never propose below the minimum-margin floor. A group sitting at
+            // 6.0% is being FLOORED by competitor undercut, not choosing 6%;
+            // proposing 5% describes a price the floor would refuse to set.
+            $proposed = max($proposed, $floorBps);
 
             [$netDelta, $material, $up, $down] = $this->impact($g['products'], $proposed, $vatBps);
 

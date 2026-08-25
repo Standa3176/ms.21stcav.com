@@ -65,6 +65,12 @@ final class MarginPolicyReportCommand extends BaseCommand
 
     private const SUBGROUP_MIN = 3;
 
+    /**
+     * How far a group's median may drift from its RULE-LED median before the
+     * median stops describing policy and starts describing the competition.
+     */
+    private const CONTAMINATION_BPS = 500;
+
     protected $signature = 'pricing:margin-policy-report
         {--group-by=auto : auto | sku-prefix | name | brand. auto prefers brand, then name, then SKU prefix.}
         {--detail= : Drill into ONE group key and list its products (e.g. brand:C2G)}
@@ -261,6 +267,7 @@ final class MarginPolicyReportCommand extends BaseCommand
                 'examples' => [],
                 'sub' => [],
                 'branches' => [],
+                'rule_led_margins' => [],
             ];
         }
 
@@ -290,6 +297,12 @@ final class MarginPolicyReportCommand extends BaseCommand
             )['source'];
 
             $g['branches'][$branch] = ($g['branches'][$branch] ?? 0) + 1;
+
+            // Only a RULE-LED product's margin is evidence of policy. A floored
+            // product's margin is evidence of a competitor.
+            if ($branch === 'margin') {
+                $g['rule_led_margins'][] = $currentBps;
+            }
 
             if ($lowest !== null && $buy > 0) {
                 $compExVat = (int) round($lowest / (1 + ($vatBps / 10000)));
@@ -421,7 +434,28 @@ final class MarginPolicyReportCommand extends BaseCommand
             // Clamped UP to the floor: a group at 6.0% is being FLOORED by
             // competitor undercut, not choosing 6%, and proposing less describes
             // a price the floor would refuse to set.
-            $proposed = max((int) (round($median / 50) * 50), $floorBps);
+            // 260825-mpr follow-up — a group's median is only policy evidence if
+            // it is not describing the competition instead.
+            //
+            // brand:SMART on prod: 23 products, 15 competitor-FLOORED at ~6%, 8
+            // rule-led. The group median reads 6.0% — but those 8 have no
+            // competitor and are not under pressure. Adopting 6% as a rule would
+            // cut them to floor margin GRATUITOUSLY, dragged down by neighbours
+            // whose prices the market set. That is a rule doing the opposite of
+            // preserving current prices.
+            //
+            // So when the rule-led median differs materially from the overall
+            // one, the rule-led figure is the rule-safe number and the raw
+            // median is labelled as contaminated rather than quietly used.
+            $ruleLedMedian = $g['rule_led_margins'] === []
+                ? null
+                : $this->percentile($g['rule_led_margins'], 0.5);
+
+            $contaminated = $ruleLedMedian !== null
+                && abs($median - $ruleLedMedian) > self::CONTAMINATION_BPS;
+
+            $basis = $contaminated ? $ruleLedMedian : $median;
+            $proposed = max((int) (round($basis / 50) * 50), $floorBps);
 
             // Rule impact over RULE-LED products only. Without --with-competitor
             // the branch is unknown and every product is counted, which is why
@@ -437,6 +471,8 @@ final class MarginPolicyReportCommand extends BaseCommand
                 'unpublished' => $g['unpublished'],
                 'held' => $g['held'],
                 'median_bps' => $median,
+                'rule_led_median_bps' => $ruleLedMedian,
+                'contaminated' => $contaminated,
                 'spread_bps' => $spread,
                 'rule_bps' => $ruleMedian,
                 'proposed_bps' => $proposed,
@@ -454,7 +490,7 @@ final class MarginPolicyReportCommand extends BaseCommand
                 'rule_type' => $this->ruleType($g),
                 'examples' => implode(', ', $g['examples']),
                 'sub' => $this->summariseSub($g['sub']),
-                'reasons' => $this->decisionReasons($g, $median, $spread, $floorBps),
+                'reasons' => $this->decisionReasons($g, $median, $spread, $floorBps, $contaminated),
                 'priority' => $this->priority($g, $median, $ruleMedian, $material),
             ];
         }
@@ -494,7 +530,7 @@ final class MarginPolicyReportCommand extends BaseCommand
      * @param  array<string, mixed>  $g
      * @return array<int, string>
      */
-    private function decisionReasons(array $g, int $median, int $spread, int $floorBps): array
+    private function decisionReasons(array $g, int $median, int $spread, int $floorBps, bool $contaminated = false): array
     {
         $reasons = [];
 
@@ -512,6 +548,10 @@ final class MarginPolicyReportCommand extends BaseCommand
 
         if ($spread > self::SUBGROUP_SPREAD_BPS) {
             $reasons[] = 'members disagree';
+        }
+
+        if ($contaminated) {
+            $reasons[] = 'median contaminated by floored members';
         }
 
         if ($g['has_brand'] === 0) {
@@ -666,7 +706,7 @@ final class MarginPolicyReportCommand extends BaseCommand
                 $this->pct($r['median_bps']),
                 $this->pct($r['spread_bps']),
                 $r['rule_bps'] === null ? '-' : $this->pct($r['rule_bps']),
-                $this->pct($r['proposed_bps']),
+                $this->pct($r['proposed_bps']).($r['contaminated'] ? ' *' : ''),
                 (string) $r['rule_led'],
                 $r['competitor_led'] > 0 ? (string) $r['competitor_led'] : '',
                 number_format($r['net_delta'] / 100, 0),
@@ -675,6 +715,11 @@ final class MarginPolicyReportCommand extends BaseCommand
                 $r['rule_type'],
             ], array_slice($rows, 0, $limit)),
         );
+
+        if (array_filter($rows, static fn (array $r): bool => (bool) $r['contaminated']) !== []) {
+            $this->line('  * proposal taken from the RULE-LED members only - the group median is');
+            $this->line('    contaminated by competitor-floored products and is NOT rule-safe.');
+        }
 
         $more = count($rows) - $limit;
         if ($more > 0) {
@@ -739,6 +784,7 @@ final class MarginPolicyReportCommand extends BaseCommand
             'extreme margin' => 'Margin so high it may indict the data rather than the pricing',
             'sitting on the margin floor' => 'Being FLOORED by competitors, not choosing this margin',
             'members disagree' => 'No single number describes the group',
+            'median contaminated by floored members' => 'Median describes the COMPETITION, not policy — adopting it would cut the members who are not under pressure',
         ];
 
         $this->newLine();
@@ -921,7 +967,7 @@ final class MarginPolicyReportCommand extends BaseCommand
      */
     private function emitCsv(array $rows): void
     {
-        $this->line('priority,group,basis,count,published,unpublished,held,median_pct,spread_pct,rule_pct,proposed_pct,rule_led,competitor_led,net_delta_pounds,material_moves,up,down,competitor_median_pct,confidence,rule_type,reasons,examples');
+        $this->line('priority,group,basis,count,published,unpublished,held,median_pct,spread_pct,rule_pct,proposed_pct,rule_led_median_pct,contaminated,rule_led,competitor_led,net_delta_pounds,material_moves,up,down,competitor_median_pct,confidence,rule_type,reasons,examples');
 
         foreach ($rows as $r) {
             $this->line(implode(',', [
@@ -936,6 +982,8 @@ final class MarginPolicyReportCommand extends BaseCommand
                 number_format($r['spread_bps'] / 100, 2, '.', ''),
                 $r['rule_bps'] === null ? '' : number_format($r['rule_bps'] / 100, 2, '.', ''),
                 number_format($r['proposed_bps'] / 100, 2, '.', ''),
+                $r['rule_led_median_bps'] === null ? '' : number_format($r['rule_led_median_bps'] / 100, 2, '.', ''),
+                $r['contaminated'] ? 'yes' : 'no',
                 $r['rule_led'],
                 $r['competitor_led'],
                 number_format($r['net_delta'] / 100, 2, '.', ''),

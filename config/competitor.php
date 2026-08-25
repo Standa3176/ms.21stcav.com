@@ -105,6 +105,17 @@ return [
     //     a ProductOverride (260824-w9k) resolves to its own margin, so it
     //     cannot exceed itself by the tolerance and is exempt by construction.
     'ceiling_cost_fault_bps' => (int) env('COMPETITOR_CEILING_COST_FAULT_BPS', 20000), // 200%
+    // 260825-n5v — a cost this small cannot be materially wrong. Measured on
+    // the first live health-check run (4,163 published products, 6 suspect
+    // costs): FOUR were ordinary accessory markup, and all four had a cost
+    // under GBP 4 —
+    //   88501 GBP 1.62 -> 15.33, 88502 2.22 -> 16.49, 88503 3.13 -> 18.64,
+    //   80-04000006G000 3.61 -> 18.08
+    // while the two worth investigating were GBP 96.93 and GBP 200. A GBP 10
+    // floor separates them cleanly. This runs DAILY, and four permanent false
+    // positives is how a report becomes one nobody reads.
+    'ceiling_cost_fault_min_cost_pence' => (int) env('COMPETITOR_CEILING_COST_FAULT_MIN_COST_PENCE', 1000), // GBP 10
+
     'ceiling_cost_fault_tolerance_bps' => (int) env('COMPETITOR_CEILING_COST_FAULT_TOLERANCE_BPS', 5000), // 50pp
 
     'ceiling_min_cash_pence' => (int) env('COMPETITOR_CEILING_MIN_CASH_PENCE', 500), // GBP 5.00

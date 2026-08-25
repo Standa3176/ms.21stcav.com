@@ -84,6 +84,7 @@ final class CeilingBlockClassifier
         private readonly int $minCashPence,
         private readonly int $costFaultBps = 20000,
         private readonly int $costFaultToleranceBps = 5000,
+        private readonly int $costFaultMinCostPence = 1000,
     ) {}
 
     public static function fromConfig(): self
@@ -93,6 +94,7 @@ final class CeilingBlockClassifier
             (int) config('competitor.ceiling_min_cash_pence', 500),
             (int) config('competitor.ceiling_cost_fault_bps', 20000),
             (int) config('competitor.ceiling_cost_fault_tolerance_bps', 5000),
+            (int) config('competitor.ceiling_cost_fault_min_cost_pence', 1000),
         );
     }
 
@@ -109,13 +111,14 @@ final class CeilingBlockClassifier
         int $cashPence,
         ?int $currentMarginBps = null,
         ?int $ruleMarginBps = null,
+        ?int $buyPennies = null,
     ): string {
         // A broken cost outranks everything, INCLUDING the competitor margin.
         // Hoisted above the ceiling test on purpose: a product whose own cost is
         // nonsense is a cost fault whether the competitor implies 60% or 6,000%,
         // and calling it "review" would put a poisoned record on the
         // opportunities list.
-        if ($this->isCostFault($currentMarginBps, $ruleMarginBps)) {
+        if ($this->isCostFault($currentMarginBps, $ruleMarginBps, $buyPennies)) {
             return self::COST_FAULT;
         }
 
@@ -148,9 +151,17 @@ final class CeilingBlockClassifier
      * deliberately pinned by a ProductOverride out of it, since such a product
      * resolves to its own margin and so cannot exceed it by the tolerance.
      */
-    private function isCostFault(?int $currentMarginBps, ?int $ruleMarginBps): bool
+    private function isCostFault(?int $currentMarginBps, ?int $ruleMarginBps, ?int $buyPennies = null): bool
     {
         if ($currentMarginBps === null || $currentMarginBps < $this->costFaultBps) {
+            return false;
+        }
+
+        // A cost this small cannot be materially wrong, and a high
+        // percentage on a tiny absolute number is ordinary accessory markup
+        // (88501: GBP 1.62 -> GBP 15.33). Reporting those daily is how a
+        // report earns the habit of being skimmed.
+        if ($buyPennies !== null && $buyPennies < $this->costFaultMinCostPence) {
             return false;
         }
 

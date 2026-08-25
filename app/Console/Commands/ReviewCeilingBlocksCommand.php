@@ -170,7 +170,7 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
             // before the split existed. Re-classify it so the 37 faults
             // already on file split into the two piles with opposite fixes.
             $severity = ($stored === '' || $stored === CeilingBlockClassifier::DATA_FAULT)
-                ? $classifier->classify($marginBps, $cashPence, $currentMarginBps, $this->ruleMarginFor($product))
+                ? $classifier->classify($marginBps, $cashPence, $currentMarginBps, $this->ruleMarginFor($product), $cost)
                 : $stored;
             $severityCounts[$severity] = ($severityCounts[$severity] ?? 0) + 1;
 

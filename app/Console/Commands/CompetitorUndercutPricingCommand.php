@@ -208,6 +208,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
                 $cashPence,
                 $currentMarginBps,
                 $ruleForFault,
+                $buyPennies,
             );
             $blockLabel = sprintf(
                 '%s, cash £%s',

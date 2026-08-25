@@ -177,3 +177,43 @@ it('writes nothing — it is a read-only check', function (): void {
     expect((float) $product->fresh()->sell_price)->toBe(110.00)
         ->and((float) $product->fresh()->buy_price)->toBe(100.00);
 });
+
+// ── 260825-n5v follow-up — the min-cost gate, calibrated on the first run ──
+
+it('does not report a cheap accessory with a fat percentage', function (): void {
+    // Real rows from the first live run: four of six "suspect costs" were
+    // ordinary accessory markup, every one under £4 cost. This report runs
+    // DAILY, and four permanent false positives is how a report earns the habit
+    // of being skimmed.
+    healthProduct('88501', 1.62, 15.33);           // 688.9%
+    healthProduct('88502', 2.22, 16.49);           // 518.9%
+    healthProduct('88503', 3.13, 18.64);           // 396.2%
+    healthProduct('80-04000006G000', 3.61, 18.08); // 317.5%
+
+    $this->artisan('pricing:health-check')
+        ->doesntExpectOutputToContain('SUSPECT COST')
+        ->expectsOutputToContain('0 below cost, 0 below floor, 0 suspect cost')
+        ->assertExitCode(0);
+});
+
+it('still reports a suspect cost on a product worth investigating', function (): void {
+    // The two from the same run that ARE worth a look, both well above the £10
+    // floor. The gate must remove noise without removing findings.
+    healthProduct('PULSE-PRO-FRAME3', 96.93, 415.77);  // 257.5%
+    healthProduct('2200-66700-025', 200.00, 1013.99);  // 322.5%
+
+    $this->artisan('pricing:health-check')
+        ->expectsOutputToContain('SUSPECT COST')
+        ->expectsOutputToContain('2 suspect cost')
+        ->assertExitCode(0);
+});
+
+it('keeps reporting a below-cost cheap item — the gate is not a blanket exemption', function (): void {
+    // The min-cost gate suppresses a MARGIN judgement on a tiny cost. It must
+    // never suppress selling at a loss, however small the item.
+    healthProduct('TINY-LOSS', 1.62, 1.50);
+
+    $this->artisan('pricing:health-check')
+        ->expectsOutputToContain('SELLING BELOW COST')
+        ->assertExitCode(1);
+});

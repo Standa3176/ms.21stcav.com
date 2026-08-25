@@ -140,7 +140,7 @@ final class PricingHealthCheckCommand extends BaseCommand
                 // deliberately-pinned line (a 260824-w9k override resolves to its
                 // own margin) cannot be reported as broken.
                 $ruleBps = $this->ruleMarginFor($product);
-                if ($classifier->classify(0, 0, $currentBps, $ruleBps) === CeilingBlockClassifier::COST_FAULT) {
+                if ($classifier->classify(0, 0, $currentBps, $ruleBps, $buy) === CeilingBlockClassifier::COST_FAULT) {
                     $row['rule_bps'] = $ruleBps;
                     $costFaults[] = $row;
                 }

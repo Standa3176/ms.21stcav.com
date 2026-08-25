@@ -12,7 +12,6 @@ use Carbon\Carbon;
  * GREEN (success) when it arrived with the latest run, GRAY when there's no
  * reference yet. No DB — Carbon fixtures only.
  */
-
 it('returns gray when there is no reference run', function (): void {
     expect(CompetitorResource::freshnessColorFor(
         Carbon::parse('2026-07-05 09:00:00'),

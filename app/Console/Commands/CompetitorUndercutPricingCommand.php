@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
+use App\Domain\Pricing\Services\CeilingBlockClassifier;
 use App\Domain\Pricing\Services\CompetitorUndercutPricer;
 use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\Products\Models\Product;
@@ -174,9 +175,32 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         if (($decision['source'] === 'competitor_undercut' || $decision['source'] === 'competitor_floor')
             && (int) $decision['effective_margin_bps'] > $ceilingBps) {
             $this->stats['blocked_ceiling']++;
+
+            // 260825-t4m — classify the block. This changes NOTHING about
+            // whether the price is withheld; the early return below is
+            // untouched. It records WHICH KIND of block this is, so the
+            // review queue can surface the handful carrying real money
+            // instead of burying them under cheap accessories that are
+            // worth GBP 0.00 between them.
+            $currentPennies = $product->sell_price === null
+                ? 0
+                : (int) round(((float) $product->sell_price) * 100);
+            $cashPence = CeilingBlockClassifier::cashUpliftPence(
+                (int) $decision['final_pennies'],
+                $currentPennies,
+                $vatBps,
+            );
+            $severity = CeilingBlockClassifier::fromConfig()
+                ->classify((int) $decision['effective_margin_bps'], $cashPence);
+            $blockLabel = sprintf(
+                '%s, cash £%s',
+                CeilingBlockClassifier::label($severity),
+                number_format($cashPence / 100, 2),
+            );
             $this->line(sprintf(
-                '  %s  BLOCKED (margin ceiling)  buy £%s  proposed £%s  margin %s%%  vs competitor £%s',
+                '  %s  BLOCKED [%s]  buy £%s  proposed £%s  margin %s%%  vs competitor £%s',
                 str_pad($sku, 16),
+                $blockLabel,
                 number_format($buyPennies / 100, 2),
                 number_format(((int) $decision['final_pennies']) / 100, 2),
                 number_format(((int) $decision['effective_margin_bps']) / 100, 2),
@@ -190,6 +214,8 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
                 (int) $decision['effective_margin_bps'],
                 $lowest,
                 $ceilingBps,
+                $severity,
+                $cashPence,
             );
 
             return;
@@ -288,6 +314,8 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         int $marginBps,
         ?int $competitorGrossPennies,
         int $ceilingBps,
+        string $severity = CeilingBlockClassifier::REVIEW,
+        int $cashUpliftPence = 0,
     ): void {
         $evidence = [
             'sku' => $sku,
@@ -296,6 +324,11 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             'effective_margin_bps' => $marginBps,
             'competitor_price_pennies' => $competitorGrossPennies,
             'ceiling_bps' => $ceilingBps,
+            // 260825-t4m — recorded at block time because the CURRENT price
+            // is known here and may have moved by the time anyone reads the
+            // queue. Legacy rows without these keys are classified on read.
+            'severity' => $severity,
+            'cash_uplift_pence' => $cashUpliftPence,
             'blocked_at' => now()->toIso8601String(),
         ];
 

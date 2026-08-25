@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Pricing\Services\CeilingBlockClassifier;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -53,7 +54,9 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
         {--since= : Only blocks recorded on/after this date (Y-m-d), by evidence.blocked_at}
         {--min-cash=0 : Only show blocks worth at least this many pounds per unit}
         {--published-only : Only products currently live on the storefront}
-        {--limit=25 : Rows to print (0 = all)}';
+        {--limit=25 : Rows to print (0 = all)}
+        {--severity= : Only this severity (data_fault|review|noise|no_upside)}
+        {--include-noise : Also show noise and no-upside blocks (hidden by default)}';
 
     protected $description = 'READ-ONLY review of margin-ceiling blocks ranked by cash opportunity, with a threshold table for setting guard policy (260825-t4m).';
 
@@ -61,6 +64,11 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
     {
         $since = (string) $this->option('since');
         $minCash = (float) $this->option('min-cash');
+        $severityFilter = (string) $this->option('severity');
+        $includeNoise = (bool) $this->option('include-noise') || $severityFilter !== '';
+        $classifier = CeilingBlockClassifier::fromConfig();
+        $suppressed = 0;
+        $severityCounts = [];
         $publishedOnly = (bool) $this->option('published-only');
         $limit = max(0, (int) $this->option('limit'));
         $vatBps = (int) config('pricing.vat_basis_points', 2000);
@@ -114,9 +122,34 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
 
             // Cash forgone per unit: the EX-VAT gap between what the competitor
             // would let us charge and what we charge. VAT is not margin.
-            $cashPence = (int) round((($proposed - $current) / $vatDivisor));
+            // Prefer the cash recorded AT BLOCK TIME: the current price may
+            // have moved since, and the block was judged against the price
+            // as it then stood. Legacy rows predate the key, so fall back to
+            // computing it — that is what --since exists to separate.
+            $cashPence = array_key_exists('cash_uplift_pence', $evidence)
+                ? (int) $evidence['cash_uplift_pence']
+                : (int) round((($proposed - $current) / $vatDivisor));
+
+            $severity = (string) ($evidence['severity'] ?? $classifier->classify($marginBps, $cashPence));
+            $severityCounts[$severity] = ($severityCounts[$severity] ?? 0) + 1;
+
+            if ($severityFilter !== '' && $severity !== $severityFilter) {
+                $skipped++;
+
+                continue;
+            }
+
+            // Noise and no-upside are recorded but hidden: 20 of 48 published
+            // blocks on 2026-08-25 were worth GBP 0.00 between them, and they
+            // were the reason the nine that mattered went unread.
+            if (! $includeNoise && ! CeilingBlockClassifier::isActionable($severity)) {
+                $suppressed++;
+
+                continue;
+            }
 
             $rows[] = [
+                'severity' => $severity,
                 'sku' => $sku,
                 'status' => (string) $product->status,
                 'cost' => $cost,
@@ -138,7 +171,14 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
         ));
 
         $this->renderRows($shown, $limit);
-        $this->renderTotals($rows, $shown, $skipped, $minCash);
+        $this->renderTotals($rows, $shown, $skipped, $minCash, $severityCounts);
+
+        if ($suppressed > 0) {
+            $this->line(sprintf(
+                '  %d noise / no-upside block(s) hidden — pass --include-noise to see them.',
+                $suppressed,
+            ));
+        }
 
         return SymfonyCommand::SUCCESS;
     }
@@ -191,9 +231,10 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
 
         $this->newLine();
         $this->table(
-            ['SKU', 'Status', 'Cost', 'Now', 'Competitor-led', 'Margin', 'Cash/unit', 'Blocked'],
+            ['SKU', 'Severity', 'Status', 'Cost', 'Now', 'Competitor-led', 'Margin', 'Cash/unit', 'Blocked'],
             array_map(static fn (array $r): array => [
                 $r['sku'],
+                CeilingBlockClassifier::label((string) ($r['severity'] ?? CeilingBlockClassifier::REVIEW)),
                 $r['status'],
                 number_format($r['cost'] / 100, 2),
                 number_format($r['current'] / 100, 2),
@@ -214,7 +255,7 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
      * @param  array<int, array<string, mixed>>  $all
      * @param  array<int, array<string, mixed>>  $shown
      */
-    private function renderTotals(array $all, array $shown, int $skipped, float $minCash): void
+    private function renderTotals(array $all, array $shown, int $skipped, float $minCash, array $severityCounts = []): void
     {
         $total = array_sum(array_map(static fn (array $r): int => $r['cash'], $all));
         $shownCash = array_sum(array_map(static fn (array $r): int => $r['cash'], $shown));
@@ -222,6 +263,15 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
         $publishedCash = array_sum(array_map(static fn (array $r): int => $r['cash'], $published));
 
         $this->newLine();
+        if ($severityCounts !== []) {
+            // Emitted as a LINE, not only as a table column: this is the
+            // headline an operator reads, and it makes the triage assertable.
+            $parts = [];
+            foreach ([CeilingBlockClassifier::DATA_FAULT, CeilingBlockClassifier::REVIEW, CeilingBlockClassifier::NOISE, CeilingBlockClassifier::NO_UPSIDE] as $sev) {
+                $parts[] = ($severityCounts[$sev] ?? 0).' '.CeilingBlockClassifier::label($sev);
+            }
+            $this->line('  Severity: '.implode(', ', $parts));
+        }
         $this->line(sprintf('%d block(s) examined, %d skipped (filtered, or product no longer exists).', count($all), $skipped));
         $this->line(sprintf('  Total cash per unit across all blocks:        £%s', number_format($total / 100, 2)));
         $this->line(sprintf('  Of which on PUBLISHED products (%d):          £%s', count($published), number_format($publishedCash / 100, 2)));

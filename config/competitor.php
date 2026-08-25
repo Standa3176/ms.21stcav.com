@@ -74,6 +74,30 @@ return [
     'sales_threshold_90d' => (int) env('COMPETITOR_SALES_THRESHOLD_90D', 10),
     'min_margin_floor_bps' => (int) env('COMPETITOR_MIN_MARGIN_FLOOR_BPS', 600),   // 6% safety floor (operator decision 2026-05-24; was 5% P5-E)
     'max_margin_ceiling_bps' => (int) env('COMPETITOR_MAX_MARGIN_CEILING_BPS', 5000), // 50% ceiling (2026-08-09 incident response)
+    // ── 260825-t4m — triage INSIDE the ceiling block ──────────────────────
+    // The 50% ceiling above is a single line that cannot tell three very
+    // different things apart. Measured on prod 2026-08-25, 48 published blocks:
+    //
+    //   4  at 432%-5,737% — broken cost/identity, NOT market signal
+    //   9  at 50%-85% with real cash — worth an operator's time
+    //   20 under GBP 5 cash/unit, contributing GBP 0.00 in total
+    //
+    // Percentage screams on cables; pounds tell you where to care. These two
+    // knobs classify a block WITHOUT changing whether it blocks: every price
+    // that was withheld before is still withheld.
+    //
+    // ceiling_data_fault_bps — at or above this, treat as a data fault whatever
+    //   the cash. A 400%+ margin against a supplier cost is a wrong cost or a
+    //   wrong competitor row; releasing it would be the 2026-08-09 incident
+    //   again. Never suppressed, never filtered out of review.
+    'ceiling_data_fault_bps' => (int) env('COMPETITOR_CEILING_DATA_FAULT_BPS', 20000), // 200%
+    //
+    // ceiling_min_cash_pence — below this cash uplift per unit (EX VAT; VAT is
+    //   not margin) a block is queue noise: a high percentage on a small
+    //   absolute number, usually because we already sit at the competitor's
+    //   price. Classified, still recorded, hidden from review by default.
+    'ceiling_min_cash_pence' => (int) env('COMPETITOR_CEILING_MIN_CASH_PENCE', 500), // GBP 5.00
+
     'max_row_move_pct' => (int) env('COMPETITOR_MAX_ROW_MOVE_PCT', 50), // feed-jump quarantine threshold (2026-08-09 incident response)
     'beat_by_pennies' => (int) env('COMPETITOR_BEAT_BY_PENNIES', 1),
     'csv_retention_days' => (int) env('COMPETITOR_CSV_RETENTION_DAYS', 90),

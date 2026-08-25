@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Pricing\Services\CeilingBlockClassifier;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Illuminate\Support\Str;
@@ -42,6 +43,11 @@ function ceilingBlock(string $sku, float $cost, float $current, float $proposed,
             'effective_margin_bps' => $marginBps,
             'competitor_price_pennies' => (int) round(($proposed + 0.01) * 100),
             'ceiling_bps' => 5000,
+            'severity' => (new CeilingBlockClassifier(20000, 500))->classify(
+                $marginBps,
+                CeilingBlockClassifier::cashUpliftPence((int) round($proposed * 100), (int) round($current * 100)),
+            ),
+            'cash_uplift_pence' => CeilingBlockClassifier::cashUpliftPence((int) round($proposed * 100), (int) round($current * 100)),
             'blocked_at' => ($blockedAt ?? now()->toDateString()).'T05:00:00+00:00',
         ],
         'proposed_at' => now(),
@@ -123,5 +129,64 @@ it('survives a suggestion whose product has since been deleted', function (): vo
 
     $this->artisan('pricing:review-ceiling-blocks')
         ->expectsOutputToContain('1 skipped')
+        ->assertExitCode(0);
+});
+
+// ── 260825-t4m — severity triage ──────────────────────────────────────────
+
+it('hides noise from the default view but still records it', function (): void {
+    // 20 of the 48 published blocks on 2026-08-25 were worth GBP 0.00 between
+    // them. They are why the nine that mattered went unread.
+    ceilingBlock('QUIET-CABLE', 1.16, 2.20, 2.21, 5862);
+    ceilingBlock('WORTH-READING', 3209.11, 5149.68, 6756.91, 7550);
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('WORTH-READING')
+        ->doesntExpectOutputToContain('QUIET-CABLE')
+        ->expectsOutputToContain('hidden')
+        ->assertExitCode(0);
+
+    // Recorded, not discarded — the audit trail survives.
+    $this->artisan('pricing:review-ceiling-blocks --include-noise')
+        ->expectsOutputToContain('QUIET-CABLE')
+        ->assertExitCode(0);
+});
+
+it('always shows a data fault, even though it is not an opportunity', function (): void {
+    // CP4's shape: a huge margin against a cost that belongs to another part.
+    ceilingBlock('CP4', 24.96, 1517.99, 1748.39, 573730);
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('1 DATA FAULT')
+        ->assertExitCode(0);
+});
+
+it('does not present a competitor at or below our price as an opportunity', function (): void {
+    ceilingBlock('NO-UPSIDE', 100.00, 400.00, 350.00, 6000);
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->doesntExpectOutputToContain('NO-UPSIDE')
+        ->assertExitCode(0);
+});
+
+it('can be filtered to a single severity', function (): void {
+    ceilingBlock('FAULTY', 24.96, 1517.99, 1748.39, 573730);
+    ceilingBlock('REVIEWABLE', 3209.11, 5149.68, 6756.91, 7550);
+
+    $this->artisan('pricing:review-ceiling-blocks --severity=data_fault')
+        ->expectsOutputToContain('FAULTY')
+        ->doesntExpectOutputToContain('REVIEWABLE')
+        ->assertExitCode(0);
+});
+
+it('classifies a legacy row that predates the severity key', function (): void {
+    // Rows blocked before 260825-t4m carry no severity; they must still triage.
+    $s = ceilingBlock('LEGACY', 3209.11, 5149.68, 6756.91, 7550);
+    $e = (array) $s->evidence;
+    unset($e['severity'], $e['cash_uplift_pence']);
+    $s->forceFill(['evidence' => $e])->save();
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('LEGACY')
         ->assertExitCode(0);
 });

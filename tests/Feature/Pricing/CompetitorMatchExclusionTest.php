@@ -5,8 +5,10 @@ declare(strict_types=1);
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Products\Models\Product;
+use Illuminate\Support\Facades\Event;
 
 /*
 |--------------------------------------------------------------------------
@@ -230,4 +232,52 @@ it('rejects an unknown competitor rather than excluding everyone', function (): 
         ->assertExitCode(1);
 
     expect(CompetitorMatchExclusion::count())->toBe(0);
+});
+
+// ── 260825-h2r — the live repair path, because CP4 is on the storefront ───
+
+it('writes cost-plus and dispatches the Woo push once the homonym is excluded', function (): void {
+    Event::fake([ProductPriceChanged::class]);
+    [$avit, , $product] = homonymSetup();
+
+    CompetitorMatchExclusion::create([
+        'competitor_id' => $avit->id,
+        'match_key' => 'CP4',
+        'reason' => 'Crestron there, Unicol mount here',
+    ]);
+    CompetitorMatchExclusion::forgetCache();
+
+    $this->artisan('pricing:undercut-competitors --skus=CP4 --live')->assertExitCode(0);
+
+    // £24.96 x 1.35 x 1.2 = £40.44. The mount's real price.
+    expect((float) $product->fresh()->sell_price)->toBe(40.44);
+
+    // The local write alone is NOT the repair: woo:import-products overwrites
+    // sell_price from Woo at 03:00, so an unpushed correction is reverted within
+    // hours. The dispatched event is what carries it to the storefront.
+    Event::assertDispatched(ProductPriceChanged::class);
+});
+
+it('leaves the price untouched if the exclusion is ever removed', function (): void {
+    // Reversibility check: the exclusion is the only thing standing between our
+    // mount and a Crestron's price, so removing it must visibly restore the old
+    // (wrong) behaviour rather than fail quietly.
+    [$avit] = homonymSetup();
+
+    CompetitorMatchExclusion::create([
+        'competitor_id' => $avit->id,
+        'match_key' => 'CP4',
+        'reason' => 'homonym',
+    ]);
+    CompetitorMatchExclusion::forgetCache();
+
+    $this->artisan('pricing:undercut-competitors --skus=CP4')
+        ->expectsOutputToContain('40.44')
+        ->assertExitCode(0);
+
+    CompetitorMatchExclusion::removeFor((int) $avit->id, 'CP4');
+
+    $this->artisan('pricing:undercut-competitors --skus=CP4')
+        ->expectsOutputToContain('BLOCKED')
+        ->assertExitCode(0);
 });

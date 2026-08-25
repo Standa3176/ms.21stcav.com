@@ -96,6 +96,17 @@ return [
     //   not margin) a block is queue noise: a high percentage on a small
     //   absolute number, usually because we already sit at the competitor's
     //   price. Classified, still recorded, hidden from review by default.
+    // 260825-z8q — a fault in OUR cost vs a fault in THEIR price. Both
+    // required, so a deliberately fat line is not libelled as a broken one:
+    //   ceiling_cost_fault_bps — absolute floor. 9H.JND77.1HE runs a legitimate
+    //     99.5% and must stay below this.
+    //   ceiling_cost_fault_tolerance_bps — how far above its RESOLVED rule a
+    //     margin must sit before we call the cost suspect. A product pinned by
+    //     a ProductOverride (260824-w9k) resolves to its own margin, so it
+    //     cannot exceed itself by the tolerance and is exempt by construction.
+    'ceiling_cost_fault_bps' => (int) env('COMPETITOR_CEILING_COST_FAULT_BPS', 20000), // 200%
+    'ceiling_cost_fault_tolerance_bps' => (int) env('COMPETITOR_CEILING_COST_FAULT_TOLERANCE_BPS', 5000), // 50pp
+
     'ceiling_min_cash_pence' => (int) env('COMPETITOR_CEILING_MIN_CASH_PENCE', 500), // GBP 5.00
 
     'max_row_move_pct' => (int) env('COMPETITOR_MAX_ROW_MOVE_PCT', 50), // feed-jump quarantine threshold (2026-08-09 incident response)

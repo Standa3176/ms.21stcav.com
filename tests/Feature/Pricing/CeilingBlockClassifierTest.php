@@ -104,3 +104,89 @@ it('reads config when built from it', function (): void {
         ->and($c->classify(30000, 50000))->toBe(CeilingBlockClassifier::DATA_FAULT)
         ->and($c->classify(6000, 900))->toBe(CeilingBlockClassifier::NOISE);
 });
+
+// ── 260825-z8q — cost fault vs competitor fault ───────────────────────────
+
+it('calls CP4 a cost fault: our own price already implies 4,968% before any competitor', function (): void {
+    // cost GBP 24.96, price GBP 1,517.99. Our price AGREES with the competitor's
+    // GBP 1,748.39 — the cost is the outlier, and a wrong cost poisons the
+    // margin rules, the 6% floor and the demote/restore decision.
+    $current = CeilingBlockClassifier::currentMarginBps(2496, 151799);
+
+    expect($current)->toBeGreaterThan(400000)
+        ->and(classifier()->classify(573730, 19200, $current, 3500))
+        ->toBe(CeilingBlockClassifier::COST_FAULT);
+});
+
+it('calls the HP row a competitor fault: our cost-to-price is exactly the default tier', function (): void {
+    // 92L53AA#ABU: cost GBP 667.19, price GBP 976.77 = 22.0%, textbook default
+    // tier. The competitor's GBP 5,781.30 implies 622%. Their data, not ours.
+    $current = CeilingBlockClassifier::currentMarginBps(66719, 97677);
+
+    expect($current)->toBeGreaterThan(2100)->toBeLessThan(2300)
+        ->and(classifier()->classify(62210, 400378, $current, 2200))
+        ->toBe(CeilingBlockClassifier::COMPETITOR_FAULT);
+});
+
+it('calls an Epson lamp against a projector listing a competitor fault', function (): void {
+    // V13H010L93: cost GBP 181.61, price GBP 278.95 (28% — sane) against a
+    // GBP 1,107.71 competitor row. A GBP 181 lamp matched to a projector.
+    $current = CeilingBlockClassifier::currentMarginBps(18161, 27895);
+
+    expect(classifier()->classify(40830, 69063, $current, 2800))
+        ->toBe(CeilingBlockClassifier::COMPETITOR_FAULT);
+});
+
+it('calls it a cost fault even when our price already equals the competitor', function (): void {
+    // 83Z50AA#ABB: our price EQUALS the competitor's, so cash uplift is zero and
+    // nothing about the competitor is suspicious. Only the margin reads absurd,
+    // which indicts the cost — and zero cash must not demote it to no_upside.
+    $current = CeilingBlockClassifier::currentMarginBps(65245, 254122);
+
+    expect(classifier()->classify(22460, 0, $current, 2200))
+        ->toBe(CeilingBlockClassifier::COST_FAULT);
+});
+
+it('spares a legitimately fat line from being called a broken one', function (): void {
+    // 9H.JND77.1HE runs a real 99.5%. Below the 200% absolute floor, so however
+    // far above its 28% rule it sits, it is not a cost fault.
+    $current = CeilingBlockClassifier::currentMarginBps(22700, 54333);
+
+    expect($current)->toBeGreaterThan(9800)->toBeLessThan(10100)
+        ->and(classifier()->classify(6000, 50000, $current, 2800))
+        ->toBe(CeilingBlockClassifier::REVIEW);
+});
+
+it('spares a product deliberately pinned high by an override', function (): void {
+    // A 260824-w9k holding override resolves the product to its OWN margin, so
+    // current cannot exceed rule by the tolerance. Without this the protection
+    // applied on 2026-08-24 would itself manufacture cost-fault reports.
+    expect(classifier()->classify(60000, 50000, 250000, 250000))
+        ->toBe(CeilingBlockClassifier::COMPETITOR_FAULT);
+
+    // Same margin, no override backing it — now it is suspect.
+    expect(classifier()->classify(60000, 50000, 250000, 2200))
+        ->toBe(CeilingBlockClassifier::COST_FAULT);
+});
+
+it('falls back to the unattributed legacy label when the current margin is unknown', function (): void {
+    // Rows recorded before 260825-z8q carry no current_margin_bps. They must
+    // still classify rather than throw; the review command re-derives on read.
+    expect(classifier()->classify(573730, 19200, null, 3500))
+        ->toBe(CeilingBlockClassifier::DATA_FAULT);
+});
+
+it('returns no current margin when there is no usable cost', function (): void {
+    // Absence of evidence is not a fault.
+    expect(CeilingBlockClassifier::currentMarginBps(0, 151799))->toBeNull()
+        ->and(CeilingBlockClassifier::currentMarginBps(2496, 0))->toBeNull();
+});
+
+it('treats both fault types as actionable and as faults', function (): void {
+    foreach ([CeilingBlockClassifier::COST_FAULT, CeilingBlockClassifier::COMPETITOR_FAULT, CeilingBlockClassifier::DATA_FAULT] as $sev) {
+        expect(CeilingBlockClassifier::isActionable($sev))->toBeTrue()
+            ->and(CeilingBlockClassifier::isFault($sev))->toBeTrue();
+    }
+
+    expect(CeilingBlockClassifier::isFault(CeilingBlockClassifier::REVIEW))->toBeFalse();
+});

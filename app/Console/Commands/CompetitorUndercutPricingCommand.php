@@ -190,8 +190,24 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
                 $currentPennies,
                 $vatBps,
             );
-            $severity = CeilingBlockClassifier::fromConfig()
-                ->classify((int) $decision['effective_margin_bps'], $cashPence);
+            // 260825-z8q — the margin our CURRENT price already earns on our
+            // OWN cost, which is what separates a broken cost from a broken
+            // competitor row. Resolved rule margin comes along so a product
+            // deliberately pinned by a ProductOverride is not accused.
+            $currentMarginBps = CeilingBlockClassifier::currentMarginBps($buyPennies, $currentPennies, $vatBps);
+            $ruleForFault = null;
+            try {
+                $ruleForFault = (int) $this->resolver->resolve($product)->marginBasisPoints;
+            } catch (\Throwable) {
+                // No rule matched: the absolute floor alone decides. Never let
+                // a resolver failure break the pricing run.
+            }
+            $severity = CeilingBlockClassifier::fromConfig()->classify(
+                (int) $decision['effective_margin_bps'],
+                $cashPence,
+                $currentMarginBps,
+                $ruleForFault,
+            );
             $blockLabel = sprintf(
                 '%s, cash £%s',
                 CeilingBlockClassifier::label($severity),
@@ -216,6 +232,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
                 $ceilingBps,
                 $severity,
                 $cashPence,
+                $currentMarginBps,
             );
 
             return;
@@ -316,6 +333,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         int $ceilingBps,
         string $severity = CeilingBlockClassifier::REVIEW,
         int $cashUpliftPence = 0,
+        ?int $currentMarginBps = null,
     ): void {
         $evidence = [
             'sku' => $sku,
@@ -329,6 +347,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             // queue. Legacy rows without these keys are classified on read.
             'severity' => $severity,
             'cash_uplift_pence' => $cashUpliftPence,
+            'current_margin_bps' => $currentMarginBps,
             'blocked_at' => now()->toIso8601String(),
         ];
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Pricing\Services\CeilingBlockClassifier;
+use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use Symfony\Component\Console\Command\Command as SymfonyCommand;
@@ -55,16 +56,42 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
         {--min-cash=0 : Only show blocks worth at least this many pounds per unit}
         {--published-only : Only products currently live on the storefront}
         {--limit=25 : Rows to print (0 = all)}
-        {--severity= : Only this severity (data_fault|review|noise|no_upside)}
+        {--severity= : Only this severity (cost_fault|competitor_fault|review|noise|no_upside). data_fault is accepted and matches BOTH fault types, including legacy rows.}
         {--include-noise : Also show noise and no-upside blocks (hidden by default)}';
 
     protected $description = 'READ-ONLY review of margin-ceiling blocks ranked by cash opportunity, with a threshold table for setting guard policy (260825-t4m).';
+
+    public function __construct(private readonly RuleResolver $resolver)
+    {
+        parent::__construct();
+    }
+
+    /**
+     * The margin a product's rules WOULD give it, or null when nothing
+     * matches. Used only to exempt a deliberately-pinned line from being
+     * called a cost fault — never to change a price.
+     */
+    private function ruleMarginFor(Product $product): ?int
+    {
+        try {
+            return (int) $this->resolver->resolve($product)->marginBasisPoints;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
 
     protected function perform(): int
     {
         $since = (string) $this->option('since');
         $minCash = (float) $this->option('min-cash');
         $severityFilter = (string) $this->option('severity');
+        // 260825-z8q — data_fault predates the cost/competitor split. Existing
+        // runbooks pass it, so it is kept as an ALIAS matching both new types
+        // plus any legacy row that could not be attributed. Failing here would
+        // break a command an operator already has in their history.
+        $severityMatches = $severityFilter === CeilingBlockClassifier::DATA_FAULT
+            ? CeilingBlockClassifier::FAULT_SEVERITIES
+            : ($severityFilter === '' ? [] : [$severityFilter]);
         $includeNoise = (bool) $this->option('include-noise') || $severityFilter !== '';
         $classifier = CeilingBlockClassifier::fromConfig();
         $suppressed = 0;
@@ -130,10 +157,24 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
                 ? (int) $evidence['cash_uplift_pence']
                 : (int) round((($proposed - $current) / $vatDivisor));
 
-            $severity = (string) ($evidence['severity'] ?? $classifier->classify($marginBps, $cashPence));
+            // Our own cost-to-price relationship TODAY — the discriminator
+            // between a broken cost and a broken competitor row.
+            $currentMarginBps = array_key_exists('current_margin_bps', $evidence)
+                && $evidence['current_margin_bps'] !== null
+                ? (int) $evidence['current_margin_bps']
+                : CeilingBlockClassifier::currentMarginBps($cost, $current, $vatBps);
+
+            $stored = (string) ($evidence['severity'] ?? '');
+
+            // A stored data_fault is UNREFINED, not final: it was recorded
+            // before the split existed. Re-classify it so the 37 faults
+            // already on file split into the two piles with opposite fixes.
+            $severity = ($stored === '' || $stored === CeilingBlockClassifier::DATA_FAULT)
+                ? $classifier->classify($marginBps, $cashPence, $currentMarginBps, $this->ruleMarginFor($product))
+                : $stored;
             $severityCounts[$severity] = ($severityCounts[$severity] ?? 0) + 1;
 
-            if ($severityFilter !== '' && $severity !== $severityFilter) {
+            if ($severityMatches !== [] && ! in_array($severity, $severityMatches, true)) {
                 $skipped++;
 
                 continue;
@@ -156,6 +197,7 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
                 'current' => $current,
                 'proposed' => $proposed,
                 'margin_bps' => $marginBps,
+                'current_margin_bps' => $currentMarginBps,
                 'cash' => $cashPence,
                 'blocked_at' => $blockedAt,
             ];
@@ -231,13 +273,14 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
 
         $this->newLine();
         $this->table(
-            ['SKU', 'Severity', 'Status', 'Cost', 'Now', 'Competitor-led', 'Margin', 'Cash/unit', 'Blocked'],
+            ['SKU', 'Severity', 'Status', 'Cost', 'Now', 'Our margin', 'Competitor-led', 'Margin', 'Cash/unit', 'Blocked'],
             array_map(static fn (array $r): array => [
                 $r['sku'],
                 CeilingBlockClassifier::label((string) ($r['severity'] ?? CeilingBlockClassifier::REVIEW)),
                 $r['status'],
                 number_format($r['cost'] / 100, 2),
                 number_format($r['current'] / 100, 2),
+                $r['current_margin_bps'] === null ? '-' : number_format($r['current_margin_bps'] / 100, 1).'%',
                 number_format($r['proposed'] / 100, 2),
                 number_format($r['margin_bps'] / 100, 1).'%',
                 '£'.number_format($r['cash'] / 100, 2),
@@ -267,7 +310,7 @@ final class ReviewCeilingBlocksCommand extends BaseCommand
             // Emitted as a LINE, not only as a table column: this is the
             // headline an operator reads, and it makes the triage assertable.
             $parts = [];
-            foreach ([CeilingBlockClassifier::DATA_FAULT, CeilingBlockClassifier::REVIEW, CeilingBlockClassifier::NOISE, CeilingBlockClassifier::NO_UPSIDE] as $sev) {
+            foreach ([CeilingBlockClassifier::COST_FAULT, CeilingBlockClassifier::COMPETITOR_FAULT, CeilingBlockClassifier::DATA_FAULT, CeilingBlockClassifier::REVIEW, CeilingBlockClassifier::NOISE, CeilingBlockClassifier::NO_UPSIDE] as $sev) {
                 $parts[] = ($severityCounts[$sev] ?? 0).' '.CeilingBlockClassifier::label($sev);
             }
             $this->line('  Severity: '.implode(', ', $parts));

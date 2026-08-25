@@ -152,12 +152,15 @@ it('hides noise from the default view but still records it', function (): void {
         ->assertExitCode(0);
 });
 
-it('always shows a data fault, even though it is not an opportunity', function (): void {
+it('always shows a fault, even though it is not an opportunity', function (): void {
     // CP4's shape: a huge margin against a cost that belongs to another part.
+    // Since 260825-z8q this attributes to COST FAULT rather than the generic
+    // label — our price agrees with the competitor's, so the cost is the
+    // outlier. The point of the test is unchanged: faults are never hidden.
     ceilingBlock('CP4', 24.96, 1517.99, 1748.39, 573730);
 
     $this->artisan('pricing:review-ceiling-blocks')
-        ->expectsOutputToContain('1 DATA FAULT')
+        ->expectsOutputToContain('1 COST FAULT')
         ->assertExitCode(0);
 });
 
@@ -188,5 +191,76 @@ it('classifies a legacy row that predates the severity key', function (): void {
 
     $this->artisan('pricing:review-ceiling-blocks')
         ->expectsOutputToContain('LEGACY')
+        ->assertExitCode(0);
+});
+
+// ── 260825-z8q — cost fault vs competitor fault, end to end ───────────────
+
+it('splits a legacy data_fault row into a cost fault on read', function (): void {
+    // CP4 as stored BEFORE the split: severity=data_fault, no current_margin_bps.
+    $s = ceilingBlock('CP4', 24.96, 1517.99, 1748.39, 573730);
+    $e = (array) $s->evidence;
+    $e['severity'] = CeilingBlockClassifier::DATA_FAULT;
+    unset($e['current_margin_bps']);
+    $s->forceFill(['evidence' => $e])->save();
+
+    // Re-derived from the product, not trusted from the row.
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('1 COST FAULT')
+        ->assertExitCode(0);
+});
+
+it('splits a legacy data_fault row into a competitor fault on read', function (): void {
+    // 92L53AA#ABU: our 22% is textbook default tier; their 622% is not.
+    $s = ceilingBlock('92L53AA#ABU', 667.19, 976.77, 5781.30, 62210);
+    $e = (array) $s->evidence;
+    $e['severity'] = CeilingBlockClassifier::DATA_FAULT;
+    unset($e['current_margin_bps']);
+    $s->forceFill(['evidence' => $e])->save();
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('1 competitor fault')
+        ->assertExitCode(0);
+});
+
+it('keeps a high-cash 50-100% block as review after the split', function (): void {
+    ceilingBlock('FW-98BZ30L', 3209.11, 5149.68, 6756.91, 7550);
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->expectsOutputToContain('1 review')
+        ->assertExitCode(0);
+});
+
+it('still hides no-upside blocks by default after the split', function (): void {
+    ceilingBlock('ALREADY-THERE', 100.00, 400.00, 400.00, 6000);
+
+    $this->artisan('pricing:review-ceiling-blocks')
+        ->doesntExpectOutputToContain('ALREADY-THERE')
+        ->expectsOutputToContain('hidden')
+        ->assertExitCode(0);
+});
+
+it('accepts --severity=data_fault as an alias for BOTH fault types', function (): void {
+    // Documented compatibility: operators already have this in their history,
+    // so it matches cost_fault, competitor_fault and any unattributed legacy row
+    // rather than failing or silently returning nothing.
+    ceilingBlock('CP4', 24.96, 1517.99, 1748.39, 573730);
+    ceilingBlock('92L53AA#ABU', 667.19, 976.77, 5781.30, 62210);
+    ceilingBlock('FW-98BZ30L', 3209.11, 5149.68, 6756.91, 7550);
+
+    $this->artisan('pricing:review-ceiling-blocks --severity=data_fault')
+        ->expectsOutputToContain('CP4')
+        ->expectsOutputToContain('92L53AA#ABU')
+        ->doesntExpectOutputToContain('FW-98BZ30L')
+        ->assertExitCode(0);
+});
+
+it('can filter to cost faults alone, which is the fixable pile', function (): void {
+    ceilingBlock('CP4', 24.96, 1517.99, 1748.39, 573730);
+    ceilingBlock('92L53AA#ABU', 667.19, 976.77, 5781.30, 62210);
+
+    $this->artisan('pricing:review-ceiling-blocks --severity=cost_fault')
+        ->expectsOutputToContain('CP4')
+        ->doesntExpectOutputToContain('92L53AA#ABU')
         ->assertExitCode(0);
 });

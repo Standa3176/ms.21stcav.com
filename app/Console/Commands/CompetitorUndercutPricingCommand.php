@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
@@ -305,6 +306,15 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
         $latestPerCompetitor = [];
         foreach ($rows as $row) {
             $cid = (int) $row->competitor_id;
+
+            // 260825-h2r — SKU homonym. CP4 is a Unicol/AVM ceiling mount here
+            // and a Crestron control processor at AVITDirect; both feeds are
+            // right about their own product. Excluded rows are dropped BEFORE
+            // the lowest-price pick, so they cannot set or floor a price.
+            if (CompetitorMatchExclusion::excludes($cid, $sku)) {
+                continue;
+            }
+
             if (! array_key_exists($cid, $latestPerCompetitor)) {
                 $latestPerCompetitor[$cid] = (int) $row->price_pennies_gross; // first seen = latest (desc sort)
             }

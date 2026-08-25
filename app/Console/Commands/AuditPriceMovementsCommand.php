@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
 use App\Domain\Pricing\Services\CompetitorUndercutPricer;
@@ -298,6 +299,14 @@ final class AuditPriceMovementsCommand extends BaseCommand
         $latest = [];
         foreach ($rows as $row) {
             $cid = (int) $row->competitor_id;
+
+            // Must mirror the pricing command exactly (260825-h2r): an audit
+            // that still counted an excluded competitor would report branch
+            // drift on every product the exclusion covers.
+            if (CompetitorMatchExclusion::excludes($cid, $sku)) {
+                continue;
+            }
+
             if (! array_key_exists($cid, $latest)) {
                 $latest[$cid] = (int) $row->price_pennies_gross;
             }

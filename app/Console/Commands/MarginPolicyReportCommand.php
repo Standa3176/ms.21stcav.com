@@ -8,6 +8,7 @@ use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Services\CeilingBlockClassifier;
+use App\Domain\Pricing\Services\CompetitorUndercutPricer;
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
@@ -79,10 +80,14 @@ final class MarginPolicyReportCommand extends BaseCommand
 
     private string $groupBy = 'auto';
 
+    /** True once competitor data has been read, so branch is known per product. */
+    private bool $branchesKnown = false;
+
     public function __construct(
         private readonly RuleResolver $resolver,
         private readonly PriceCalculator $calculator,
         private readonly TaxonomyResolver $taxonomy,
+        private readonly CompetitorUndercutPricer $pricer,
     ) {
         parent::__construct();
     }
@@ -106,6 +111,7 @@ final class MarginPolicyReportCommand extends BaseCommand
         }
 
         $this->brandNames = $this->loadBrandNames();
+        $this->branchesKnown = $withCompetitor;
 
         if (! $csv) {
             $this->info('Margin policy evidence — READ-ONLY. Nothing is written and no rule changes.');
@@ -254,6 +260,7 @@ final class MarginPolicyReportCommand extends BaseCommand
                 'competitor_margins' => [],
                 'examples' => [],
                 'sub' => [],
+                'branches' => [],
             ];
         }
 
@@ -262,7 +269,40 @@ final class MarginPolicyReportCommand extends BaseCommand
         if ($ruleBps !== null) {
             $g['rule_margins'][] = $ruleBps;
         }
-        $g['products'][] = ['buy' => $buy, 'sell' => $sell, 'sku' => (string) $product->sku];
+        // 260825-mpr follow-up — WHICH BRANCH prices this product today?
+        // A rule margin is only consulted on the `margin` branch: a product
+        // with a live competitor is priced by undercut or by the floor, and
+        // changing its rule moves nothing. Counting those in rule impact is
+        // what made the first run's Net GBP an overstatement.
+        //
+        // Classified by CompetitorUndercutPricer itself, not a local copy of
+        // its logic, so this cannot drift from what the pricing run does.
+        $branch = null;
+        if ($withCompetitor) {
+            $lowest = $this->lowestCompetitorGross((string) $product->sku, $cutoff);
+            $branch = (string) $this->pricer->decide(
+                $buy,
+                $lowest,
+                $ruleBps ?? 0,
+                (int) config('competitor.beat_by_pennies', 1),
+                (int) config('competitor.min_margin_floor_bps', 600),
+                $vatBps,
+            )['source'];
+
+            $g['branches'][$branch] = ($g['branches'][$branch] ?? 0) + 1;
+
+            if ($lowest !== null && $buy > 0) {
+                $compExVat = (int) round($lowest / (1 + ($vatBps / 10000)));
+                $g['competitor_margins'][] = (int) round((($compExVat - $buy) / $buy) * 10000);
+            }
+        }
+
+        $g['products'][] = [
+            'buy' => $buy,
+            'sell' => $sell,
+            'sku' => (string) $product->sku,
+            'branch' => $branch,
+        ];
 
         (string) $product->status === 'publish' ? $g['published']++ : $g['unpublished']++;
         if (array_key_exists((int) $product->id, $held)) {
@@ -288,13 +328,6 @@ final class MarginPolicyReportCommand extends BaseCommand
             $g['sub'][$prefix][] = $currentBps;
         }
 
-        if ($withCompetitor) {
-            $comp = $this->lowestCompetitorGross((string) $product->sku, $cutoff);
-            if ($comp !== null && $buy > 0) {
-                $compExVat = (int) round($comp / (1 + ($vatBps / 10000)));
-                $g['competitor_margins'][] = (int) round((($compExVat - $buy) / $buy) * 10000);
-            }
-        }
     }
 
     /**
@@ -390,7 +423,11 @@ final class MarginPolicyReportCommand extends BaseCommand
             // a price the floor would refuse to set.
             $proposed = max((int) (round($median / 50) * 50), $floorBps);
 
-            [$netDelta, $material, $up, $down] = $this->impact($g['products'], $proposed, $vatBps);
+            // Rule impact over RULE-LED products only. Without --with-competitor
+            // the branch is unknown and every product is counted, which is why
+            // the total is labelled an UPPER BOUND in that mode.
+            [$netDelta, $material, $up, $down, $ruleLed, $compLed] =
+                $this->impact($g['products'], $proposed, $vatBps);
 
             $rows[] = [
                 'key' => $g['key'],
@@ -404,6 +441,9 @@ final class MarginPolicyReportCommand extends BaseCommand
                 'rule_bps' => $ruleMedian,
                 'proposed_bps' => $proposed,
                 'net_delta' => $netDelta,
+                'rule_led' => $ruleLed,
+                'competitor_led' => $compLed,
+                'branches' => $g['branches'],
                 'material' => $material,
                 'up' => $up,
                 'down' => $down,
@@ -482,8 +522,13 @@ final class MarginPolicyReportCommand extends BaseCommand
     }
 
     /**
+     * A rule margin is consulted ONLY on the `margin` branch. A product with a
+     * live competitor is priced by undercut or by the floor, so changing its
+     * rule moves nothing — counting it inflates the figure a commercial
+     * conversation would be built on.
+     *
      * @param  array<int, array<string, mixed>>  $products
-     * @return array{0: int, 1: int, 2: int, 3: int}
+     * @return array{0: int, 1: int, 2: int, 3: int, 4: int, 5: int}
      */
     private function impact(array $products, int $proposedBps, int $vatBps): array
     {
@@ -491,8 +536,19 @@ final class MarginPolicyReportCommand extends BaseCommand
         $material = 0;
         $up = 0;
         $down = 0;
+        $ruleLed = 0;
+        $compLed = 0;
 
         foreach ($products as $p) {
+            $branch = $p['branch'] ?? null;
+
+            if ($branch !== null && $branch !== 'margin') {
+                $compLed++;
+
+                continue;   // competitor-led: a rule change cannot reach it
+            }
+
+            $ruleLed++;
             $new = $this->calculator->compute((int) $p['buy'], $proposedBps, $vatBps);
             $delta = $new - (int) $p['sell'];
             $net += $delta;
@@ -503,7 +559,7 @@ final class MarginPolicyReportCommand extends BaseCommand
             }
         }
 
-        return [$net, $material, $up, $down];
+        return [$net, $material, $up, $down, $ruleLed, $compLed];
     }
 
     private function confidence(int $count, int $spreadBps): string
@@ -570,6 +626,15 @@ final class MarginPolicyReportCommand extends BaseCommand
         ));
 
         $this->info('── HEADLINE ──');
+
+        if (! $this->branchesKnown) {
+            $this->warn('  Net £ figures below are an UPPER BOUND — re-run with --with-competitor.');
+            $this->line('  A rule margin is consulted ONLY on the `margin` branch. A product with');
+            $this->line('  a live competitor is priced by undercut or by the floor, so changing');
+            $this->line('  its rule moves NOTHING. Without competitor data every product is');
+            $this->line('  counted, which overstates any group the market is already pricing.');
+            $this->newLine();
+        }
         $this->line(sprintf(
             '  %d of %d groups already sit within 1pp of their tier.',
             $tierConsistent,
@@ -590,7 +655,7 @@ final class MarginPolicyReportCommand extends BaseCommand
         $this->newLine();
 
         $this->table(
-            ['Pri', 'Group', 'N', 'Pub', 'Unpub', 'Held', 'Median', 'Spread', 'Rule', 'Proposed', 'Net £', 'Moves', 'Conf', 'Rule type'],
+            ['Pri', 'Group', 'N', 'Pub', 'Unpub', 'Held', 'Median', 'Spread', 'Rule', 'Proposed', 'Rule-led', 'Comp-led', 'Net £', 'Moves', 'Conf', 'Rule type'],
             array_map(fn (array $r): array => [
                 (string) $r['priority'],
                 substr($r['key'], 0, 26),
@@ -602,6 +667,8 @@ final class MarginPolicyReportCommand extends BaseCommand
                 $this->pct($r['spread_bps']),
                 $r['rule_bps'] === null ? '-' : $this->pct($r['rule_bps']),
                 $this->pct($r['proposed_bps']),
+                (string) $r['rule_led'],
+                $r['competitor_led'] > 0 ? (string) $r['competitor_led'] : '',
                 number_format($r['net_delta'] / 100, 0),
                 sprintf('%d (%d up %d dn)', $r['material'], $r['up'], $r['down']),
                 $r['confidence'],
@@ -735,7 +802,7 @@ final class MarginPolicyReportCommand extends BaseCommand
 
         $this->newLine();
         $this->table(
-            ['SKU', 'Status', 'Cost', 'Price', 'Margin', 'Its rule', 'Competitor', 'At proposed', 'Held'],
+            ['SKU', 'Status', 'Cost', 'Price', 'Margin', 'Its rule', 'Competitor', 'Branch', 'At proposed', 'Held'],
             array_map(function (array $r) use ($proposed, $vatBps): array {
                 $atProposed = $this->calculator->compute((int) $r['buy'], $proposed, $vatBps);
 
@@ -747,6 +814,7 @@ final class MarginPolicyReportCommand extends BaseCommand
                     $this->pct((int) $r['current_bps']),
                     $r['rule_bps'] === null ? '-' : $this->pct((int) $r['rule_bps']),
                     $r['competitor'] === null ? 'none' : number_format($r['competitor'] / 100, 2),
+                    $this->branchLabel($r),
                     number_format($atProposed / 100, 2),
                     $r['held'] ? 'yes' : '',
                 ];
@@ -825,7 +893,23 @@ final class MarginPolicyReportCommand extends BaseCommand
 
         $this->newLine();
         $this->line(sprintf('Scanned %d product(s) with a usable cost and price; %d group(s) above the size threshold.', $scanned, count($rows)));
-        $this->line(sprintf('Adopting EVERY proposal would move list price by £%s net.', number_format($net / 100, 2)));
+        $ruleLed = array_sum(array_map(static fn (array $r): int => (int) $r['rule_led'], $rows));
+        $compLed = array_sum(array_map(static fn (array $r): int => (int) $r['competitor_led'], $rows));
+
+        $this->line(sprintf(
+            'Adopting EVERY proposal would move list price by £%s net%s.',
+            number_format($net / 100, 2),
+            $this->branchesKnown ? '' : '   (UPPER BOUND — see above)',
+        ));
+
+        if ($this->branchesKnown) {
+            $this->line(sprintf(
+                '  %d product(s) are RULE-LED and would actually move; %d are COMPETITOR-LED',
+                $ruleLed,
+                $compLed,
+            ));
+            $this->line('  (undercut or floored), and a rule change cannot reach those at all.');
+        }
         $this->newLine();
         $this->line('Read a proposal as "what keeps today\'s prices roughly where they are".');
         $this->line('Whether a family SHOULD earn its historical margin is commercial — no query');
@@ -837,7 +921,7 @@ final class MarginPolicyReportCommand extends BaseCommand
      */
     private function emitCsv(array $rows): void
     {
-        $this->line('priority,group,basis,count,published,unpublished,held,median_pct,spread_pct,rule_pct,proposed_pct,net_delta_pounds,material_moves,up,down,competitor_median_pct,confidence,rule_type,reasons,examples');
+        $this->line('priority,group,basis,count,published,unpublished,held,median_pct,spread_pct,rule_pct,proposed_pct,rule_led,competitor_led,net_delta_pounds,material_moves,up,down,competitor_median_pct,confidence,rule_type,reasons,examples');
 
         foreach ($rows as $r) {
             $this->line(implode(',', [
@@ -852,6 +936,8 @@ final class MarginPolicyReportCommand extends BaseCommand
                 number_format($r['spread_bps'] / 100, 2, '.', ''),
                 $r['rule_bps'] === null ? '' : number_format($r['rule_bps'] / 100, 2, '.', ''),
                 number_format($r['proposed_bps'] / 100, 2, '.', ''),
+                $r['rule_led'],
+                $r['competitor_led'],
                 number_format($r['net_delta'] / 100, 2, '.', ''),
                 $r['material'],
                 $r['up'],
@@ -936,6 +1022,31 @@ final class MarginPolicyReportCommand extends BaseCommand
         sort($values);
 
         return (int) $values[(int) floor($p * (count($values) - 1))];
+    }
+
+    /**
+     * Which branch prices this product TODAY. Every C2G SKU came back
+     * `undercut`, sitting exactly 1p below its competitor, which settled in a
+     * single glance that 396% was never a margin decision at all.
+     *
+     * @param  array<string, mixed>  $r
+     */
+    private function branchLabel(array $r): string
+    {
+        $source = (string) $this->pricer->decide(
+            (int) $r['buy'],
+            $r['competitor'] === null ? null : (int) $r['competitor'],
+            (int) ($r['rule_bps'] ?? 0),
+            (int) config('competitor.beat_by_pennies', 1),
+            (int) config('competitor.min_margin_floor_bps', 600),
+            (int) config('pricing.vat_basis_points', 2000),
+        )['source'];
+
+        return match ($source) {
+            'competitor_undercut' => 'undercut',
+            'competitor_floor' => 'floored',
+            default => 'RULE-LED',
+        };
     }
 
     private function pct(int $bps): string

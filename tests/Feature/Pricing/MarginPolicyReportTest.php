@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Competitor\Models\Competitor;
+use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Products\Models\Product;
@@ -284,5 +286,66 @@ it('leads with the headline that most brands are already tier-consistent', funct
     $this->artisan('pricing:margin-policy-report --min-group=2')
         ->expectsOutputToContain('HEADLINE')
         ->expectsOutputToContain('already sit within 1pp of their tier')
+        ->assertExitCode(0);
+});
+
+// ── impact must not count products the market already prices ──────────────
+
+it('excludes competitor-led products from rule impact', function (): void {
+    // The C2G lesson generalised: a rule margin is consulted ONLY on the margin
+    // branch. A product sitting 1p under a competitor is priced by undercut, and
+    // changing its rule moves nothing — counting it inflates the figure a
+    // commercial conversation would be built on.
+    $competitor = Competitor::factory()->create(['name' => 'AVITDirect']);
+
+    $undercut = policyProduct('UNDERCUT-1', 1.62, 15.33);
+    CompetitorPrice::factory()->create([
+        'competitor_id' => $competitor->id,
+        'sku' => 'UNDERCUT-1',
+        'price_pennies_gross' => 1534,
+        'recorded_at' => now()->subDay(),
+        'is_price_anomaly' => false,
+    ]);
+
+    // No competitor at all — this one IS rule-led.
+    policyProduct('RULELED-1', 100.00, 500.00);
+
+    // Without competitor data the report cannot tell, so it counts both and
+    // says so.
+    $this->artisan('pricing:margin-policy-report --min-group=1')
+        ->expectsOutputToContain('UPPER BOUND')
+        ->assertExitCode(0);
+
+    // With it, the undercut product is excluded from rule impact.
+    $this->artisan('pricing:margin-policy-report --min-group=1 --with-competitor')
+        ->expectsOutputToContain('RULE-LED and would actually move')
+        ->doesntExpectOutputToContain('UPPER BOUND')
+        ->assertExitCode(0);
+});
+
+it('labels each product branch in the detail view', function (): void {
+    // What settled C2G in one glance: every row read `undercut`, sitting exactly
+    // 1p below its competitor, so 396% was never a margin decision.
+    $competitor = Competitor::factory()->create(['name' => 'AVITDirect']);
+
+    policyProduct('88501', 1.62, 15.33, ['brand_id' => 4242]);
+    CompetitorPrice::factory()->create([
+        'competitor_id' => $competitor->id,
+        'sku' => '88501',
+        'price_pennies_gross' => 1534,
+        'recorded_at' => now()->subDay(),
+        'is_price_anomaly' => false,
+    ]);
+
+    $this->artisan('pricing:margin-policy-report --detail=brand:#4242')
+        ->expectsOutputToContain('undercut')
+        ->assertExitCode(0);
+});
+
+it('still calls a product with no competitor rule-led', function (): void {
+    policyProduct('ALONE-1', 100.00, 162.00, ['brand_id' => 4243]);
+
+    $this->artisan('pricing:margin-policy-report --detail=brand:#4243')
+        ->expectsOutputToContain('RULE-LED')
         ->assertExitCode(0);
 });

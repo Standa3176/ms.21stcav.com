@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
 use App\Domain\Pricing\Events\ProductPriceChanged;
@@ -304,6 +305,7 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             return null;
         }
 
+        $paused = Competitor::pausedIds();
         $latestPerCompetitor = [];
         foreach ($rows as $row) {
             $cid = (int) $row->competitor_id;
@@ -312,6 +314,14 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
             // and a Crestron control processor at AVITDirect; both feeds are
             // right about their own product. Excluded rows are dropped BEFORE
             // the lowest-price pick, so they cannot set or floor a price.
+            // 260826-cpp - a competitor paused for pricing is skipped whole.
+            // screenmoove went silent on 2026-07-19 holding 65% of all rows;
+            // age already excludes it, but a pause is what stops five-week-old
+            // prices snapping back the instant the feed is repaired.
+            if (array_key_exists($cid, $paused)) {
+                continue;
+            }
+
             if (CompetitorMatchExclusion::excludes($cid, $sku)) {
                 continue;
             }

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Cache;
 use Spatie\Activitylog\LogOptions;
 use Spatie\Activitylog\Traits\LogsActivity;
 
@@ -44,12 +45,55 @@ final class Competitor extends Model
         'status',
         'is_active',
         'last_ingest_at',
+        'pricing_paused_until',
+        'pricing_pause_reason',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'last_ingest_at' => 'datetime',
+        'pricing_paused_until' => 'date',
     ];
+
+    /**
+     * 260826-cpp - is this competitor barred from pricing right now?
+     *
+     * A DATE, not a flag. Every temporary measure in this system that relied
+     * on being remembered is still here; this one ends by itself, so the
+     * failure mode is 'protection lapses' rather than 'competitor silently
+     * ignored forever'.
+     */
+    public function pricingPaused(): bool
+    {
+        return $this->pricing_paused_until !== null
+            && $this->pricing_paused_until->endOfDay()->greaterThanOrEqualTo(now());
+    }
+
+    /**
+     * Ids barred from pricing today. Cached briefly - consulted once per
+     * product across a 6,000-product run, and it changes only when an operator
+     * pauses or a pause expires.
+     *
+     * @return array<int, true>
+     */
+    public static function pausedIds(): array
+    {
+        try {
+            return Cache::remember(
+                'competitor.pricing_paused_ids.'.now()->toDateString(),
+                300,
+                static fn (): array => self::query()
+                    ->whereNotNull('pricing_paused_until')
+                    ->whereDate('pricing_paused_until', '>=', now()->toDateString())
+                    ->pluck('id')
+                    ->mapWithKeys(static fn ($id): array => [(int) $id => true])
+                    ->all(),
+            );
+        } catch (\Throwable) {
+            // A cache failure must never break a pricing run.
+            return [];
+        }
+    }
 
     public function prices(): HasMany
     {

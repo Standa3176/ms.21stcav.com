@@ -135,3 +135,64 @@ it('reports a clean sample without printing a table of nothing', function (): vo
         ->expectsOutputToContain('No pricing-contract violations in the sample.')
         ->assertExitCode(0);
 });
+
+// ── a cost that moves AFTER pricing is not a breach ───────────────────────
+
+it('does not fail a price that was correct when it was set', function (): void {
+    // RXV200-B20 on 2026-08-27: priced at the floor from a £1,419.55 cost, then
+    // the cost rose 86p before the snapshot, leaving it £1.09 "short" of a floor
+    // that did not exist when the price was set. 75UL3Q-E was 40p short the same
+    // way a week earlier. This report runs DAILY and exits non-zero — a monitor
+    // that cries wolf most mornings is one nobody reads by the second week.
+    $product = Product::factory()->create([
+        'sku' => 'RXV200-B20',
+        'buy_price' => 1420.41,
+        'sell_price' => 1805.67,
+        'status' => 'pending',
+    ]);
+
+    // Yesterday: cost 1,419.55 — the price WAS at the floor then.
+    ProductPriceSnapshot::create([
+        'product_id' => $product->id, 'sku' => 'RXV200-B20', 'woo_status' => 'pending',
+        'buy_price' => 1419.55, 'sell_price' => 1807.36, 'stock_quantity' => 1,
+        'recorded_at' => now()->subDay()->toDateString(),
+    ]);
+
+    // Today: cost has risen, price unchanged.
+    ProductPriceSnapshot::create([
+        'product_id' => $product->id, 'sku' => 'RXV200-B20', 'woo_status' => 'pending',
+        'buy_price' => 1420.41, 'sell_price' => 1805.67, 'stock_quantity' => 1,
+        'recorded_at' => now()->toDateString(),
+    ]);
+
+    $this->artisan('pricing:audit-movements')
+        ->expectsOutputToContain('cost moved')
+        ->expectsOutputToContain('PASS')
+        ->assertExitCode(0);
+});
+
+it('still fails a price that was below the floor on BOTH days', function (): void {
+    // The real fault the check exists for: wrong when set, and still wrong now.
+    // Relaxing the timing case must not relax this one.
+    $product = Product::factory()->create([
+        'sku' => 'GENUINE-BREACH',
+        'buy_price' => 100.00,
+        'sell_price' => 120.00,
+        'status' => 'publish',
+    ]);
+
+    foreach ([now()->subDay(), now()] as $day) {
+        ProductPriceSnapshot::create([
+            'product_id' => $product->id, 'sku' => 'GENUINE-BREACH', 'woo_status' => 'publish',
+            'buy_price' => 100.00,
+            'sell_price' => $day->isToday() ? 120.00 : 150.00,
+            'stock_quantity' => 1,
+            'recorded_at' => $day->toDateString(),
+        ]);
+    }
+
+    $this->artisan('pricing:audit-movements')
+        ->expectsOutputToContain('BELOW FLOOR')
+        ->expectsOutputToContain('FAIL')
+        ->assertExitCode(1);
+});

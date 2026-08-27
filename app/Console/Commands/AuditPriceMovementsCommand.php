@@ -127,6 +127,7 @@ final class AuditPriceMovementsCommand extends BaseCommand
         $stats = [
             'floor_breach' => 0, 'below_cost' => 0, 'over_ceiling' => 0,
             'matched' => 0, 'branch_drift' => 0, 'no_cost' => 0, 'no_rule' => 0,
+            'cost_moved' => 0,
         ];
         $problems = [];
         $rows = [];
@@ -156,13 +157,33 @@ final class AuditPriceMovementsCommand extends BaseCommand
             $sellExVat = $this->calculator->stripVat($sell, $vatBps);
             $actualBps = $buy > 0 ? intdiv(($sellExVat - $buy) * 10000, $buy) : 0;
 
+            // A price is set at 08:00 from the cost as it then stood; this
+            // snapshot's cost is captured later. A cost that moves in between
+            // shows as a breach that never happened — RXV200-B20 on 2026-08-27
+            // was GBP 1.09 'short' because its cost rose 86p after pricing, and
+            // 75UL3Q-E was 40p short for the same reason a week earlier.
+            //
+            // So a breach must fail against the PREVIOUS day's cost too. Only
+            // then was the price wrong when it was actually set. This report is
+            // scheduled daily and exits non-zero, and a monitor that cries wolf
+            // most mornings is one nobody reads by the second week.
+            $buyPrev = (int) round(((float) $old->buy_price) * 100);
+            $floorPrev = $buyPrev > 0
+                ? $this->calculator->compute($buyPrev, $minFloorBps, $vatBps)
+                : $floor;
+
             $verdict = 'ok';
             if ($sellExVat < $buy) {
                 $stats['below_cost']++;
                 $verdict = 'BELOW COST';
-            } elseif ($sell < $floor) {
+            } elseif ($sell < $floor && $sell < $floorPrev) {
                 $stats['floor_breach']++;
                 $verdict = 'BELOW FLOOR';
+            } elseif ($sell < $floor) {
+                // Under today's floor but not yesterday's: the cost moved after
+                // the price was set. Reported, never failed.
+                $stats['cost_moved']++;
+                $verdict = 'cost moved';
             } elseif ($actualBps > $ceilingBps) {
                 $stats['over_ceiling']++;
                 $verdict = 'over ceiling';
@@ -365,6 +386,15 @@ final class AuditPriceMovementsCommand extends BaseCommand
             $stats['floor_breach'],
             $stats['over_ceiling'],
         ));
+
+        if ($stats['cost_moved'] > 0) {
+            $this->line(sprintf(
+                '  Timing:       %d priced correctly then had their COST move afterwards —',
+                $stats['cost_moved'],
+            ));
+            $this->line('                under the floor today but not the floor that applied when the');
+            $this->line('                price was set. Not a fault; they self-correct at the next run.');
+        }
         $this->line(sprintf(
             '  Branch check: %d reproduce exactly, %d differ (INFORMATIONAL — competitor prices are',
             $stats['matched'],

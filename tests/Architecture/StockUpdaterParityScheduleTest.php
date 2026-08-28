@@ -85,6 +85,13 @@ it('registers pricing:audit-movements daily at 09:35 Europe/London', function ()
     expectScheduled('pricing:audit-movements', '35 9 * * *');
 });
 
+it('registers products:identity-health-check daily at 09:40 Europe/London', function (): void {
+    // The IDENTITY check. The three pricing jobs all ask whether the catalogue
+    // is priced right; none asks whether it describes real products. That gap
+    // is how ~2,242 fabricated barcodes stayed live for months.
+    expectScheduled('products:identity-health-check', '40 9 * * *');
+});
+
 it('registers pricing:review-ceiling-blocks weekly on Monday', function (): void {
     // Weekly, not daily: a review list to work through, not an alarm. Daily
     // would train people to skim it, and then to skim the alarms too.

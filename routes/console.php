@@ -658,6 +658,19 @@ Schedule::command('pricing:audit-movements --limit=250')
     ->timezone('Europe/London')
     ->description('260824-p3f — audit each day of sell_price movements against the pricing contract');
 
+// 09:40 — the IDENTITY question: do these products describe real things?
+// The two checks above both concern price. Nothing asked whether a product's
+// barcode, name and images identify anything, which is why ~2,242 fabricated
+// GTINs lived on the storefront for months and surfaced only because someone
+// went looking on 2026-08-27. Placed alongside the pricing pair so the whole
+// catalogue-health picture lands in one window.
+Schedule::command('products:identity-health-check')
+    ->dailyAt('09:40')
+    ->withoutOverlapping(30)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('260828-plk — product identity: fabricated, duplicate and malformed barcodes, placeholder names, thin galleries');
+
 // Monday 09:45 — the ceiling-block queue. Weekly, not daily: it is a review
 // list to work through, not an alarm, and daily would train people to skim it.
 Schedule::command('pricing:review-ceiling-blocks --limit=40')

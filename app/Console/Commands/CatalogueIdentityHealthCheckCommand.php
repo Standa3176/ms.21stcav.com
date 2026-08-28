@@ -262,12 +262,19 @@ final class CatalogueIdentityHealthCheckCommand extends BaseCommand
 
     /**
      * `6931850000000` is Hikvision's GS1 company prefix with the product code
-     * left as zeros. Requires ≥6 trailing zeros so genuine barcodes ending in a
-     * round number are not swept up.
+     * left as zeros.
+     *
+     * The zeros stop one short of the end: the LAST digit is the check digit,
+     * which is only 0 by coincidence. The first version of this required
+     * `0{6,}$` and so caught `4740100000000` but missed Vision's
+     * `4934292000003` — same padded shape, check digit 3 — which reached
+     * products.ean the day this command shipped. Match ≥5 zeros followed by any
+     * final digit instead. Real barcodes carry a product code in those
+     * positions, so `5099206131255` and `0698833028492` stay clear.
      */
     private function isPlaceholderGtin(string $gtin): bool
     {
-        return (bool) preg_match('/^\d{4,8}0{6,}$/', $gtin);
+        return (bool) preg_match('/^\d{4,8}0{5,}\d$/', $gtin);
     }
 
     /**

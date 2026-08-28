@@ -50,6 +50,27 @@ it('catches a GS1 company prefix padded out with zeros', function (): void {
         ->assertExitCode(1);
 });
 
+it('catches a padded prefix whose check digit is not zero', function (): void {
+    // Vision VFM-W4X4 arrived as 4934292000003 on the day this command shipped:
+    // prefix + five zeros + check digit 3. The first rule required six trailing
+    // zeros and so only caught placeholders whose check digit was 0 by luck.
+    identityProduct(['sku' => 'VFM-W4X4', 'ean' => '4934292000003']);
+
+    $this->artisan('products:identity-health-check --section=barcode')
+        ->expectsOutputToContain('PLACEHOLDER BARCODE')
+        ->assertExitCode(1);
+});
+
+it('does not mistake a real barcode ending in zeros for a padded prefix', function (): void {
+    // The widened rule must not start eating genuine GTINs. A real product code
+    // occupies the positions a placeholder leaves as zeros.
+    identityProduct(['sku' => 'REAL-1', 'ean' => '5099206131255']);
+    identityProduct(['sku' => 'REAL-2', 'ean' => '0698833028492']);
+
+    $this->artisan('products:identity-health-check --section=barcode')
+        ->assertExitCode(0);
+});
+
 it('catches one barcode shared by several products', function (): void {
     // Three Hikvision products shared 6936420000000. One GTIN on many products
     // is a feed-integrity problem, not three small errors.

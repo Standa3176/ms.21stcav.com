@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
@@ -118,7 +119,7 @@ it('path B: mappable spec + resolvable term → GLOBAL taxonomy attribute (id + 
         ->andReturn(['id' => 71001, 'slug' => 'global-attr-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver());
+        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver(), app(RuleResolver::class));
 
     expect($captured)->toBeArray();
 
@@ -172,7 +173,7 @@ it('path B: empty attributes_json → no `attributes` key sent (regression prese
         ->andReturn(['id' => 71002, 'slug' => 'bare-global-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver());
+        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: all-unmatched attributes_json → no `attributes` key sent', function (): void {
@@ -198,5 +199,5 @@ it('path B: all-unmatched attributes_json → no `attributes` key sent', functio
         ->andReturn(['id' => 71003, 'slug' => 'all-unmatched-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver());
+        ->handle($woo, new PriceCalculator, t3NoBrandsTaxonomy(), t3NoopBrandResolver(), t3NoStockResolver(), app(RuleResolver::class));
 });

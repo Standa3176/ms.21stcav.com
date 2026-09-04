@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Jobs\PublishProductJob;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
@@ -118,7 +120,7 @@ it('path A: PUTs status=publish (no leading slash) + flips published + fires eve
     $woo->shouldNotReceive('post');
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 7);
-    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     expect($product->auto_create_status)->toBe('published');
@@ -180,7 +182,7 @@ it('path B (#3b): creates the auto-draft on Woo + back-fills woo_product_id + pu
         ->andReturn(['id' => 90210, 'regular_price' => '120.00']);
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 3);
-    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     expect((int) $product->woo_product_id)->toBe(90210);
@@ -227,7 +229,7 @@ it('path B: split-write — price-PUT failure does NOT roll back the create', fu
         ->andThrow(new RuntimeException('Some random WC timeout'));
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     // Product IS published — the create succeeded.
@@ -255,7 +257,7 @@ it('shadow mode: path B does NOT mark published and fires no event (stays in rev
         ->andReturn(['shadow_mode' => true, 'diff_id' => 7]); // WOO_WRITE_ENABLED=false
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1);
-    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     expect($product->woo_product_id)->toBeNull();
@@ -335,7 +337,7 @@ it('path B: includes attributes[] in the WC POST when attributes_json is populat
         ->andReturn(['id' => 12345, 'slug' => 'spec-rich-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: includes global_unique_id when product has an EAN, omits the key when null', function (): void {
@@ -359,7 +361,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->andReturn(['id' => 1001, 'slug' => 'gtin-widget']);
 
     (new PublishProductJob(productId: (int) $withEan->id, publishedByUserId: 1))
-        ->handle($woo1, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo1, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     // Without EAN — must not include the key (Woo would otherwise store an empty GTIN).
     $withoutEan = Product::factory()->create([
@@ -379,7 +381,7 @@ it('path B: includes global_unique_id when product has an EAN, omits the key whe
         ->andReturn(['id' => 1002, 'slug' => 'no-gtin-widget']);
 
     (new PublishProductJob(productId: (int) $withoutEan->id, publishedByUserId: 1))
-        ->handle($woo2, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo2, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: retries WITHOUT global_unique_id when WC rejects EAN as duplicate', function (): void {
@@ -421,7 +423,7 @@ it('path B: retries WITHOUT global_unique_id when WC rejects EAN as duplicate', 
         ->andReturn(['id' => 9999, 'regular_price' => '30.00']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     expect((int) $product->woo_product_id)->toBe(9999);
@@ -452,7 +454,7 @@ it('path B: re-throws on unrelated errors instead of stripping EAN', function ()
 
     expect(function () use ($product, $woo): void {
         (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-            ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+            ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
     })->toThrow(RuntimeException::class);
 
     $product->refresh();
@@ -490,7 +492,7 @@ it('path B: NEVER includes brands payload key, even when brand_id is set', funct
         ->andReturn(['id' => 4321, 'slug' => 'branded-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping blanks', function (): void {
@@ -520,7 +522,7 @@ it('path B: pushes tags as [{name: ...}] from products.tags, deduping + dropping
         ->andReturn(['id' => 5555, 'slug' => 'tagged-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: omits tags payload key when products.tags is null or empty', function (): void {
@@ -543,7 +545,7 @@ it('path B: omits tags payload key when products.tags is null or empty', functio
         ->andReturn(['id' => 6666, 'slug' => 'untagged-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('path B: omits attributes payload key when attributes_json is null or empty (no empty Woo attributes)', function (): void {
@@ -570,7 +572,7 @@ it('path B: omits attributes payload key when attributes_json is null or empty (
         ->andReturn(['id' => 555, 'slug' => 'bare-widget']);
 
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
-        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
 
 it('shadow mode: path A does NOT mark published either', function (): void {
@@ -588,11 +590,122 @@ it('shadow mode: path A does NOT mark published either', function (): void {
         ->andReturn(['shadow_mode' => true, 'diff_id' => 8]);
 
     $job = new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1);
-    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver());
+    $job->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 
     $product->refresh();
     expect($product->auto_create_status)->toBe('approved'); // unchanged
     expect($product->status)->toBe('draft');
 
     Event::assertNotDispatched(ProductPublished::class);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 260904-r1h — publishing must RESOLVE the price, not forward the placeholder
+|--------------------------------------------------------------------------
+|
+| GenerateProductDraftsCommand:252 seeds sell_price from the supplier `rrp`
+| (else buy × 1.4) purely so a draft is never NULL, on the stated assumption
+| that "PriceCalculator tier rules can refine later". Nothing refined it before
+| publish, so drafts went LIVE carrying RRP — 23 of 23 in one batch on
+| 2026-08-28, the worst at £126.54 against a £34.26 market price.
+|
+| RRP is not merely approximate, it is arbitrary: the same MPN carries £36.00,
+| £233.00 and £126.54 across three supplier rows, and the winner is decided by
+| whichever supplier uploaded last.
+*/
+
+it('publishes at the rule price, not the supplier RRP carried on the draft', function (): void {
+    Event::fake();
+
+    PricingRule::factory()->defaultTier()->create([
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 2200,
+    ]);
+
+    // The 4807101 shape: £25.16 cost, and a draft carrying the supplier's
+    // £126.54 RRP. 22% on cost inc-VAT is £36.83 — the price that must ship.
+    $product = Product::factory()->create([
+        'sku' => 'RRP-PLACEHOLDER-1',
+        'name' => 'Privacy Filter',
+        'type' => 'simple',
+        'buy_price' => 25.16,
+        'sell_price' => 126.54,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+        'woo_product_id' => null,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')->once()
+        ->with('products', Mockery::on(fn (array $p): bool => ! array_key_exists('regular_price', $p)))
+        ->andReturn(['id' => 4321]);
+    $woo->shouldReceive('put')->once()
+        ->with('products/4321', ['regular_price' => '36.83'])
+        ->andReturn(['id' => 4321]);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
+});
+
+it('leaves a manually-priced product alone', function (): void {
+    // An operator price is a decision, not a placeholder. Only auto-created rows
+    // carry the RRP seed, so `manual` must pass straight through even when a
+    // rule would have produced something different.
+    Event::fake();
+
+    PricingRule::factory()->defaultTier()->create([
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 2200,
+    ]);
+
+    $product = Product::factory()->create([
+        'sku' => 'MANUAL-PRICED-1',
+        'name' => 'Operator Priced',
+        'type' => 'simple',
+        'buy_price' => 25.16,
+        'sell_price' => 99.00,
+        'auto_create_status' => 'manual',
+        'status' => 'draft',
+        'woo_product_id' => null,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')->once()->andReturn(['id' => 4322]);
+    $woo->shouldReceive('put')->once()
+        ->with('products/4322', ['regular_price' => '99.00'])
+        ->andReturn(['id' => 4322]);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
+});
+
+it('falls back to the stored price when there is no usable cost', function (): void {
+    // buy_price 0 means no rule can be applied. Blocking the publish would be
+    // worse than shipping the stored value, so the fallback must hold — this is
+    // also the case the 07:00 undercut run skips, so it is the one most likely
+    // to persist.
+    Event::fake();
+
+    $product = Product::factory()->create([
+        'sku' => 'NO-COST-1',
+        'name' => 'Zero Cost',
+        'type' => 'simple',
+        'buy_price' => 0,
+        'sell_price' => 252.00,
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+        'woo_product_id' => null,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')->once()->andReturn(['id' => 4323]);
+    $woo->shouldReceive('put')->once()
+        ->with('products/4323', ['regular_price' => '252.00'])
+        ->andReturn(['id' => 4323]);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });

@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Jobs;
 
+use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
+use App\Domain\Pricing\Exceptions\SupplierPriceUnusableException;
 use App\Domain\Pricing\Services\PriceCalculator;
+use App\Domain\Pricing\Services\RuleResolver;
 use App\Domain\ProductAutoCreate\Concerns\BuildsWooStockPayload;
 use App\Domain\ProductAutoCreate\Events\ProductPublished;
 use App\Domain\ProductAutoCreate\Services\ProductBrandTermResolver;
@@ -91,6 +94,7 @@ final class PublishProductJob implements ShouldQueue
         TaxonomyResolver $taxonomy,
         ProductBrandTermResolver $brandResolver,
         LiveSupplierStockResolver $stock,
+        RuleResolver $ruleResolver,
     ): void {
         $product = Product::findOrFail($this->productId);
 
@@ -126,7 +130,7 @@ final class PublishProductJob implements ShouldQueue
             }
         } else {
             // ── Path B (#3b) — create the auto-draft on Woo, published ───────
-            $payload = $this->buildCreatePayload($product, $calculator);
+            $payload = $this->buildCreatePayload($product, $calculator, $ruleResolver);
 
             // SPLIT WRITE — POST creates the product WITHOUT regular_price,
             // then a follow-up PUT sets the price in isolation. Why: the
@@ -321,7 +325,7 @@ final class PublishProductJob implements ShouldQueue
      *
      * @return array<string, mixed>
      */
-    private function buildCreatePayload(Product $product, PriceCalculator $calculator): array
+    private function buildCreatePayload(Product $product, PriceCalculator $calculator, RuleResolver $ruleResolver): array
     {
         $payload = [
             'name' => (string) $product->name,
@@ -349,8 +353,49 @@ final class PublishProductJob implements ShouldQueue
         }
 
         // sell_price is VAT-inclusive. Inc-VAT by default; ex-VAT when configured.
-        if ($product->sell_price !== null) {
+        //
+        // 260904-r1h — RESOLVE THE RULE, don't forward the placeholder.
+        // GenerateProductDraftsCommand:252 seeds sell_price from the supplier's
+        // `rrp` (falling back to buy × 1.4) purely so a draft is never NULL — its
+        // own comment says "PriceCalculator tier rules can refine later". Nothing
+        // did the refining before publish, so drafts went LIVE on RRP: 23 of 23 in
+        // one batch on 2026-08-28, worst at £126.54 against a £34.26 market. RRP is
+        // not merely approximate, it is arbitrary — the same MPN carries £36.00,
+        // £233.00 and £126.54 across three supplier rows, and which one wins is
+        // decided by whichever supplier uploaded last.
+        //
+        // CreateWooProductJob::computeSellPennies() has always done this correctly;
+        // this is the same call, so the two product-creating writers agree.
+        // Manual rows are left alone — an operator price is not a placeholder — and
+        // an unresolvable rule falls back to the stored value rather than blocking
+        // the publish.
+        $pennies = null;
+        $buyPennies = (int) round(((float) ($product->buy_price ?? 0)) * 100);
+
+        if ($product->auto_create_status !== 'manual' && $buyPennies > 0) {
+            try {
+                $pennies = $calculator->compute(
+                    $buyPennies,
+                    $ruleResolver->resolve($product)->marginBasisPoints,
+                );
+            } catch (NoPricingRuleMatchedException|SupplierPriceUnusableException) {
+                // Fall back to the stored value rather than blocking the publish.
+                // CreateWooProductJob lets NoPricingRuleMatched propagate to its
+                // retry chain, and that is right there — a draft nobody can price
+                // should not be created. Here the product already exists and an
+                // operator has asked for it to go live, so refusing would be a
+                // regression on a path that previously always succeeded. Only
+                // three rules exist, all default_tier, so a cost outside every
+                // tier range is a live possibility rather than a theoretical one.
+                $pennies = null;
+            }
+        }
+
+        if ($pennies === null && $product->sell_price !== null) {
             $pennies = (int) round(((float) $product->sell_price) * 100);
+        }
+
+        if ($pennies !== null) {
             if ($pennies > 0) {
                 $pennies = (bool) config('services.woo.push_prices_ex_vat', false)
                     ? $calculator->stripVat($pennies)

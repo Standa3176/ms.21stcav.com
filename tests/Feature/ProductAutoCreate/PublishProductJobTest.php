@@ -709,3 +709,74 @@ it('falls back to the stored price when there is no usable cost', function (): v
     (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
         ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
 });
+
+it('persists the resolved price locally so products.sell_price matches Woo', function (): void {
+    // 260905-w2n — 260904-r1h fixed what reaches Woo but left products.sell_price
+    // on the draft placeholder. Verified live 2026-09-05: three products went live
+    // at 1.90 / 5.90 / 1.70 while local still read 1.85 / 5.96 / 1.73.
+    //
+    // pricing:health-check reads the LOCAL value, so the divergence makes it judge
+    // a price customers never see.
+    Event::fake();
+
+    PricingRule::factory()->defaultTier()->create([
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 2200,
+    ]);
+
+    $product = Product::factory()->create([
+        'sku' => 'DIVERGENCE-1',
+        'name' => 'Divergent',
+        'type' => 'simple',
+        'buy_price' => 25.16,
+        'sell_price' => 126.54,   // the supplier RRP placeholder
+        'auto_create_status' => 'draft',
+        'status' => 'draft',
+        'woo_product_id' => null,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')->once()->andReturn(['id' => 7788]);
+    $woo->shouldReceive('put')->once()
+        ->with('products/7788', ['regular_price' => '36.83'])
+        ->andReturn(['id' => 7788]);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
+
+    // Local now agrees with what customers see.
+    expect((float) $product->fresh()->sell_price)->toBe(36.83);
+});
+
+it('does not touch sell_price on a manually-priced product', function (): void {
+    Event::fake();
+
+    PricingRule::factory()->defaultTier()->create([
+        'tier_min_pennies' => 0,
+        'tier_max_pennies' => null,
+        'margin_basis_points' => 2200,
+    ]);
+
+    $product = Product::factory()->create([
+        'sku' => 'MANUAL-KEEP-1',
+        'name' => 'Operator Priced',
+        'type' => 'simple',
+        'buy_price' => 25.16,
+        'sell_price' => 99.00,
+        'auto_create_status' => 'manual',
+        'status' => 'draft',
+        'woo_product_id' => null,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('post')->once()->andReturn(['id' => 7789]);
+    $woo->shouldReceive('put')->once()
+        ->with('products/7789', ['regular_price' => '99.00'])
+        ->andReturn(['id' => 7789]);
+
+    (new PublishProductJob(productId: (int) $product->id, publishedByUserId: 1))
+        ->handle($woo, new PriceCalculator, noBrandsTaxonomy(), noopBrandResolver(), noStockResolver(), app(RuleResolver::class));
+
+    expect((float) $product->fresh()->sell_price)->toBe(99.00);
+});

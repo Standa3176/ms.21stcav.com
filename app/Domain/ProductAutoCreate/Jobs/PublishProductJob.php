@@ -200,10 +200,32 @@ final class PublishProductJob implements ShouldQueue
             if ($newWooId > 0) {
                 // Live create: reconcile Woo id + the slug Woo actually assigned
                 // (it server-side de-duplicates colliding slugs).
-                $product->forceFill([
+                $reconciled = [
                     'woo_product_id' => $newWooId,
                     'slug' => (string) ($response['slug'] ?? $product->slug),
-                ])->saveQuietly();
+                ];
+
+                // 260905-w2n — persist the RESOLVED price too, or local and Woo
+                // diverge from the moment of publish. 260904-r1h made the Woo
+                // payload use the rule price, but products.sell_price kept the
+                // draft's RRP placeholder: on 2026-09-05 three products went live
+                // at 1.90 / 5.90 / 1.70 while the local rows still read
+                // 1.85 / 5.96 / 1.73.
+                //
+                // It matters because pricing:health-check reads products.sell_price,
+                // not Woo — so a product correctly live at £34.25 could be reported
+                // as a 319% suspect cost because local still said £126.54. A false
+                // alarm, but on precisely the products that check exists for. The
+                // 07:00 undercut run heals it, so the window is hours; this closes
+                // it at the source.
+                if ($this->priceIncVatPennies !== null && $this->priceIncVatPennies > 0) {
+                    $resolved = round($this->priceIncVatPennies / 100, 2);
+                    if ((float) ($product->sell_price ?? 0) !== $resolved) {
+                        $reconciled['sell_price'] = $resolved;
+                    }
+                }
+
+                $product->forceFill($reconciled)->saveQuietly();
                 $wooId = $newWooId;
 
                 // SPLIT-PUT step 2 — set regular_price now that the product

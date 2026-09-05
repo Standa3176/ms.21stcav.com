@@ -148,3 +148,52 @@ it('rejects a non-standard length (11 digits) even if mod-10 would pass', functi
     // 11 is not a real GTIN length (8/12/13/14 only) — reject regardless of checksum.
     expect($this->sut->isValidGtinChecksum('12345678901'))->toBeFalse();
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260905-ae5 — the gate that nothing on a write path was calling
+|--------------------------------------------------------------------------
+|
+| isValidGtinChecksum() has existed since 260726-egr, documented as "the
+| MISSING gate", and until now only READ paths used it. normaliseEan() checks
+| 8-14 digits and nothing else, so it accepted both fabrication shapes:
+| a zero-padded GS1 prefix, and a SKU with its letters stripped.
+*/
+
+it('rejects a padded GS1 prefix whose check digit is not zero', function (): void {
+    // Vision's VFM-W4X4 arrived as 4934292000003 — prefix + five zeros + check
+    // digit 3. A `0{6,}$` rule catches only the ones whose check digit is 0 by
+    // luck; it missed 6 of 11 real cases.
+    expect($this->sut->isPlaceholderGtin('4934292000003'))->toBeTrue();
+    expect($this->sut->isPlaceholderGtin('4740100000000'))->toBeTrue();
+    expect($this->sut->isPlaceholderGtin('6936420000000'))->toBeTrue();
+    expect($this->sut->isPlaceholderGtin('4820817000002'))->toBeTrue(); // the SKU itself
+});
+
+it('does not mistake a real barcode for a padded prefix', function (): void {
+    // The widened rule must not start eating genuine GTINs — a real product code
+    // occupies the positions a placeholder leaves as zeros.
+    expect($this->sut->isPlaceholderGtin('5099206131255'))->toBeFalse();
+    expect($this->sut->isPlaceholderGtin('0698833028492'))->toBeFalse();
+    expect($this->sut->isPlaceholderGtin('8721038102314'))->toBeFalse();
+    expect($this->sut->isPlaceholderGtin('813097025876'))->toBeFalse();
+});
+
+it('firstValidGtin takes the first candidate that is a real barcode', function (): void {
+    expect($this->sut->firstValidGtin('5099206131255', '43505000'))->toBe('5099206131255');
+    expect($this->sut->firstValidGtin(null, '5099206131255'))->toBe('5099206131255');
+});
+
+it('firstValidGtin returns NULL rather than a SKU-derived number', function (): void {
+    // 43BDL5050D/00 stripped to digits is 43505000 — eight digits, so
+    // normaliseEan() accepts it, and it is what overwrote a corrected barcode
+    // three days after it was fixed. Null is the right answer: an empty GTIN is
+    // a supported state for Google Shopping, a fabricated one is a disapproval.
+    expect($this->sut->firstValidGtin(null, '43505000'))->toBeNull();
+    expect($this->sut->firstValidGtin('613010000', null))->toBeNull();
+    expect($this->sut->firstValidGtin(null, null))->toBeNull();
+});
+
+it('firstValidGtin refuses a padded prefix even in first position', function (): void {
+    expect($this->sut->firstValidGtin('6936420000000', '5099206131255'))->toBe('5099206131255');
+});

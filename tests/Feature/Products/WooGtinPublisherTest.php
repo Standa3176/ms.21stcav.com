@@ -152,3 +152,73 @@ it('SKIPS when the EAN is blank — no Woo call', function (): void {
     expect(app(WooGtinPublisher::class)->publish($product, '   '))->toBe('skipped');
     expect($product->fresh()->woo_gtin)->toBeNull();
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260905-ae5 — the publisher is the choke point for Woo GTIN writes
+|--------------------------------------------------------------------------
+|
+| It used to PUT whatever string it was handed. products:publish-sourced-eans
+| has no gate of its own, so on 2026-08-28 it came within one SKU of pushing
+| 61U3010000AC's fabricated `613010000` live, purely because that SKU was still
+| in a --skus list. Refusing here means no caller can do it, present or future.
+*/
+
+it('refuses a barcode whose check digit fails', function (): void {
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldNotReceive('put');
+
+    $product = Product::factory()->create(['woo_product_id' => 555, 'ean' => '5099206131250']);
+
+    expect((new WooGtinPublisher($woo))->publish($product, '5099206131250'))->toBe('invalid');
+});
+
+it('refuses a GS1 prefix padded out with zeros even though it checksums', function (): void {
+    // 4934292000003 — prefix + five zeros + check digit 3. Vision's feed emits
+    // these wholesale and they pass mod-10 perfectly well.
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldNotReceive('put');
+
+    $product = Product::factory()->create(['woo_product_id' => 556, 'ean' => '4934292000003']);
+
+    expect((new WooGtinPublisher($woo))->publish($product, '4934292000003'))->toBe('invalid');
+});
+
+it('leaves the local ean ALONE when it refuses', function (): void {
+    // This is a publisher, not a cleaner. A refused value is a data-quality
+    // question for products:identity-health-check — destroying it here would
+    // lose the evidence of what the feed actually said.
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldNotReceive('put');
+
+    $product = Product::factory()->create(['woo_product_id' => 557, 'ean' => '6936420000000']);
+
+    (new WooGtinPublisher($woo))->publish($product, '6936420000000');
+
+    expect($product->fresh()->ean)->toBe('6936420000000');
+});
+
+it('still publishes a genuine GTIN', function (): void {
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('put')->once()
+        ->with('products/558', ['global_unique_id' => '5099206131255'])
+        ->andReturn(['id' => 558]);
+
+    $product = Product::factory()->create(['woo_product_id' => 558, 'ean' => '5099206131255']);
+
+    expect((new WooGtinPublisher($woo))->publish($product, '5099206131255'))->toBe('published');
+    expect($product->fresh()->woo_gtin)->toBe('5099206131255');
+});
+
+it('still publishes a genuine 12-digit UPC-A', function (): void {
+    // DU7099Z-BK is stored unpadded and Google accepts UPC-A; refusing it would
+    // be a false alarm on correct data.
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('put')->once()
+        ->with('products/559', ['global_unique_id' => '813097025876'])
+        ->andReturn(['id' => 559]);
+
+    $product = Product::factory()->create(['woo_product_id' => 559, 'ean' => '813097025876']);
+
+    expect((new WooGtinPublisher($woo))->publish($product, '813097025876'))->toBe('published');
+});

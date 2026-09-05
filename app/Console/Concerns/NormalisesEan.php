@@ -88,4 +88,48 @@ trait NormalisesEan
 
         return $expected === $checkDigit;
     }
+
+    /**
+     * 260905-ae5 — a GS1 company prefix with the product code left as zeros.
+     *
+     * `6936420000000` (Hikvision), `4740100000000` (Vision) and friends pass the
+     * checksum perfectly well; they are simply not barcodes. Vision's feed emits
+     * these wholesale — eleven products, two of them the SKU itself
+     * (`4820817` → `4820817000002`).
+     *
+     * FIVE-or-more zeros then any final digit, NOT six-or-more. The check digit
+     * is only 0 by coincidence: requiring `0{6,}$` caught `4740100000000` and
+     * missed `4934292000003` — same shape, check digit 3 — which reached
+     * products.ean the day the identity health check shipped (260828-plk).
+     */
+    public function isPlaceholderGtin(string $digits): bool
+    {
+        return preg_match('/^\d{4,8}0{5,}\d$/', $digits) === 1;
+    }
+
+    /**
+     * First candidate that is a real GTIN, else null.
+     *
+     * Null is the correct answer when nothing qualifies: an empty GTIN is a
+     * supported state for Google Shopping, a fabricated one is a disapproval —
+     * and a duplicate fabricated one across several products invites scrutiny of
+     * the whole feed rather than of the single item.
+     */
+    public function firstValidGtin(?string ...$candidates): ?string
+    {
+        foreach ($candidates as $candidate) {
+            $digits = trim((string) $candidate);
+            if ($digits === '') {
+                continue;
+            }
+            if ($this->isPlaceholderGtin($digits)) {
+                continue;
+            }
+            if ($this->isValidGtinChecksum($digits)) {
+                return $digits;
+            }
+        }
+
+        return null;
+    }
 }

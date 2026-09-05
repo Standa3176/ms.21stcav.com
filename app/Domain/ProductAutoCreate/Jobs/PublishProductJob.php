@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Jobs;
 
+use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
 use App\Domain\Pricing\Exceptions\SupplierPriceUnusableException;
 use App\Domain\Pricing\Services\PriceCalculator;
@@ -78,6 +79,18 @@ final class PublishProductJob implements ShouldQueue
 
     /** @var array<int,int> */
     public array $backoff = [30, 120, 300];
+
+    /**
+     * 260905-ae5 — the INC-VAT price in pennies, captured by buildCreatePayload
+     * before any ex-VAT stripping.
+     *
+     * The split-PUT's `regular_price` string is POST-strip, but
+     * ProductPriceChanged's contract is inc-VAT pennies (PushPriceChangeToWoo
+     * applies the VAT decision itself via WooRegularPriceFormatter). Handing the
+     * retry the stripped value would strip a second time — a silent 20% error on
+     * exactly the products a burst already mishandled.
+     */
+    private ?int $priceIncVatPennies = null;
 
     public function __construct(
         public readonly int $productId,
@@ -203,19 +216,40 @@ final class PublishProductJob implements ShouldQueue
                     try {
                         $woo->put("products/{$wooId}", ['regular_price' => $deferredPrice]);
                     } catch (\Throwable $priceErr) {
-                        // Includes WooWriteThrottleException: the product is
-                        // ALREADY live at this point, so deferring the whole
-                        // job would re-publish rather than re-price. Leaving
-                        // the price unset is now self-healing — the 260822-rmo
-                        // sell_price reconciler picks it up on the next
-                        // cutover:auto-sync pass.
+                        // The product is ALREADY live here, so deferring the whole
+                        // job would re-publish rather than re-price — hence the
+                        // catch. But 260905-ae5: the previous comment claimed this
+                        // was "self-healing — the sell_price reconciler picks it
+                        // up", and that reconciler is GATED OFF
+                        // (config/cutover.php:129, default false). So a throttled
+                        // price PUT left the product LIVE WITH NO PRICE, silently,
+                        // for good. The throttle fires by design during an
+                        // approve-burst, which puts the tail of every burst here.
+                        //
+                        // Re-fire the price through ProductPriceChanged instead:
+                        // PushPriceChangeToWoo is a queued listener that already
+                        // handles this exact write WITH throttle deferral, so the
+                        // retry inherits the machinery rather than reinventing it.
                         Log::warning('auto_create.publish.price_put_failed', [
                             'product_id' => $product->id,
                             'sku' => $product->sku,
                             'woo_id' => $wooId,
                             'price' => $deferredPrice,
                             'error' => $priceErr->getMessage(),
+                            'requeued' => true,
                         ]);
+
+                        if ($this->priceIncVatPennies !== null && $this->priceIncVatPennies > 0) {
+                            ProductPriceChanged::dispatch(
+                                (int) $product->id,
+                                null,
+                                (string) $product->sku,
+                                0,                            // oldPennies — nothing was set
+                                $this->priceIncVatPennies,    // INC-VAT; the listener re-applies the basis
+                                0,                            // marginBasisPoints — already applied upstream
+                                'auto_create_publish_retry',
+                            );
+                        }
                     }
                 }
             }
@@ -397,6 +431,8 @@ final class PublishProductJob implements ShouldQueue
 
         if ($pennies !== null) {
             if ($pennies > 0) {
+                // Capture BEFORE the VAT strip — see $priceIncVatPennies.
+                $this->priceIncVatPennies = $pennies;
                 $pennies = (bool) config('services.woo.push_prices_ex_vat', false)
                     ? $calculator->stripVat($pennies)
                     : $pennies;

@@ -17,14 +17,14 @@ declare(strict_types=1);
 | PublishSourcedImagesCommandTest. We assert put() call counts + endpoints to
 | prove the selection logic:
 |
-|   P1: publish, woo #101, ean=EAN-P1, woo_gtin=null → the backlog SKU
-|   P2: publish, woo NULL, ean=EAN-P2               → draft, never selected
+|   P1: publish, woo #101, ean=5099206131255, woo_gtin=null → the backlog SKU
+|   P2: publish, woo NULL, ean=0698833028492               → draft, never selected
 |   P3: publish, woo #103, ean=null                 → no EAN, never selected
-|   P4: publish, woo #104, ean=EAN-P4, woo_gtin=set → already on Woo
+|   P4: publish, woo #104, ean=8721038102314, woo_gtin=set → already on Woo
 |
 | Cases:
 |   - No --skus  → publishes ONLY P1 (put once for products/101; P4 excluded by
-|     the woo_gtin filter; P2/P3 not selected). P1.woo_gtin → EAN-P1.
+|     the woo_gtin filter; P2/P3 not selected). P1.woo_gtin → 5099206131255.
 |   - --dry-run  → put received ZERO times; output lists P1.
 |   - --skus=<P4> → force-publishes P4 (put for products/104) even though it
 |     already had a GTIN.
@@ -51,7 +51,7 @@ function seedEanBacklog(): array
         'sku' => 'PW3-BACKLOG',
         'status' => 'publish',
         'woo_product_id' => 101,
-        'ean' => 'EAN-P1',
+        'ean' => '5099206131255',
         'woo_gtin' => null,
     ]);
 
@@ -60,7 +60,7 @@ function seedEanBacklog(): array
         'sku' => 'PW3-DRAFT',
         'status' => 'publish',
         'woo_product_id' => null,
-        'ean' => 'EAN-P2',
+        'ean' => '0698833028492',
         'woo_gtin' => null,
     ]);
 
@@ -78,8 +78,8 @@ function seedEanBacklog(): array
         'sku' => 'PW3-DONE',
         'status' => 'publish',
         'woo_product_id' => 104,
-        'ean' => 'EAN-P4',
-        'woo_gtin' => 'EAN-P4',
+        'ean' => '8721038102314',
+        'woo_gtin' => '8721038102314',
     ]);
 
     return ['p1' => $p1, 'p2' => $p2, 'p3' => $p3, 'p4' => $p4];
@@ -103,14 +103,14 @@ it('auto-selects and publishes ONLY the live+ean+missing-on-Woo backlog product'
     $this->artisan('products:publish-sourced-eans')
         ->assertExitCode(0)
         ->expectsOutputToContain('Publishing local EANs to Woo GTIN for 1 product(s).')
-        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped.');
+        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped, 0 refused (not a valid GTIN).');
 
     // Only P1's Woo product was touched — P4 excluded by the woo_gtin filter;
     // P2 (no woo id) + P3 (no ean) never selected.
     expect($endpoints)->toBe(['products/101']);
 
     // Dashboard reflects the fix immediately.
-    expect(Product::where('sku', 'PW3-BACKLOG')->first()->woo_gtin)->toBe('EAN-P1');
+    expect(Product::where('sku', 'PW3-BACKLOG')->first()->woo_gtin)->toBe('5099206131255');
 });
 
 it('--dry-run writes NOTHING to Woo but lists the selection', function (): void {
@@ -123,7 +123,7 @@ it('--dry-run writes NOTHING to Woo but lists the selection', function (): void 
     $this->artisan('products:publish-sourced-eans --dry-run')
         ->assertExitCode(0)
         ->expectsOutputToContain('DRY-RUN — Publishing local EANs to Woo GTIN for 1 product(s).')
-        ->expectsOutputToContain('would publish PW3-BACKLOG (Woo #101, EAN EAN-P1)')
+        ->expectsOutputToContain('would publish PW3-BACKLOG (Woo #101, EAN 5099206131255)')
         ->expectsOutputToContain('DRY-RUN complete');
 
     // woo_gtin untouched — no write happened.
@@ -148,7 +148,7 @@ it('--skus force-publishes a specific SKU even when it already has a Woo GTIN', 
     // P4 already has woo_gtin — auto-select would skip it, but --skus forces it.
     $this->artisan('products:publish-sourced-eans --skus=PW3-DONE')
         ->assertExitCode(0)
-        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped.');
+        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped, 0 refused (not a valid GTIN).');
 
     expect($endpoints)->toBe(['products/104']);
 });
@@ -165,7 +165,7 @@ it('--skus skips the null-woo_product_id and no-ean products (never pushes them)
     $this->artisan('products:publish-sourced-eans --skus=PW3-DRAFT,PW3-NOEAN')
         ->assertExitCode(0)
         ->expectsOutputToContain('Publishing local EANs to Woo GTIN for 0 product(s).')
-        ->expectsOutputToContain('Done — 0 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped.');
+        ->expectsOutputToContain('Done — 0 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped, 0 refused (not a valid GTIN).');
 });
 
 it('--limit caps how many products are processed', function (): void {
@@ -174,14 +174,14 @@ it('--limit caps how many products are processed', function (): void {
         'sku' => 'PW3-A',
         'status' => 'publish',
         'woo_product_id' => 301,
-        'ean' => 'EAN-A',
+        'ean' => '4719552127467',
         'woo_gtin' => null,
     ]);
     Product::factory()->create([
         'sku' => 'PW3-B',
         'status' => 'publish',
         'woo_product_id' => 302,
-        'ean' => 'EAN-B',
+        'ean' => '5415334026865',
         'woo_gtin' => null,
     ]);
 
@@ -192,10 +192,39 @@ it('--limit caps how many products are processed', function (): void {
     $this->artisan('products:publish-sourced-eans --limit=1')
         ->assertExitCode(0)
         ->expectsOutputToContain('Publishing local EANs to Woo GTIN for 1 product(s).')
-        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped.');
+        ->expectsOutputToContain('Done — 1 published, 0 collisions (duplicate GTIN — local EAN cleared), 0 skipped, 0 refused (not a valid GTIN).');
 });
 
 it('registers the products:publish-sourced-eans command', function (): void {
     expect(array_keys(app(Kernel::class)->all()))
         ->toContain('products:publish-sourced-eans');
+});
+
+it('REFUSES a fabricated barcode instead of pushing it to the storefront', function (): void {
+    // 260905-ae5 — this command has no gate of its own; it publishes whatever is
+    // in products.ean. On 2026-08-28 it came within one SKU of pushing
+    // 61U3010000AC's fabricated `613010000` live, purely because that SKU was
+    // still in a --skus list. The refusal now lives in WooGtinPublisher, so no
+    // caller can do it — and the local value is left intact for review rather
+    // than silently destroyed.
+    $endpoints = [];
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldNotReceive('put');
+    app()->instance(WooClient::class, $woo);
+
+    $product = Product::factory()->create([
+        'sku' => 'PW3-FABRICATED',
+        'status' => 'publish',
+        'woo_product_id' => 909,
+        'ean' => '613010000',   // the SKU with its letters stripped out
+        'woo_gtin' => null,
+    ]);
+
+    $this->artisan('products:publish-sourced-eans --skus=PW3-FABRICATED')
+        ->assertExitCode(0)
+        ->expectsOutputToContain('REFUSED')
+        ->expectsOutputToContain('1 refused (not a valid GTIN)');
+
+    expect($endpoints)->toBe([]);                          // nothing reached Woo
+    expect($product->fresh()->ean)->toBe('613010000');     // evidence preserved
 });

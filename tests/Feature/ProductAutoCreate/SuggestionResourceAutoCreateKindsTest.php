@@ -7,6 +7,7 @@ use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Models\User;
 use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
 use function Pest\Livewire\livewire;
@@ -27,6 +28,11 @@ beforeEach(function (): void {
 
 it('approve_new_product_opportunity action dispatches ApplySuggestionJob', function (): void {
     Queue::fake();
+
+    // 260905-po7 — the Suggestions list now opens filtered to SKUs a supplier
+    // carries (on_supplier_db defaults to 'yes'), so an NPO fixture has to be
+    // sourceable to appear in the table at all.
+    DB::table('supplier_sku_cache')->insert(['sku' => 'acme-123']);
 
     $s = Suggestion::create([
         'kind' => 'new_product_opportunity',

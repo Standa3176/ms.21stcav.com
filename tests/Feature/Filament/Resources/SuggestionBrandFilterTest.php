@@ -75,7 +75,11 @@ beforeEach(function (): void {
 it('brand=Trantec narrows to the Trantec suggestions', function (): void {
     $this->actingAs(brandFilterAdmin());
 
+    // 260905-po7 — on_supplier_db now defaults to 'yes'; these fixtures
+    // are not seeded into supplier_sku_cache, so clear it to test the
+    // brand/competitor filter in isolation.
     Livewire::test(ListSuggestions::class)
+        ->filterTable('on_supplier_db', null)
         ->filterTable('brand', 'Trantec')
         ->assertCanSeeTableRecords([$this->s2, $this->s3])
         ->assertCanNotSeeTableRecords([$this->s1]);
@@ -84,7 +88,11 @@ it('brand=Trantec narrows to the Trantec suggestions', function (): void {
 it('competitor=AVPartsmaster narrows to the single matching suggestion', function (): void {
     $this->actingAs(brandFilterAdmin());
 
+    // 260905-po7 — on_supplier_db now defaults to 'yes'; these fixtures
+    // are not seeded into supplier_sku_cache, so clear it to test the
+    // brand/competitor filter in isolation.
     Livewire::test(ListSuggestions::class)
+        ->filterTable('on_supplier_db', null)
         ->filterTable('competitor', 'AVPartsmaster')
         ->assertCanSeeTableRecords([$this->s2])
         ->assertCanNotSeeTableRecords([$this->s1, $this->s3]);

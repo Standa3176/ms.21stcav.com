@@ -100,6 +100,39 @@ class Suggestion extends Model
     }
 
     /**
+     * Quick task 260905-po7 — single source of truth for the "sourceable
+     * pending" predicate.
+     *
+     * A row is sourceable-pending iff ALL of:
+     *   - status = 'pending'
+     *   - kind   = 'new_product_opportunity'
+     *   - evidence.sku EXISTS in supplier_sku_cache (LOWER+TRIM match)
+     *
+     * This is the set the Suggestions list now OPENS on (the on_supplier_db
+     * filter defaults to 'yes') and the set the bulk "Auto-create selected"
+     * action will actually act on. The sidebar badge counts it so the number
+     * matches what clicking the badge shows — before 260905-po7 the badge
+     * counted high-confidence rows while the list showed all ~8k pending,
+     * which is how an operator spent two days believing the bulk button was
+     * broken when it was silently dropping non-sourceable rows.
+     *
+     * scopeHighConfidenceSourceable() composes onto this and adds the
+     * >= 3 competitor gate; the Home dashboard tile stays on that narrower
+     * scope because it is labelled "high-confidence".
+     */
+    public function scopeSourceablePending(Builder $q): Builder
+    {
+        $skuExpr = DB::connection()->getDriverName() === 'sqlite'
+            ? "json_extract(suggestions.evidence, '$.sku')"
+            : "JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))";
+
+        return $q
+            ->where('status', self::STATUS_PENDING)
+            ->where('kind', 'new_product_opportunity')
+            ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM({$skuExpr})))");
+    }
+
+    /**
      * Quick task 260606-lhp — single source of truth for the
      * "high-confidence sourceable" predicate.
      *
@@ -110,9 +143,10 @@ class Suggestion extends Model
      *   - CAST(evidence.supporting_competitors) >= 3
      *
      * Consumed by:
-     *   - SuggestionResource::getNavigationBadge() (sidebar attention count)
      *   - SuggestionResource::getNavigationBadgeTooltip() (3-tier breakdown)
      *   - SnapshotAggregator::computeSuggestionsTriageHealth() (Home tile)
+     *
+     * NOT consumed by the sidebar badge any more — see scopeSourceablePending().
      *
      * Drift-prevention: every consumer calls this scope; no inline whereRaw
      * duplicates of the 4-clause conjunction allowed elsewhere.
@@ -123,20 +157,14 @@ class Suggestion extends Model
      */
     public function scopeHighConfidenceSourceable(Builder $q): Builder
     {
-        $isSqlite = DB::connection()->getDriverName() === 'sqlite';
-
-        $skuExpr = $isSqlite
-            ? "json_extract(suggestions.evidence, '$.sku')"
-            : "JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))";
-
-        $competitorsExpr = $isSqlite
+        $competitorsExpr = DB::connection()->getDriverName() === 'sqlite'
             ? "CAST(json_extract(evidence, '$.supporting_competitors') AS INTEGER)"
             : "CAST(JSON_UNQUOTE(JSON_EXTRACT(evidence, '$.supporting_competitors')) AS UNSIGNED)";
 
+        // 260905-po7 — status + kind + supplier-feed membership now come from
+        // scopeSourceablePending(); only the competitor gate is added here.
         return $q
-            ->where('status', self::STATUS_PENDING)
-            ->where('kind', 'new_product_opportunity')
-            ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM({$skuExpr})))")
+            ->sourceablePending()
             ->whereRaw("{$competitorsExpr} >= 3");
     }
 }

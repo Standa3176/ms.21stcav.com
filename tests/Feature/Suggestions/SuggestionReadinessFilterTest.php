@@ -111,7 +111,11 @@ it('readiness=needs_brand narrows to sourceable rows with blank/junk brand', fun
 it('readiness=not_sourceable narrows to the row whose SKU is absent from the cache', function (): void {
     $this->actingAs(readinessFilterAdmin());
 
+    // 260905-po7 — on_supplier_db now DEFAULTS to 'yes', which contradicts
+    // this filter; clear it first, exactly as the indicator chip tells the
+    // operator to.
     Livewire::test(ListSuggestions::class)
+        ->filterTable('on_supplier_db', null)
         ->filterTable('readiness', 'not_sourceable')
         ->assertCanSeeTableRecords([$this->d])
         ->assertCanNotSeeTableRecords([$this->a, $this->b, $this->c]);
@@ -126,7 +130,7 @@ it('the filter verdict matches the readiness() column for A–D', function (): v
     };
 
     expect($verdict($this->a))->toBe('Ready')          // → filter 'ready'
-        ->and($verdict($this->b))->toBe('Needs brand')  // → filter 'needs_brand'
-        ->and($verdict($this->c))->toBe('Needs brand')  // → filter 'needs_brand'
+        ->and($verdict($this->b))->toBe('Brand unlisted')  // → filter 'needs_brand'
+        ->and($verdict($this->c))->toBe('Brand unlisted')  // → filter 'needs_brand'
         ->and($verdict($this->d))->toBe('Not sourceable'); // → filter 'not_sourceable'
 });

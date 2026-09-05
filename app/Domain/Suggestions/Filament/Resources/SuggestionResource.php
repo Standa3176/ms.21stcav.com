@@ -66,7 +66,8 @@ class SuggestionResource extends Resource
      * sourceable = the SKU is currently carried by a supplier (membership in
      * supplier_sku_cache); brand comes from evidence.brand. Verdict:
      *   - not sourceable            → 'Not sourceable' / gray
-     *   - sourceable + blank/junk   → 'Needs brand'    / warning
+     *   - sourceable + blank/junk   → 'Brand unlisted' / info (NOT a blocker —
+     *     see the label note below)
      *   - sourceable + usable brand → 'Ready'          / success (Auto-create
      *     auto-adds the Woo brand if new, per 260702-qd8)
      * Junk = config('product_auto_create.brands_to_add_exclude') (case-insensitive).
@@ -86,8 +87,16 @@ class SuggestionResource extends Resource
             true,
         );
 
+        // 260905-po7 — this was 'Needs brand' / warning, which read as "you
+        // must set a brand before this can be created". That is not what the
+        // pipeline does. $brand here is evidence.brand — scraped from the
+        // COMPETITOR listing — and products:draft-from-suggestions never looks
+        // at it: it resolves the brand from supplier_products.manufacturer and,
+        // with --create-missing-brands (which the Mon/Thu cron always passes),
+        // creates the Woo term itself. A blank competitor brand parks nothing.
+        // Amber + "needs" was telling operators to do work that does not exist.
         return $junk
-            ? ['label' => 'Needs brand', 'color' => 'warning']
+            ? ['label' => 'Brand unlisted', 'color' => 'info']
             : ['label' => 'Ready', 'color' => 'success'];
     }
 
@@ -140,11 +149,18 @@ class SuggestionResource extends Resource
     public static function getNavigationBadge(): ?string
     {
         try {
-            // Quick task 260606-lhp — delegates the 4-clause predicate to the
-            // shared Suggestion::scopeHighConfidenceSourceable scope so the
-            // sidebar badge, the badge tooltip, and the Home dashboard
-            // "High-confidence sourceable opportunities" tile cannot drift.
-            $count = Suggestion::query()->highConfidenceSourceable()->count();
+            // Quick task 260905-po7 — the badge counts SOURCEABLE PENDING, the
+            // same set the list now opens on (the on_supplier_db filter
+            // defaults to 'yes') and the same set the bulk Auto-create action
+            // will act on. It used to count high-confidence (>= 3 competitors)
+            // rows while the list opened on all ~8k pending, so the number and
+            // the screen behind it disagreed in both directions. The tooltip
+            // below still exposes all three tiers; the Home dashboard tile
+            // keeps the narrower scope because it is labelled "high-confidence".
+            //
+            // Predicate lives in Suggestion::scopeSourceablePending() — no
+            // inline duplicate, same drift rule 260606-lhp established.
+            $count = Suggestion::query()->sourceablePending()->count();
         } catch (\Throwable) {
             return null;
         }
@@ -179,13 +195,10 @@ class SuggestionResource extends Resource
 
                 $rawPending = (clone $base)->count();
 
-                // Sourceable = pending NPO + EXISTS supplier_sku_cache. A
-                // DIFFERENT predicate to "high-confidence" — no competitor
-                // count gate — so it stays inline; the scope deliberately
-                // bundles the competitor gate.
-                $sourceable = (clone $base)
-                    ->whereRaw("EXISTS (SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku')))))")
-                    ->count();
+                // 260905-po7 — was an inline whereRaw duplicate; now the same
+                // scope the sidebar badge counts, so tooltip and badge cannot
+                // disagree. (It applies status + kind itself, hence not $base.)
+                $sourceable = Suggestion::query()->sourceablePending()->count();
 
                 // Quick task 260606-lhp — high-confidence count comes from the
                 // shared scope so the tooltip cannot drift from the sidebar
@@ -245,10 +258,15 @@ class SuggestionResource extends Resource
             // visible feedback after a bulk Auto-create instead of a silent list.
             // Read-only refresh; safe.
             ->poll('30s')
+            // Quick task 260905-po7 — remember the operator's filter choices
+            // across navigations. Without this, widening past the new
+            // sourceable default is undone by every visit to another page and
+            // the operator has to re-set it each time.
+            ->persistFiltersInSession()
             // Quick task 260707-iz9 — friendly empty state so a filtered-to-nothing
             // list explains itself instead of showing a bare "No records".
             ->emptyStateHeading('No suggestions match')
-            ->emptyStateDescription('New product opportunities appear here when competitors list SKUs you do not sell yet. Clear the filters to see other kinds.')
+            ->emptyStateDescription('The list opens on pending opportunities for SKUs a supplier actually carries — the ones Auto-create can act on. Set "On supplier DB" to No to see competitor-only SKUs, or clear the filters for other kinds.')
             ->columns([
                 // Part / SKU — the actual product identifier (from evidence JSON;
                 // also present on margin_change rows). Searchable so an 8k-row
@@ -312,7 +330,9 @@ class SuggestionResource extends Resource
                 // Quick task 260707-gsy — Readiness badge. Makes what-will-create
                 // visible up front so the operator isn't left guessing after a
                 // silent Auto-create: Ready (sourceable + usable brand),
-                // Needs brand (sourceable but blank/junk brand → parks), Not
+                // Brand unlisted (sourceable, competitor listing carried no
+                // brand — 260905-po7: still creates, the pipeline takes the
+                // brand from the supplier feed), Not
                 // sourceable (no supplier carries the SKU). '—' for non-opportunity
                 // kinds. Verdict is computed engine-independently via readiness()
                 // (PHP-extracted SKU + supplier_sku_cache exists() — no JSON-in-SQL).
@@ -324,7 +344,7 @@ class SuggestionResource extends Resource
                     ->placeholder('—')
                     ->tooltip(fn (Suggestion $record): ?string => match (self::readiness($record)['label'] ?? null) {
                         'Ready' => 'In the supplier feed + brand known — Auto-create will create it (brand auto-added if new).',
-                        'Needs brand' => 'In the supplier feed but no usable brand — parks until a brand is set.',
+                        'Brand unlisted' => 'In the supplier feed. The competitor listing carried no brand, but Auto-create takes the brand from the supplier feed and creates the Woo term if it is new — so this normally still creates. It only parks if the supplier row has no manufacturer either.',
                         'Not sourceable' => 'No supplier currently carries this SKU — cannot be created.',
                         default => null,
                     }),
@@ -412,8 +432,34 @@ class SuggestionResource extends Resource
                 // competitor-only orphan parts. Uses an EXISTS subquery so it
                 // scales to the ~900k SKU feed without hitting MySQL packet
                 // limits. Lowercased-trim match mirrors DraftFromSuggestionsCommand.
+                // 260905-po7 — DEFAULTS TO SOURCEABLE.
+                //
+                // `kind` and `status` below both carry a ->default(); this one did
+                // not, so the list opened on all ~8,000 pending rows of which ~96%
+                // are competitor-only orphans no supplier carries. The bulk
+                // "Auto-create selected" action then filters them out silently, so
+                // selecting a screenful and dispatching produced nothing at all —
+                // an operator spent two days (2026-08-30/31) believing the button
+                // was broken. It was not; the default was.
+                //
+                // The screen previously carried THREE different definitions of
+                // "actionable": this filter (all), the sidebar badge (high-confidence
+                // = 3+ competitors AND sourceable), and the bulk action (sourceable).
+                // Defaulting here aligns the list with what the action will do.
                 SelectFilter::make('on_supplier_db')
                     ->label('On supplier DB')
+                    ->default('yes')
+                    // 260905-po7 — an explicit chip, because this is now a
+                    // DEFAULT the operator did not choose. It also explains an
+                    // otherwise baffling empty list: picking Readiness = "Not
+                    // sourceable" while this is still 'yes' asks for rows that
+                    // are both in and not in the supplier feed, and returns
+                    // none. The chip is the thing to clear.
+                    ->indicateUsing(fn (array $data): ?string => match ($data['value'] ?? null) {
+                        'yes' => 'On supplier DB: sourceable only',
+                        'no' => 'On supplier DB: competitor-only',
+                        default => null,
+                    })
                     ->options([
                         'yes' => 'Yes — sourceable',
                         'no' => 'No — competitor-only',
@@ -423,17 +469,42 @@ class SuggestionResource extends Resource
                         if ($value === null || $value === '') {
                             return $query;
                         }
-                        $existsSub = "SELECT 1 FROM supplier_sku_cache c WHERE c.sku = LOWER(TRIM(JSON_UNQUOTE(JSON_EXTRACT(suggestions.evidence, '$.sku'))))";
+                        // 260905-po7 — was a hardcoded JSON_UNQUOTE/JSON_EXTRACT
+                        // string, which throws "no such function: JSON_UNQUOTE"
+                        // on SQLite. It went unnoticed because nothing applied
+                        // this filter unless an operator picked it by hand; the
+                        // default above makes it run on every render, so it now
+                        // goes through the driver-portable helper the readiness
+                        // filter already used (memory: SQLite ↔ MariaDB trap).
+                        $exists = self::sourceableExistsSql();
 
-                        return $value === 'yes'
-                            ? $query->whereRaw("EXISTS ($existsSub)")
-                            : $query->whereRaw("NOT EXISTS ($existsSub)");
+                        if ($value !== 'yes') {
+                            return $query->whereRaw("NOT {$exists}");
+                        }
+
+                        // 260905-po7 — the 'yes' branch is now a DEFAULT nobody
+                        // chose, so it must not silently delete rows it has no
+                        // opinion about. "On supplier DB" is a
+                        // new_product_opportunity concept; a margin_change or
+                        // crm_push_failed row is not "unsourceable", the
+                        // question just does not apply. Without this guard, an
+                        // operator who clears the Kind filter to look at those
+                        // kinds gets a near-empty list and no clue why.
+                        // The 'no' branch above stays strict — that one is an
+                        // explicit choice to see competitor-only opportunities.
+                        return $query->where(function (Builder $q) use ($exists): Builder {
+                            return $q
+                                ->where('kind', '!=', 'new_product_opportunity')
+                                ->orWhereRaw($exists);
+                        });
                     }),
                 // Quick task 260707-iz9 — Readiness filter. Narrows to exactly the
                 // rows the operator can action, MATCHING the 260707-gsy Readiness
                 // COLUMN verdict (same sourceable check + same brand + same junk
                 // config): 'ready' = sourceable + non-blank non-junk brand;
-                // 'needs_brand' = sourceable + (blank OR junk brand);
+                // 'needs_brand' = sourceable + (blank OR junk brand), labelled
+                // 'Brand unlisted' since 260905-po7 (the filter VALUE is kept as
+                // 'needs_brand' so saved/bookmarked filter URLs keep working);
                 // 'not_sourceable' = NOT sourceable. Supersedes the retired
                 // Brand-on-Woo ternary. Driver-portable — sourceableExistsSql()
                 // switches SQLite json_extract vs MariaDB JSON_UNQUOTE(JSON_EXTRACT)
@@ -442,7 +513,7 @@ class SuggestionResource extends Resource
                     ->label('Readiness')
                     ->options([
                         'ready' => 'Ready to create',
-                        'needs_brand' => 'Needs brand',
+                        'needs_brand' => 'Brand unlisted',
                         'not_sourceable' => 'Not sourceable',
                     ])
                     ->query(function (Builder $query, array $data): Builder {

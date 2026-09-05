@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\ProductAutoCreate\Services;
 
+use App\Console\Concerns\NormalisesEan;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Facades\Log;
@@ -17,9 +18,11 @@ use Illuminate\Support\Facades\Log;
  */
 final class WooGtinPublisher
 {
+    use NormalisesEan;
+
     public function __construct(private readonly WooClient $woo) {}
 
-    /** @return 'published'|'collision'|'skipped' */
+    /** @return 'published'|'collision'|'skipped'|'invalid' */
     public function publish(Product $product, ?string $ean): string
     {
         $ean = trim((string) $ean);
@@ -27,6 +30,27 @@ final class WooGtinPublisher
 
         if ($wooId <= 0 || $ean === '') {
             return 'skipped';
+        }
+
+        // 260905-ae5 — THE choke point for Woo GTIN writes, and until now it
+        // PUT whatever string it was handed. products:publish-sourced-eans has
+        // no gate of its own, so on 2026-08-28 it came within one SKU of pushing
+        // 61U3010000AC's fabricated `613010000` live purely because that SKU was
+        // still in a --skus list. Refusing here means no caller can do that,
+        // present or future.
+        //
+        // Rejected values are left ALONE locally: this is a publisher, and a
+        // value that fails the gate is a data-quality question for
+        // products:identity-health-check, not something to silently destroy.
+        if ($this->isPlaceholderGtin($ean) || ! $this->isValidGtinChecksum($ean)) {
+            Log::warning('WooGtinPublisher: refused a non-GTIN', [
+                'product_id' => $product->id,
+                'sku' => $product->sku,
+                'ean' => $ean,
+                'reason' => $this->isPlaceholderGtin($ean) ? 'padded_prefix' : 'checksum',
+            ]);
+
+            return 'invalid';
         }
 
         try {

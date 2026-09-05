@@ -208,7 +208,18 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 // normaliseEan() does the 8-14 digit validation, so SKUs that
                 // aren't barcode-shaped (e.g. Sony "FW-50EZ20L") still return
                 // null cleanly.
-                'ean' => $this->normaliseEan($facts['ean'] ?? null) ?? $this->normaliseEan($sku),
+                // 260905-ae5 — CHECKSUM-GATED. normaliseEan() only checks 8-14
+                // digits, so it happily accepts a zero-padded GS1 prefix
+                // (6936420000000) or a SKU with its letters stripped
+                // (43BDL5050D/00 → 43505000). isValidGtinChecksum() is the gate
+                // the trait already carries and that nothing on a write path was
+                // calling. Anything failing it is NOT a barcode and belongs as
+                // null — an empty GTIN is a supported state for Google Shopping,
+                // a wrong one is a disapproval.
+                'ean' => $this->firstValidGtin(
+                    $this->normaliseEan($facts['ean'] ?? null),
+                    $this->normaliseEan($sku),
+                ),
             ];
 
             $existing = Product::query()->where('sku', $sku)->first();
@@ -217,7 +228,20 @@ final class GenerateProductDraftsCommand extends BaseCommand
                 // category_ids/auto_create_status) and image state (image_url/
                 // gallery_image_urls/requires_manual_image_review) set by the later
                 // assign-taxonomy + source-images steps. Re-running is now safe.
-                $existing->forceFill($contentValues)->save();
+                //
+                // 260905-ae5 — `ean` is NOT content and must not ride along.
+                // 43BDL5050D/00 was corrected to 8721038102253 on 2026-08-28,
+                // published, verified — and held the fabricated 43505000 again
+                // three days later because a re-draft forceFilled over it. Woo was
+                // the only place the good value survived. Only fill an EMPTY ean
+                // here; never replace one that already exists.
+                $update = $contentValues;
+                unset($update['ean']);
+                if (trim((string) $existing->ean) === '' && $contentValues['ean'] !== null) {
+                    $update['ean'] = $contentValues['ean'];
+                }
+
+                $existing->forceFill($update)->save();
                 $made++;
                 $this->info("  ✓ updated content for Product #{$existing->id} (taxonomy + images preserved)");
 

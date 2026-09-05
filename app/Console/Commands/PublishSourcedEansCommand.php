@@ -94,6 +94,7 @@ final class PublishSourcedEansCommand extends BaseCommand
         $published = 0;
         $collision = 0;
         $skipped = 0;
+        $invalid = 0;
         foreach ($products as $product) {
             if ($dryRun) {
                 $this->line('  would publish '.$product->sku.' (Woo #'.$product->woo_product_id.', EAN '.$product->ean.')');
@@ -109,6 +110,14 @@ final class PublishSourcedEansCommand extends BaseCommand
                     $collision++;
                     $this->warn('  · '.$product->sku.' collision (duplicate GTIN — local EAN cleared)');
                     break;
+                case 'invalid':
+                    // 260905-ae5 — the publisher refused a non-GTIN. Name the real
+                    // reason: falling through to "skipped (no local EAN)" would
+                    // describe a product that HAS one as though it did not, which
+                    // is how a fabricated barcode stays invisible.
+                    $invalid++;
+                    $this->warn('  · '.$product->sku.' REFUSED — '.$product->ean.' is not a valid GTIN (fabricated or padded prefix); left unchanged for review');
+                    break;
                 default:
                     $skipped++;
                     $this->warn('  · '.$product->sku.' skipped (not live on Woo or no local EAN)');
@@ -119,7 +128,7 @@ final class PublishSourcedEansCommand extends BaseCommand
         $this->newLine();
         $this->info($dryRun
             ? 'DRY-RUN complete — '.$products->count().' would be processed. Re-run without --dry-run to publish.'
-            : "Done — {$published} published, {$collision} collisions (duplicate GTIN — local EAN cleared), {$skipped} skipped.");
+            : "Done — {$published} published, {$collision} collisions (duplicate GTIN — local EAN cleared), {$skipped} skipped, {$invalid} refused (not a valid GTIN).");
 
         return SymfonyCommand::SUCCESS;
     }

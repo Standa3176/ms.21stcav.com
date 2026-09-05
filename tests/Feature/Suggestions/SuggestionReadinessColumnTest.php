@@ -72,7 +72,7 @@ it('reads Not sourceable when the SKU is absent from supplier_sku_cache', functi
         ->toBe(['label' => 'Not sourceable', 'color' => 'gray']);
 });
 
-it('reads Needs brand for a sourceable row with a blank brand', function (): void {
+it('reads Brand unlisted for a sourceable row with a blank brand', function (): void {
     resetReadinessMemo();
     seedSupplierSku('sku-blank');
 
@@ -82,7 +82,7 @@ it('reads Needs brand for a sourceable row with a blank brand', function (): voi
     ]);
 
     expect(SuggestionResource::readiness($record))
-        ->toBe(['label' => 'Needs brand', 'color' => 'warning']);
+        ->toBe(['label' => 'Brand unlisted', 'color' => 'info']);
 });
 
 it('returns null for a non new_product_opportunity kind (margin_change)', function (): void {

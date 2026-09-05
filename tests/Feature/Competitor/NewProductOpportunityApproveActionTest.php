@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier;
+use App\Domain\ProductAutoCreate\Jobs\CreateWooProductJob;
 use App\Domain\Suggestions\Filament\Resources\SuggestionResource\Pages\ListSuggestions;
 use App\Domain\Suggestions\Jobs\ApplySuggestionJob;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Models\User;
+use Database\Seeders\RolePermissionSeeder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 
@@ -18,7 +22,7 @@ use Livewire\Livewire;
  * Phase 5 Plan 02 NewProductOpportunityApplier (stub body; Phase 6 replaces).
  */
 beforeEach(function (): void {
-    $this->seed(\Database\Seeders\RolePermissionSeeder::class);
+    $this->seed(RolePermissionSeeder::class);
 });
 
 it('dispatches ApplySuggestionJob when admin approves a pending new_product_opportunity suggestion', function (): void {
@@ -26,6 +30,11 @@ it('dispatches ApplySuggestionJob when admin approves a pending new_product_oppo
 
     $admin = User::factory()->create();
     $admin->assignRole('admin');
+
+    // 260905-po7 — the Suggestions list now opens filtered to SKUs a supplier
+    // carries (on_supplier_db defaults to 'yes'), so an NPO fixture has to be
+    // sourceable to appear in the table at all.
+    DB::table('supplier_sku_cache')->insert(['sku' => 'new-opp-1']);
 
     $suggestion = Suggestion::create([
         'kind' => 'new_product_opportunity',
@@ -79,6 +88,11 @@ it('supporting_competitors column renders the evidence count for new_product_opp
     $admin = User::factory()->create();
     $admin->assignRole('admin');
 
+    // 260905-po7 — the Suggestions list now opens filtered to SKUs a supplier
+    // carries (on_supplier_db defaults to 'yes'), so an NPO fixture has to be
+    // sourceable to appear in the table at all.
+    DB::table('supplier_sku_cache')->insert(['sku' => 'badge-test']);
+
     $suggestion = Suggestion::create([
         'kind' => 'new_product_opportunity',
         'status' => Suggestion::STATUS_PENDING,
@@ -107,13 +121,13 @@ it('running the NewProductOpportunityApplier directly dispatches CreateWooProduc
         'proposed_at' => now(),
     ]);
 
-    $applier = app(\App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier::class);
+    $applier = app(NewProductOpportunityApplier::class);
     $result = $applier->apply($suggestion);
 
     expect($result['phase_6_live'] ?? null)->toBeTrue();
     expect($result['sku'] ?? null)->toBe('DIRECT-APPLY');
     expect($result['dispatched_job_class'] ?? null)
-        ->toBe(\App\Domain\ProductAutoCreate\Jobs\CreateWooProductJob::class);
+        ->toBe(CreateWooProductJob::class);
 
-    Queue::assertPushed(\App\Domain\ProductAutoCreate\Jobs\CreateWooProductJob::class);
+    Queue::assertPushed(CreateWooProductJob::class);
 });

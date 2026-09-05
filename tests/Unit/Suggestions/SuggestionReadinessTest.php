@@ -14,7 +14,7 @@ use App\Domain\Suggestions\Filament\Resources\SuggestionResource;
 | memoised readiness() wrapper feeds it a plain sourceable boolean (from a
 | supplier_sku_cache exists() check) + evidence.brand. Verdict rules:
 |   - not sourceable            → 'Not sourceable' / gray
-|   - sourceable + blank/junk   → 'Needs brand'    / warning
+|   - sourceable + blank/junk   → 'Brand unlisted' / info
 |   - sourceable + usable brand → 'Ready'          / success
 | Junk = config('product_auto_create.brands_to_add_exclude') (case-insensitive).
 */
@@ -24,19 +24,19 @@ it('returns Ready/success for a sourceable, usably-branded row', function (): vo
         ->toBe(['label' => 'Ready', 'color' => 'success']);
 });
 
-it('returns Needs brand/warning for a sourceable row with a blank brand', function (): void {
+it('returns Brand unlisted/info for a sourceable row with a blank brand', function (): void {
     expect(SuggestionResource::readinessFrom(true, ''))
-        ->toBe(['label' => 'Needs brand', 'color' => 'warning']);
+        ->toBe(['label' => 'Brand unlisted', 'color' => 'info']);
 });
 
-it('treats config junk brands (Specials) as Needs brand', function (): void {
+it('treats config junk brands (Specials) as Brand unlisted', function (): void {
     expect(SuggestionResource::readinessFrom(true, 'Specials'))
-        ->toBe(['label' => 'Needs brand', 'color' => 'warning']);
+        ->toBe(['label' => 'Brand unlisted', 'color' => 'info']);
 });
 
-it('treats config junk brands (Un-Branded) as Needs brand', function (): void {
+it('treats config junk brands (Un-Branded) as Brand unlisted', function (): void {
     expect(SuggestionResource::readinessFrom(true, 'Un-Branded'))
-        ->toBe(['label' => 'Needs brand', 'color' => 'warning']);
+        ->toBe(['label' => 'Brand unlisted', 'color' => 'info']);
 });
 
 it('returns Not sourceable/gray when the SKU is not in the supplier feed', function (): void {

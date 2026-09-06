@@ -41,6 +41,7 @@ final class ProductImageFetcher
 {
     public function __construct(
         private IntegrationLogger $logger,
+        private OutboundUrlGuard $urlGuard,
     ) {}
 
     /**
@@ -85,6 +86,27 @@ final class ProductImageFetcher
      */
     private function attemptFetch(string $url, int $attemptNum): ?string
     {
+        // 260906-hbl — SSRF gate. $url reaches here from a supplier feed
+        // (CreateWooProductJob passes $supplierData['image_url']) or from an
+        // image search steered by that same untrusted text. Refuse anything
+        // that is not http(s) pointing at a public address BEFORE any request
+        // leaves this host — a rejected URL must not even produce a timing or
+        // status signal in integration_logs.
+        $reason = null;
+        if (! $this->urlGuard->isAllowed($url, $reason)) {
+            $this->logAttempt(
+                url: $url,
+                attemptNum: $attemptNum,
+                method: 'SKIP',
+                status: 0,
+                outcome: 'failed',
+                extra: ['reason' => 'blocked_by_url_guard', 'guard' => $reason],
+                latencyMs: 0,
+            );
+
+            return null;
+        }
+
         $headStart = microtime(true);
         try {
             // Pitfall P6-A — HEAD pre-flight (3-hop redirect budget).
@@ -97,7 +119,7 @@ final class ProductImageFetcher
             try {
                 $head = Http::timeout($headTimeout)
                     ->withHeaders(self::browserHeaders())
-                    ->withOptions(['allow_redirects' => ['max' => 3]])
+                    ->withOptions(['allow_redirects' => $this->redirectOptions()])
                     ->head($url);
 
                 $headLatency = (int) round((microtime(true) - $headStart) * 1000);
@@ -123,7 +145,7 @@ final class ProductImageFetcher
             $getTimeout = max(30, $headTimeout * 3);
             $get = Http::timeout($getTimeout)
                 ->withHeaders(self::browserHeaders())
-                ->withOptions(['allow_redirects' => ['max' => 3]])
+                ->withOptions(['allow_redirects' => $this->redirectOptions()])
                 ->get($url);
 
             $getLatency = (int) round((microtime(true) - $getStart) * 1000);
@@ -255,6 +277,33 @@ final class ProductImageFetcher
         return [
             'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
             'Accept' => 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        ];
+    }
+
+    /**
+     * Guzzle redirect config that re-validates EVERY hop.
+     *
+     * 260906-hbl — a 3-hop budget alone is not a guard: a perfectly public URL
+     * is free to 302 to http://127.0.0.1/ and, without this, cURL would follow
+     * it. on_redirect throws on the first non-public target, which Guzzle
+     * surfaces as a request exception and attemptFetch already treats as a
+     * transport failure (logged, falls through to the next candidate).
+     *
+     * @return array<string, mixed>
+     */
+    private function redirectOptions(): array
+    {
+        return [
+            'max' => 3,
+            'strict' => true,
+            'referer' => false,
+            'protocols' => ['http', 'https'],
+            'on_redirect' => function ($request, $response, $uri): void {
+                $reason = null;
+                if (! $this->urlGuard->isAllowed((string) $uri, $reason)) {
+                    throw new \RuntimeException('Blocked redirect to disallowed host: '.$reason);
+                }
+            },
         ];
     }
 

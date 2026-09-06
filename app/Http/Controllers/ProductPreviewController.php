@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domain\Products\Models\Product;
+use App\Foundation\Html\RichTextSanitiser;
 use Illuminate\View\View;
 
 /**
@@ -12,12 +13,18 @@ use Illuminate\View\View;
  * can sign off on auto-generated content + sourced images BEFORE any Woo push.
  *
  * Auth-gated (admin panel session). Reads only local data — never touches Woo.
- * The stored short/long descriptions are our own AI-generated HTML, rendered
- * unescaped so the bullets + <h3> sections display as they will on the shop.
+ *
+ * The stored short/long descriptions are HTML and must render as markup so the
+ * bullets + <h3> sections look like the shop. They are NOT trusted: quick task
+ * 260906-hbl corrected the assumption behind the old comment here ("our own
+ * AI-generated HTML"). The model writes them from a prompt built out of
+ * supplier feed text, so the content originates with a third party and reaches
+ * an authenticated admin's browser. RichTextSanitiser allow-lists the markup on
+ * the way to the view.
  */
 final class ProductPreviewController extends Controller
 {
-    public function __invoke(Product $product): View
+    public function __invoke(Product $product, RichTextSanitiser $sanitiser): View
     {
         $gallery = is_array($product->gallery_image_urls) ? $product->gallery_image_urls : [];
         if ($gallery === [] && (string) $product->image_url !== '') {
@@ -31,6 +38,7 @@ final class ProductPreviewController extends Controller
         return view('preview.product', [
             'product' => $product,
             'gallery' => $gallery,
+            'sanitiser' => $sanitiser,
         ]);
     }
 }

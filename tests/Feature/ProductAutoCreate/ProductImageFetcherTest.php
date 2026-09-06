@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\ProductAutoCreate\Services\OutboundUrlGuard;
 use App\Domain\ProductAutoCreate\Services\ProductImageFetcher;
 use App\Foundation\Integration\Models\IntegrationEvent;
 use Illuminate\Http\Client\ConnectionException;
@@ -10,6 +11,16 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
+    // 260906-hbl — these tests use Http::fake(), so nothing is really
+    // contacted, but the SSRF guard resolves DNS for real and would reject
+    // supplier.cdn.com as unresolvable. Bind a stub resolver answering public
+    // for any host so these keep testing TRANSPORT, which is their job. The
+    // guard's own behaviour is pinned in tests/Unit/Security.
+    app()->instance(
+        OutboundUrlGuard::class,
+        new OutboundUrlGuard(fn (string $host): array => ['93.184.216.34']),
+    );
+
     Context::add('correlation_id', (string) Str::uuid());
 });
 
@@ -211,4 +222,32 @@ it('skips empty / null URLs in the fallback array without an HTTP call', functio
     Http::assertSentCount(2); // HEAD + GET for the valid URL only
 
     @unlink($path);
+});
+
+it('BLOCKS an internal URL from a supplier feed and makes no HTTP call at all', function (): void {
+    // 260906-hbl — the integration half of the SSRF fix. The unit tests prove
+    // OutboundUrlGuard's verdicts; this proves the fetcher actually asks it,
+    // and that a blocked URL produces NO outbound request — not a request that
+    // merely fails, which would still leak reachability through timing.
+    app()->forgetInstance(OutboundUrlGuard::class);
+    app()->instance(OutboundUrlGuard::class, new OutboundUrlGuard(fn (string $host): array => ['127.0.0.1']));
+
+    Http::fake();
+
+    $path = app(ProductImageFetcher::class)->fetch(
+        'http://169.254.169.254/latest/meta-data/iam/security-credentials/',
+        ['http://127.0.0.1:6379/', 'file:///etc/passwd'],
+    );
+
+    expect($path)->toBeNull();
+    Http::assertNothingSent();
+
+    // Every rejection is recorded with the guard's reason, so a supplier feed
+    // trying this is visible rather than silently dropped.
+    $reasons = IntegrationEvent::query()->pluck('response_body')
+        ->map(fn ($c) => data_get(is_array($c) ? $c : json_decode((string) $c, true), 'reason'))
+        ->filter()->values()->all();
+
+    expect($reasons)->toContain('blocked_by_url_guard')
+        ->and(IntegrationEvent::where('method', 'SKIP')->count())->toBe(3);
 });

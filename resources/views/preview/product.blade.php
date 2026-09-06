@@ -128,7 +128,8 @@
 
                 <div class="short">
                     @if($product->short_description)
-                        {!! $product->short_description !!}
+                        {{-- 260906-hbl — sanitised: this html is LLM-written from supplier feed text. --}}
+                        {!! $sanitiser->sanitise($product->short_description) !!}
                     @else
                         <p style="color:var(--muted)">No short description.</p>
                     @endif
@@ -153,7 +154,8 @@
         <div class="desc">
             <h2>Product details</h2>
             @if($product->long_description)
-                {!! $product->long_description !!}
+                {{-- 260906-hbl — sanitised, see short_description above. --}}
+                {!! $sanitiser->sanitise($product->long_description) !!}
             @else
                 <p style="color:var(--muted)">No long description.</p>
             @endif

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Jobs\ProcessAutoCreateImageJob;
+use App\Domain\ProductAutoCreate\Services\OutboundUrlGuard;
 use App\Domain\Products\Models\Product;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Sync\Models\SyncDiff;
@@ -30,6 +31,16 @@ use Illuminate\Support\Str;
  * retries = 3, backoff = [30, 300, 1800].
  */
 beforeEach(function (): void {
+    // 260906-hbl — these tests use Http::fake(), so nothing is really
+    // contacted, but the SSRF guard resolves DNS for real and would reject
+    // supplier.cdn.com as unresolvable. Bind a stub resolver answering public
+    // for any host so these keep testing TRANSPORT, which is their job. The
+    // guard's own behaviour is pinned in tests/Unit/Security.
+    app()->instance(
+        OutboundUrlGuard::class,
+        new OutboundUrlGuard(fn (string $host): array => ['93.184.216.34']),
+    );
+
     Context::add('correlation_id', (string) Str::uuid());
     Storage::fake('public');
 });

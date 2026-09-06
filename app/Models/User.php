@@ -1,18 +1,23 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Domain\TradePricing\Models\CustomerGroup;
+use Database\Factories\UserFactory;
 use Filament\Models\Contracts\FilamentUser;
 use Filament\Panel;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements FilamentUser
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
+    /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable;
 
     /**
@@ -64,9 +69,9 @@ class User extends Authenticatable implements FilamentUser
      * Used by Phase 11 quote flow and any order-time price resolver to
      * call TradeRuleResolver::resolve($product, $user->customer_group_id).
      */
-    public function customerGroup(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    public function customerGroup(): BelongsTo
     {
-        return $this->belongsTo(\App\Domain\TradePricing\Models\CustomerGroup::class);
+        return $this->belongsTo(CustomerGroup::class);
     }
 
     /**
@@ -76,8 +81,19 @@ class User extends Authenticatable implements FilamentUser
      * permissions are enforced by Shield-generated policies (D-01, D-02).
      * Tightened in later phases if needed.
      */
+    /**
+     * Quick task 260906-hbl — was `return true`, i.e. ANY authenticated user
+     * reached the admin shell.
+     *
+     * The per-resource policies were the only thing standing between a
+     * role-less account and the data, so a missed policy on one new Resource
+     * exposed it to everyone. This is the defence-in-depth layer that was
+     * missing: no role, no panel. Registration is closed (the panel calls
+     * ->login() and never ->registration()), so every legitimate user is
+     * created deliberately and given a role at that point.
+     */
     public function canAccessPanel(Panel $panel): bool
     {
-        return true;
+        return $this->roles()->exists();
     }
 }

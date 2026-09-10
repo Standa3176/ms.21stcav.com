@@ -20,7 +20,8 @@ use Spatie\Activitylog\Traits\LogsActivity;
  * @property int $id
  * @property int|null $brand_id
  * @property string|null $sku
- * @property string $adjustment_pct
+ * @property string|null $adjustment_pct
+ * @property string|null $absolute_cost
  * @property CarbonInterface|null $valid_from
  * @property CarbonInterface|null $valid_until
  * @property string|null $reason
@@ -32,12 +33,13 @@ final class TradeCostAdjustment extends Model
     use LogsActivity;
 
     protected $fillable = [
-        'brand_id', 'sku', 'adjustment_pct', 'valid_from', 'valid_until', 'reason', 'is_active',
+        'brand_id', 'sku', 'adjustment_pct', 'absolute_cost', 'valid_from', 'valid_until', 'reason', 'is_active',
     ];
 
     protected $casts = [
         'brand_id' => 'integer',
         'adjustment_pct' => 'decimal:3',
+        'absolute_cost' => 'decimal:4',
         'valid_from' => 'date',
         'valid_until' => 'date',
         'is_active' => 'bool',
@@ -57,16 +59,16 @@ final class TradeCostAdjustment extends Model
             ->where(fn (Builder $w) => $w->whereNull('valid_until')->orWhere('valid_until', '>=', $on));
     }
 
-    /** Fraction off feed cost — 12.5% stored becomes 0.125. */
+    /** Fraction off feed cost — 12.5% stored becomes 0.125. Zero on a price-list row. */
     public function fraction(): float
     {
-        return ((float) $this->adjustment_pct) / 100;
+        return $this->adjustment_pct === null ? 0.0 : ((float) $this->adjustment_pct) / 100;
     }
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['brand_id', 'sku', 'adjustment_pct', 'valid_from', 'valid_until', 'reason', 'is_active'])
+            ->logOnly(['brand_id', 'sku', 'adjustment_pct', 'absolute_cost', 'valid_from', 'valid_until', 'reason', 'is_active'])
             ->logOnlyDirty();
     }
 

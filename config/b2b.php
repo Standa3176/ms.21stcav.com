@@ -49,6 +49,12 @@ return [
 
         // Operator, 2026-09-09/10: "trade will always be a max of cost + 15%
         // on special and normal cost", floored at 6%.
+        // 260910-rsv — the smallest discount off standard worth publishing.
+        // Below this the trade price is suppressed and B2BKing falls back to
+        // the standard price, which is more honest than a penny off. Set to 0
+        // to restore the previous behaviour.
+        'min_discount_pct' => (float) env('B2B_TRADE_MIN_DISCOUNT_PCT', 2.0),
+
         'min_margin_bps' => (int) env('B2B_TRADE_MIN_MARGIN_BPS', 600),
         'max_margin_bps' => (int) env('B2B_TRADE_MAX_MARGIN_BPS', 1500),
     ],

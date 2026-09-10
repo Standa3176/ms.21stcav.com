@@ -34,6 +34,10 @@ use App\Domain\Products\Models\Product;
  *
  *   price   = min(target, ceiling),  suppressed when that lands below floor
  *
+ * The ceiling additionally enforces a MINIMUM discount off standard
+ * (b2b.storefront.min_discount_pct), so a trade price is either worth having
+ * or is not published at all — see the note at the ceiling calculation.
+ *
  * Suppression is a real outcome, not a failure: on a product retail has already
  * floored at 6% there is genuinely nothing to give away, and B2BKing falls back
  * to the retail price. Publishing below the floor would sell at a loss;
@@ -64,12 +68,12 @@ final class TradeStorefrontPricer
             return new TradePrice(null, 'suppressed', 'no_retail_price');
         }
 
-        $adjustment = $this->adjustments->fractionFor($product);
-        $costPennies = (int) round($feedCostPennies * (1 - $adjustment));
+        $cost = $this->adjustments->resolve($product, $feedCostPennies);
+        $costPennies = $cost->pennies;
+        $adjustment = $cost->fraction;
 
         if ($costPennies <= 0) {
-            // A 100%+ adjustment is a data error, not a free product.
-            return new TradePrice(null, 'suppressed', 'adjustment_exceeds_cost', $adjustment);
+            return new TradePrice(null, 'suppressed', 'cost_unusable', $adjustment);
         }
 
         try {
@@ -79,7 +83,19 @@ final class TradeStorefrontPricer
             return new TradePrice(null, 'suppressed', 'cost_unusable', $adjustment);
         }
 
-        $ceiling = $retailPennies - 1;
+        // 260910-rsv — the trade price must be MEANINGFULLY below standard.
+        //
+        // Without this, every product where cost+15% exceeds retail landed on
+        // `retail - 1p` by construction — all 458 of them on the first live
+        // preview. A trade customer shown GBP 2,787.60 against a public
+        // GBP 2,787.61 is being insulted, not served, and it is worse than
+        // showing no trade price at all: B2BKing falls back to retail, which
+        // is the honest outcome.
+        $ceiling = min(
+            $retailPennies - 1,
+            (int) floor($retailPennies * (1 - $this->minDiscountFraction())),
+        );
+
         $price = min($target, $ceiling);
 
         if ($price < $floor) {
@@ -102,5 +118,18 @@ final class TradeStorefrontPricer
     private function maxMarginBps(): int
     {
         return (int) config('b2b.storefront.max_margin_bps', 1500);
+    }
+
+    /**
+     * Smallest discount off standard worth publishing, as a fraction.
+     *
+     * Set to 0 to restore the pre-260910-rsv behaviour, where a trade price
+     * could be a single penny below standard.
+     */
+    private function minDiscountFraction(): float
+    {
+        $pct = (float) config('b2b.storefront.min_discount_pct', 2.0);
+
+        return max(0.0, min(0.9, $pct / 100));
     }
 }

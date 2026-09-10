@@ -107,12 +107,15 @@ use App\Domain\Integrations\Policies\IntegrationCredentialPolicy;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Pricing\Console\Commands\PricingRecomputeCommand;
 use App\Domain\Pricing\Console\Commands\ScanSourcingGapsCommand;
+use App\Domain\Pricing\Console\Commands\TradePreviewCommand;
+use App\Domain\Pricing\Console\Commands\TradeSyncCommand;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Policies\PricingRulePolicy;
 use App\Domain\Pricing\Policies\ProductOverridePolicy;
 use App\Domain\Pricing\Services\PriceRecomputer;
 use App\Domain\Pricing\Services\RuleResolver;
+use App\Domain\Pricing\Services\WooRegularPriceFormatter;
 use App\Domain\ProductAutoCreate\Appliers\AutoCreateRetryApplier;
 use App\Domain\ProductAutoCreate\Appliers\NewProductOpportunityApplier;
 use App\Domain\ProductAutoCreate\Commands\ScanSupplierAddCandidatesCommand;
@@ -138,7 +141,6 @@ use App\Domain\Quotes\Console\Commands\QuotesExpireCommand;
 use App\Domain\Quotes\Models\Quote;
 use App\Domain\Quotes\Models\QuoteLine;
 use App\Domain\Quotes\Observers\QuoteLineImmutabilityObserver;
-use App\Domain\Pricing\Services\WooRegularPriceFormatter;
 use App\Domain\Quotes\Observers\QuoteTotalRecomputeObserver;
 use App\Domain\Quotes\Policies\QuoteLinePolicy;
 use App\Domain\Quotes\Policies\QuotePolicy;
@@ -149,13 +151,13 @@ use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
-use App\Domain\Sync\Contracts\SellPriceFormatter;
 use App\Domain\Sync\Commands\ProbeSourceabilityGapCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
 use App\Domain\Sync\Commands\SyncSupplierCommand;
 use App\Domain\Sync\Commands\SyncSupplierFeedDatesCommand;
 use App\Domain\Sync\Commands\WooImportProductsCommand;
 use App\Domain\Sync\Console\Commands\CheckStaleSuppliersCommand;
+use App\Domain\Sync\Contracts\SellPriceFormatter;
 use App\Domain\Sync\Models\ImportIssue;
 use App\Domain\Sync\Models\Supplier;
 use App\Domain\Sync\Models\SyncRun;
@@ -775,6 +777,12 @@ class AppServiceProvider extends ServiceProvider
                 // under app/Domain/Quotes/Console/Commands/ so explicit
                 // registration is required.
                 QuotesExpireCommand::class,
+                // Quick task 260910-lwv — trade storefront pricing. Both live
+                // under app/Domain/Pricing/Console/Commands/ so explicit
+                // registration is required, same as the Quotes/Competitor
+                // commands above. trade:sync is DRY-RUN BY DEFAULT.
+                TradePreviewCommand::class,
+                TradeSyncCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 CompetitorWatchCommand::class,
                 // Quick task 260504-e0q — operator command to replay quarantined CSVs.
@@ -1088,7 +1096,7 @@ class AppServiceProvider extends ServiceProvider
                 // app/Console/Commands/ (auto-discovered dir) but registered
                 // explicitly alongside the other product commands.
                 ProposeSkuAliasesCommand::class,
-            RefreshBrandsToAddCommand::class,
+                RefreshBrandsToAddCommand::class,
                 // Phase 15 Plan 15a-02 — google:pull-ga4. READ-ONLY daily pull of
                 // GA4 channel/campaign metrics into ga_channel_metrics_daily.
                 // Lives under app/Domain/Integrations/Commands/ so explicit

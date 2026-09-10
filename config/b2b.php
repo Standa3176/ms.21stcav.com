@@ -34,11 +34,30 @@ return [
     // UpdateCustomerGroupOnUserRoleChange reads this on every customer
     // webhook to denormalise users.customer_group_id. Unrecognised roles
     // (or 'customer' default) -> null = retail.
+    // ── Quick task 260910-lwv — TRADE STOREFRONT PRICING ──────────────────
+    //
+    // Consumed by TradeStorefrontPricer + the trade:* commands. Retail pricing
+    // does not read any of this.
+    //
+    // group_id is the B2BKing group whose per-product price meta we publish.
+    // Discovered on the live install 2026-09-09 by reading a product back
+    // through the Woo REST API: 167507 = "B2B Users" (167509 exists and is
+    // empty). The meta key shape is B2BKing's own, verified by writing to it.
+    'storefront' => [
+        'group_id' => (int) env('B2B_TRADE_GROUP_ID', 167507),
+        'meta_key_template' => 'b2bking_regular_product_price_group_%d',
+
+        // Operator, 2026-09-09/10: "trade will always be a max of cost + 15%
+        // on special and normal cost", floored at 6%.
+        'min_margin_bps' => (int) env('B2B_TRADE_MIN_MARGIN_BPS', 600),
+        'max_margin_bps' => (int) env('B2B_TRADE_MAX_MARGIN_BPS', 1500),
+    ],
+
     'role_to_group_map' => [
         'wholesale_customer' => 'trade',
-        'wholesale_b2b'      => 'reseller',
-        'edu_customer'       => 'education',
-        'nhs_customer'       => 'nhs',
+        'wholesale_b2b' => 'reseller',
+        'edu_customer' => 'education',
+        'nhs_customer' => 'nhs',
     ],
 
 ];

@@ -40,15 +40,38 @@ it('prices at cost + 15% when retail leaves room', function (): void {
         ->and($r->isPublishable())->toBeTrue();
 });
 
-it('caps at a penny below retail rather than exceeding the public price', function (): void {
-    // Cost 100.00 ex-VAT gives floor 127.20 and target 138.00, both inc-VAT.
-    // Retail at 130.00 sits between them, so the ceiling binds, not the floor.
-    $p = Product::factory()->create(['buy_price' => 100.00, 'sell_price' => 130.00]);
+it('caps below retail by the minimum discount, not by a single penny', function (): void {
+    // 260910-rsv — the ceiling is now retail minus the minimum discount.
+    // Cost 100.00 gives floor 127.20 and target 138.00 (both inc-VAT); retail
+    // 140.00 sits above target, so at 2% the ceiling is 137.20 and binds.
+    config()->set('b2b.storefront.min_discount_pct', 2.0);
+    $p = Product::factory()->create(['buy_price' => 100.00, 'sell_price' => 140.00]);
 
     $r = tradePricer()->price($p);
 
     expect($r->source)->toBe('retail_capped')
-        ->and($r->pennies)->toBe(12999);
+        ->and($r->pennies)->toBe(13720);   // 140.00 x 0.98
+});
+
+it('SUPPRESSES rather than publishing a token penny off standard', function (): void {
+    // The 458-product case from the first live preview: cost+15% exceeds
+    // retail, so the old code published retail-minus-1p. With a 2% minimum
+    // there is no room above the floor, so nothing publishes and B2BKing
+    // falls back to the standard price.
+    // Cost 100.00 gives a 127.20 floor. At retail 129.00 a 2% discount lands
+    // at 126.42 — below the floor — so nothing can be published.
+    config()->set('b2b.storefront.min_discount_pct', 2.0);
+    $p = Product::factory()->create(['buy_price' => 100.00, 'sell_price' => 129.00]);
+
+    expect(tradePricer()->price($p)->source)->toBe('suppressed')
+        ->and(tradePricer()->price($p)->reason)->toBe('no_headroom_below_retail');
+});
+
+it('restores penny-level behaviour when the minimum discount is zero', function (): void {
+    config()->set('b2b.storefront.min_discount_pct', 0);
+    $p = Product::factory()->create(['buy_price' => 100.00, 'sell_price' => 130.00]);
+
+    expect(tradePricer()->price($p)->pennies)->toBe(12999);
 });
 
 it('SUPPRESSES rather than selling below the 6% floor', function (): void {
@@ -172,4 +195,73 @@ it('honours configured margins rather than hardcoding 6 and 15', function (): vo
 
     // 100 x 1.10 x 1.2 = 132.00
     expect(tradePricer()->price($p)->pennies)->toBe(13200);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 260910-rsv — absolute cost from a manufacturer price list
+|--------------------------------------------------------------------------
+|
+| The August Yealink platinum list is a FIXED price per line for the month.
+| Loading it as a percentage would drift every time the supplier feed moves,
+| so a row may instead carry the price itself.
+*/
+
+it('prices from a manufacturer price-list cost, ignoring what the feed says', function (): void {
+    $p = Product::factory()->create([
+        'sku' => 'YEA-A24', 'brand_id' => 300,
+        'buy_price' => 870.00,      // what the feed quotes (silver)
+        'sell_price' => 1400.00,
+    ]);
+
+    // The real platinum price for A24 from the August list.
+    TradeCostAdjustment::factory()->priceList(773.00)->create(['sku' => 'YEA-A24']);
+
+    $r = tradePricer()->price($p);
+
+    // 773 x 1.15 x 1.2 = 1066.74
+    expect($r->pennies)->toBe(106674)
+        ->and($r->source)->toBe('target')
+        // 11.1% below feed — the measured platinum gap.
+        ->and(round($r->costAdjustment * 100, 1))->toBe(11.1);
+});
+
+it('leaves products.buy_price untouched — the adjustment is trade only', function (): void {
+    $p = Product::factory()->create(['sku' => 'YEA-X', 'buy_price' => 1000.00, 'sell_price' => 2000.00]);
+    TradeCostAdjustment::factory()->priceList(800.00)->create(['sku' => 'YEA-X']);
+
+    tradePricer()->price($p);
+
+    expect((float) $p->fresh()->buy_price)->toBe(1000.0);
+});
+
+it('takes the cheaper of two competing brand arrangements', function (): void {
+    $p = Product::factory()->create(['brand_id' => 501, 'buy_price' => 1000.00, 'sell_price' => 5000.00]);
+    TradeCostAdjustment::factory()->create(['brand_id' => 501, 'adjustment_pct' => '5.000']);   // -> 950
+    TradeCostAdjustment::factory()->priceList(880.00)->create(['brand_id' => 501]);             // -> 880
+
+    expect(tradePricer()->price($p)->costAdjustment)->toBe(0.12);
+});
+
+it('ignores a row that would make trade cost MORE than the feed', function (): void {
+    // Three Yealink lines came back with the price list ABOVE the feed cost.
+    // Whatever the cause, honouring it would price trade above retail.
+    $p = Product::factory()->create(['sku' => 'YEA-RCH80', 'buy_price' => 205.00, 'sell_price' => 400.00]);
+    TradeCostAdjustment::factory()->priceList(252.00)->create(['sku' => 'YEA-RCH80']);
+
+    $r = tradePricer()->price($p);
+
+    expect($r->costAdjustment)->toBe(0.0)
+        // 205 x 1.15 x 1.2 = 282.90 — priced off the feed, not the bad row.
+        ->and($r->pennies)->toBe(28290);
+});
+
+it('ignores a price-list row that has expired', function (): void {
+    $p = Product::factory()->create(['sku' => 'LOGI-DEAL', 'buy_price' => 1000.00, 'sell_price' => 5000.00]);
+    TradeCostAdjustment::factory()->priceList(800.00)->create([
+        'sku' => 'LOGI-DEAL',
+        'valid_until' => now()->subDay()->toDateString(),
+    ]);
+
+    expect(tradePricer()->price($p)->costAdjustment)->toBe(0.0);
 });

@@ -59,6 +59,17 @@ final class TradeSyncCommand extends BaseCommand
     /** How many throttle windows to wait out per product before giving up on it. */
     private const MAX_THROTTLE_WAITS = 10;
 
+    /**
+     * Abort the whole run after this many CONSECUTIVE write failures.
+     *
+     * 260911-t80 — the TLS certificate expired mid-afternoon and this command
+     * ground through all 4,333 products retrying a failure that could never
+     * succeed, reporting "0 written, 4333 failed" an hour later. When every
+     * write is failing the cause is environmental, not per-product, and the
+     * operator wants to know in seconds.
+     */
+    private const MAX_CONSECUTIVE_FAILURES = 15;
+
     public function __construct(
         private readonly TradeStorefrontPricer $pricer,
         private readonly TradeCostAdjustmentResolver $adjustments,
@@ -110,6 +121,8 @@ final class TradeSyncCommand extends BaseCommand
 
         $counts = ['target' => 0, 'retail_capped' => 0, 'suppressed' => 0, 'skipped_unchanged' => 0, 'failed' => 0];
         $written = 0;
+        $consecutiveFailures = 0;
+        $aborted = false;
 
         foreach ($products as $product) {
             $result = $this->pricer->price($product);
@@ -141,8 +154,21 @@ final class TradeSyncCommand extends BaseCommand
 
             if ($this->writeWithThrottleWait($product, $metaKey, $value)) {
                 $written++;
+                $consecutiveFailures = 0;
             } else {
                 $counts['failed']++;
+                $consecutiveFailures++;
+
+                if ($consecutiveFailures >= self::MAX_CONSECUTIVE_FAILURES) {
+                    $this->error(sprintf(
+                        'ABORTED — %d consecutive write failures. This is environmental (expired TLS, '
+                        .'credentials, Woo down), not per-product. Nothing further was attempted.',
+                        $consecutiveFailures,
+                    ));
+                    $aborted = true;
+
+                    break;
+                }
             }
         }
 
@@ -161,7 +187,7 @@ final class TradeSyncCommand extends BaseCommand
             $this->comment('Nothing was written. Re-run with --live to publish these prices.');
         }
 
-        return $counts['failed'] > 0 ? self::FAILURE : self::SUCCESS;
+        return ($aborted || $counts['failed'] > 0) ? self::FAILURE : self::SUCCESS;
     }
 
     /**

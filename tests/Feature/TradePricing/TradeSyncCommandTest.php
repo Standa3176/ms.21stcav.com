@@ -205,3 +205,31 @@ it('gives up on one product rather than the whole run when the throttle never cl
         ->assertExitCode(1)
         ->expectsOutputToContain('throttle did not clear');
 });
+
+it('ABORTS the run when every write is failing, instead of grinding the catalogue', function (): void {
+    // 260911-t80 — the TLS certificate expired mid-run and this command tried
+    // all 4,333 products against a failure that could never succeed, reporting
+    // "0 written, 4333 failed" an hour later. Total failure is environmental;
+    // say so in seconds.
+    for ($i = 1; $i <= 40; $i++) {
+        Product::factory()->create([
+            'sku' => 'T-DEAD-'.$i, 'status' => 'publish', 'woo_product_id' => 900 + $i,
+            'buy_price' => 698.00, 'sell_price' => 1836.25,
+        ]);
+    }
+
+    $attempts = 0;
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('put')->andReturnUsing(function () use (&$attempts) {
+        $attempts++;
+        throw new RuntimeException('cURL Error: SSL certificate problem: certificate has expired');
+    });
+    app()->instance(WooClient::class, $woo);
+
+    $this->artisan('trade:sync --live')
+        ->assertExitCode(1)
+        ->expectsOutputToContain('ABORTED');
+
+    // Stopped at the threshold rather than walking all 40.
+    expect($attempts)->toBeLessThan(40)->toBeGreaterThan(0);
+});

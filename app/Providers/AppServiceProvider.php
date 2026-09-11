@@ -48,8 +48,11 @@ use App\Domain\Agents\Services\AgentRegistry;
 use App\Domain\Agents\Services\BudgetGuard;
 use App\Domain\Agents\Services\GuardrailEngine;
 use App\Domain\Agents\Services\ToolBus;
+use App\Domain\Alerting\Console\Commands\TlsCheckExpiryCommand;
+use App\Domain\Alerting\Contracts\TlsInspector;
 use App\Domain\Alerting\Models\AlertRecipient;
 use App\Domain\Alerting\Policies\AlertRecipientPolicy;
+use App\Domain\Alerting\Services\TlsCertificateInspector;
 use App\Domain\Competitor\Appliers\MarginChangeApplier;
 use App\Domain\Competitor\Console\Commands\CompetitorCheckStaleCommand;
 use App\Domain\Competitor\Console\Commands\CompetitorCsvPruneCommand;
@@ -193,6 +196,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // Quick task 260911-t80 — the TLS inspector is bound through a contract
+        // so tests can substitute the network; a test opening real sockets
+        // would go green the day the thing it catches gets fixed.
+        $this->app->bind(
+            TlsInspector::class,
+            TlsCertificateInspector::class,
+        );
+
         // Plan 04: SuggestionApplierResolver must be a singleton so every producer,
         // job and admin action resolves the SAME registry instance (not a fresh, empty copy).
         $this->app->singleton(SuggestionApplierResolver::class);
@@ -781,6 +792,10 @@ class AppServiceProvider extends ServiceProvider
                 // under app/Domain/Pricing/Console/Commands/ so explicit
                 // registration is required, same as the Quotes/Competitor
                 // commands above. trade:sync is DRY-RUN BY DEFAULT.
+                // Quick task 260911-t80 — daily TLS expiry check. Lives under
+                // app/Domain/Alerting/Console/Commands/ so explicit
+                // registration is required.
+                TlsCheckExpiryCommand::class,
                 TradePreviewCommand::class,
                 TradeSyncCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).

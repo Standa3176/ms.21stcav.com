@@ -92,6 +92,23 @@ Schedule::command('spec:sync-taxonomy-cache')
 // Runs BEFORE supplier:db-sync (Mon-Fri 07:00) so the prune never touches rows whose
 // sourceability status is about to change. Conservative gates (off-supplier + <2 competitors
 // + >=30 days old) mean a misclassified row is at worst preserved one extra week.
+// Quick task 260911-t80 — daily TLS expiry check, 08:20 London.
+//
+// 2026-09-11: meetingstore.co.uk's certificate expired at 09:34 UTC and was
+// found seven hours later by a failing trade:sync. Customers met a browser
+// security warning throughout, and every Woo write from this app failed.
+// certbot renews what certbot issued; the CWP AutoSSL domains had no renewal
+// scheduled at all, and a sibling cert had been expired since 1 May unnoticed.
+//
+// 08:20 is deliberately BEFORE the 09:30 pricing health check: if TLS is down,
+// every Woo write will fail anyway and this says why first.
+Schedule::command('tls:check-expiry --notify')
+    ->dailyAt('08:20')
+    ->withoutOverlapping(10)
+    ->onOneServer()
+    ->timezone('Europe/London')
+    ->description('TLS certificate expiry check (260911-t80)');
+
 Schedule::command('suggestions:prune-orphans')
     ->cron('0 6 * * 1')
     ->withoutOverlapping(60)

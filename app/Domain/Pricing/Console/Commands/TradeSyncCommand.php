@@ -6,6 +6,7 @@ namespace App\Domain\Pricing\Console\Commands;
 
 use App\Console\Commands\BaseCommand;
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\TradePricing\Services\TradeCostAdjustmentResolver;
 use App\Domain\TradePricing\Services\TradeStorefrontPricer;
@@ -54,6 +55,9 @@ final class TradeSyncCommand extends BaseCommand
         {--live : Write to Woo. WITHOUT THIS NOTHING IS WRITTEN.}';
 
     protected $description = 'Compute trade prices and publish them to the B2BKing group price meta (dry-run by default).';
+
+    /** How many throttle windows to wait out per product before giving up on it. */
+    private const MAX_THROTTLE_WAITS = 10;
 
     public function __construct(
         private readonly TradeStorefrontPricer $pricer,
@@ -135,20 +139,10 @@ final class TradeSyncCommand extends BaseCommand
                 continue;
             }
 
-            try {
-                $this->woo->put('products/'.((int) $product->woo_product_id), [
-                    'meta_data' => [['key' => $metaKey, 'value' => $value]],
-                ]);
+            if ($this->writeWithThrottleWait($product, $metaKey, $value)) {
                 $written++;
-            } catch (\Throwable $e) {
+            } else {
                 $counts['failed']++;
-                Log::warning('trade.sync.write_failed', [
-                    'sku' => $product->sku,
-                    'woo_product_id' => $product->woo_product_id,
-                    'exception' => $e::class,
-                    'message' => $e->getMessage(),
-                ]);
-                $this->warn(sprintf('    write failed for %s — %s', (string) $product->sku, $e->getMessage()));
             }
         }
 
@@ -168,6 +162,63 @@ final class TradeSyncCommand extends BaseCommand
         }
 
         return $counts['failed'] > 0 ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * Write one product's trade price, WAITING OUT the Woo throttle.
+     *
+     * 260911 — the first full live run dropped most of the catalogue. The
+     * throttle (60 live writes/min) raises WooWriteThrottleException, which is
+     * documented as RETRYABLE: "the correct response is to requeue the job so
+     * the write is attempted again later". The original code caught it as a
+     * generic Throwable, counted it failed and moved to the next product — so
+     * roughly 60 products landed per minute and every other one in that window
+     * was silently skipped.
+     *
+     * This is the same shape as the August incident (260822-rmo) where a
+     * thrown throttle consumed queue attempts and killed 5,319 price pushes.
+     * A queued caller releases; this command is synchronous, so it sleeps for
+     * the interval the exception itself reports and re-attempts the SAME
+     * product. Bounded, so a stuck lock ends the product rather than the run.
+     */
+    private function writeWithThrottleWait(Product $product, string $metaKey, string $value): bool
+    {
+        $path = 'products/'.((int) $product->woo_product_id);
+        $payload = ['meta_data' => [['key' => $metaKey, 'value' => $value]]];
+        $waits = 0;
+
+        while (true) {
+            try {
+                $this->woo->put($path, $payload);
+
+                return true;
+            } catch (WooWriteThrottleException $e) {
+                $waits++;
+                if ($waits > self::MAX_THROTTLE_WAITS) {
+                    Log::warning('trade.sync.throttle_exhausted', [
+                        'sku' => $product->sku,
+                        'waits' => $waits,
+                    ]);
+                    $this->warn(sprintf('    %s — throttle did not clear after %d waits, skipping', (string) $product->sku, $waits - 1));
+
+                    return false;
+                }
+
+                $seconds = $e->retryAfterSeconds();
+                $this->line(sprintf('    throttled — waiting %ds', $seconds));
+                sleep($seconds);
+            } catch (\Throwable $e) {
+                Log::warning('trade.sync.write_failed', [
+                    'sku' => $product->sku,
+                    'woo_product_id' => $product->woo_product_id,
+                    'exception' => $e::class,
+                    'message' => $e->getMessage(),
+                ]);
+                $this->warn(sprintf('    write failed for %s — %s', (string) $product->sku, $e->getMessage()));
+
+                return false;
+            }
+        }
     }
 
     /**

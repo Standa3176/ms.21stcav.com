@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Exceptions\WooWriteThrottleException;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -144,4 +145,63 @@ it('preview writes nothing and makes no Woo calls at all', function (): void {
     $this->artisan('trade:preview')
         ->assertExitCode(0)
         ->expectsOutputToContain('Trade price preview');
+});
+
+/*
+|--------------------------------------------------------------------------
+| 260911-czm — the throttle is a DEFERRAL, not a failure
+|--------------------------------------------------------------------------
+|
+| The first full live run dropped most of the catalogue: the Woo throttle
+| (60 writes/min) raised WooWriteThrottleException, the command caught it as a
+| generic error and moved on, so roughly 60 products landed per minute and
+| every other one in that window was silently skipped. Same shape as the
+| August incident that killed 5,319 price pushes.
+*/
+
+it('WAITS OUT the Woo throttle and retries the same product', function (): void {
+    Product::factory()->create([
+        'sku' => 'T-THROTTLE', 'status' => 'publish', 'woo_product_id' => 777,
+        'buy_price' => 698.00, 'sell_price' => 1836.25,
+    ]);
+
+    $calls = 0;
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('put')->twice()
+        ->andReturnUsing(function () use (&$calls) {
+            $calls++;
+            if ($calls === 1) {
+                throw new WooWriteThrottleException(
+                    'Woo live-write rate ceiling (60/min) reached', 1,
+                );
+            }
+
+            return [];
+        });
+    app()->instance(WooClient::class, $woo);
+
+    $this->artisan('trade:sync --skus=T-THROTTLE --live')
+        ->assertExitCode(0)
+        ->expectsOutputToContain('throttled — waiting 1s')
+        // The product is WRITTEN, not counted as a failure.
+        ->expectsOutputToContain('1 written to Woo');
+
+    expect($calls)->toBe(2);
+});
+
+it('gives up on one product rather than the whole run when the throttle never clears', function (): void {
+    Product::factory()->create([
+        'sku' => 'T-STUCK', 'status' => 'publish', 'woo_product_id' => 778,
+        'buy_price' => 698.00, 'sell_price' => 1836.25,
+    ]);
+
+    $woo = Mockery::mock(WooClient::class);
+    $woo->shouldReceive('put')->andThrow(
+        new WooWriteThrottleException('still throttled', 1),
+    );
+    app()->instance(WooClient::class, $woo);
+
+    $this->artisan('trade:sync --skus=T-STUCK --live')
+        ->assertExitCode(1)
+        ->expectsOutputToContain('throttle did not clear');
 });

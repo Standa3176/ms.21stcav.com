@@ -25,16 +25,36 @@ Artisan::command('inspire', function () {
 */
 
 // D-04: audit_log — 365 days
+// ── Quick task 260911 — TIMEZONE CONSISTENCY ─────────────────────────────
+//
+// config('app.timezone') is UTC, which is correct: timestamps are STORED in
+// UTC and that should not change. But a Schedule entry without an explicit
+// ->timezone() inherits it, so `dailyAt('03:00')` means 03:00 UTC — which is
+// 04:00 London for the seven months of BST.
+//
+// This file staggers work in ten-minute slots (03:00, 03:10, 03:20, 03:25,
+// 03:30, 03:40 ...). Four entries were missing the zone and therefore slid an
+// hour out of position against the other 47 every summer, collapsing the gaps
+// the stagger exists to create. products:reconcile-woo-maintenance was the
+// one that mattered: it writes to Woo, and in BST it drifted toward the
+// Mon/Thu auto-create publish, where both compete for the same 60/min write
+// throttle.
+//
+// EVERY Schedule::command() in this file must set ->timezone('Europe/London').
+// ScheduleTimezoneTest enforces it.
+
 Schedule::command('activitylog:prune --days=365')
     ->dailyAt('03:00')
     ->withoutOverlapping(30)
-    ->onOneServer();
+    ->onOneServer()
+    ->timezone('Europe/London');
 
 // D-05: integration_events — 90 days
 Schedule::command('integration-events:prune --days=90')
     ->dailyAt('03:10')
     ->withoutOverlapping(30)
-    ->onOneServer();
+    ->onOneServer()
+    ->timezone('Europe/London');
 
 // D-07: sync_errors — 90 days (Phase 2 Plan 05 — replaces the Phase 1 TODO marker)
 Schedule::command('sync-errors:prune', ['--days' => 90])
@@ -60,7 +80,8 @@ Schedule::command('webhooks:prune-receipts')
 Schedule::command('sync-diffs:prune')
     ->dailyAt('03:30')
     ->withoutOverlapping(30)
-    ->onOneServer();
+    ->onOneServer()
+    ->timezone('Europe/London');
 
 // Quick task 260504-m5w — daily Woo catalogue refresh.
 // Pulls publish + draft + private products from meetingstore.co.uk into the
@@ -551,7 +572,8 @@ if ((bool) config('agents.ad_optimisation_schedule_enabled', true)) {
 // slow run colliding with the next night's fire. Never writes to Woo.
 Schedule::command('products:reconcile-woo-maintenance')
     ->dailyAt('04:30')
-    ->withoutOverlapping();
+    ->withoutOverlapping()
+    ->timezone('Europe/London');
 
 // Phase 8 Plan 05 (D-07) — agents:prune-archive annual on 1 Jan 02:00 Europe/London.
 // Exports AgentRun rows where completed_at < NOW() - INTERVAL 5 YEAR to

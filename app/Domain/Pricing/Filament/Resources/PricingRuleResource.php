@@ -6,6 +6,7 @@ namespace App\Domain\Pricing\Filament\Resources;
 
 use App\Domain\Pricing\Filament\Resources\PricingRuleResource\Pages;
 use App\Domain\Pricing\Models\PricingRule;
+use App\Domain\Products\Support\BrandOptions;
 use App\Filament\Actions\QueueCsvExportAction;
 use App\Filament\Actions\SavedFilterAction;
 use App\Filament\Concerns\HasExportableTable;
@@ -90,18 +91,23 @@ class PricingRuleResource extends Resource
                     PricingRule::SCOPE_DEFAULT_TIER => 'Default tier',
                 ]),
 
-            // brand_id / category_id are numeric inputs — no brands / categories
-            // tables exist in Phase 3 v1 (D-06 deferred). Phase 6 auto-create
-            // will populate these when the taxonomy tables land.
-            TextInput::make('brand_id')
-                ->label('Brand ID')
-                ->numeric()
+            // 260912-f8x — was a bare numeric input. brand_id is a WooCommerce
+            // term id with no local brands table (D-06 deferred), so writing a
+            // rule for Neat meant knowing Neat's term id, typing it, and hoping
+            // — with nothing on screen confirming the number and nothing in the
+            // table telling a later reader which brand a rule applied to.
+            // BrandOptions resolves names from Woo and fails soft, so an
+            // unreachable Woo leaves the form usable rather than blocking it.
+            Select::make('brand_id')
+                ->label('Brand')
+                ->options(fn (): array => BrandOptions::all())
+                ->searchable()
                 ->nullable()
                 ->visible(fn ($get) => in_array($get('scope'), [
                     PricingRule::SCOPE_BRAND,
                     PricingRule::SCOPE_BRAND_CATEGORY,
                 ], true))
-                ->helperText('Matches product.brand_id / variant.brand_id (Phase 6 taxonomy).'),
+                ->helperText('Matches product.brand_id. Empty list means Woo is unreachable — the rule still works if the id is already set.'),
 
             TextInput::make('category_id')
                 ->label('Category ID')
@@ -169,7 +175,9 @@ class PricingRuleResource extends Resource
                     })
                     ->sortable(),
 
-                TextColumn::make('brand_id')->label('Brand')->placeholder('—'),
+                TextColumn::make('brand_id')->label('Brand')
+                    ->formatStateUsing(fn ($state) => BrandOptions::name($state === null ? null : (int) $state))
+                    ->placeholder('—'),
                 TextColumn::make('category_id')->label('Category')->placeholder('—'),
 
                 TextColumn::make('margin_basis_points')

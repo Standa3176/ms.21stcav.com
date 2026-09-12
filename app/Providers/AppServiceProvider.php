@@ -174,6 +174,7 @@ use App\Domain\Sync\Services\SupplierFeedReader;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\Sync\Services\WpRestClient;
+use App\Domain\TradePricing\Console\Commands\TradeImportCostsCommand;
 use App\Domain\TradePricing\Models\CustomerGroup;
 use App\Domain\TradePricing\Policies\CustomerGroupPolicy;
 use App\Domain\TradePricing\Services\RoleToGroupMapper;
@@ -798,6 +799,8 @@ class AppServiceProvider extends ServiceProvider
                 TlsCheckExpiryCommand::class,
                 TradePreviewCommand::class,
                 TradeSyncCommand::class,
+                // 260912-f8x — loads a manufacturer price list as trade-only costs.
+                TradeImportCostsCommand::class,
                 // Phase 5 Plan 02 Task 2 — scheduled 5-minute CSV watcher (COMP-01+04).
                 CompetitorWatchCommand::class,
                 // Quick task 260504-e0q — operator command to replay quarantined CSVs.

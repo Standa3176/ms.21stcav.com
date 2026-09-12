@@ -36,8 +36,8 @@ use Spatie\Permission\PermissionRegistrar;
 function skipIfMySqlOfflinePricingRuleCgField(): void
 {
     try {
-        \DB::connection()->getPdo();
-    } catch (\Throwable $e) {
+        DB::connection()->getPdo();
+    } catch (Throwable $e) {
         test()->markTestSkipped('MySQL offline: '.$e->getMessage());
     }
 }
@@ -89,7 +89,12 @@ it('PricingRuleResource preserves Phase 3 form fields (D-09 additive invariant)'
 
     // Existing form fields (Phase 3 — must stay).
     expect($source)->toContain("Select::make('scope')");
-    expect($source)->toContain("TextInput::make('brand_id')");
+    // 260912-f8x — brand_id is now a searchable Select, not a numeric input.
+    // The guard's intent is that Phase 3 FIELDS must not disappear, and it
+    // still holds: the field is present and still named brand_id. Only the
+    // widget changed, because typing a raw Woo term id is how a pricing rule
+    // gets attached to the wrong brand with nothing on screen to catch it.
+    expect($source)->toContain("Select::make('brand_id')");
     expect($source)->toContain("TextInput::make('category_id')");
     expect($source)->toContain("TextInput::make('margin_basis_points')");
     expect($source)->toContain("TextInput::make('priority')");

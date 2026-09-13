@@ -31,6 +31,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
@@ -323,6 +324,9 @@ class SuggestionResource extends Resource
                     'pending' => 'warning',
                     'approved' => 'primary',
                     'rejected' => 'danger',
+                    // 260913-qoi — queued, not finished. Deliberately NOT
+                    // 'success': the product does not exist yet.
+                    'applying' => 'info',
                     'applied' => 'success',
                     'failed' => 'danger',
                     default => 'gray',
@@ -348,6 +352,42 @@ class SuggestionResource extends Resource
                         'Not sourceable' => 'No supplier currently carries this SKU — cannot be created.',
                         default => null,
                     }),
+                // 260913-qoi — "is this still for sale?" The single most
+                // important thing about a sourcing opportunity, and until now
+                // unanswerable from this screen.
+                //
+                // evidence->last_seen_at is refreshed by OrphanDetector on
+                // EVERY sighting. The row's own updated_at is NOT a substitute:
+                // it moves only when a NEW competitor is added, so on
+                // 2026-09-13 1,631 products that were in that morning's scrape
+                // looked 30+ days stale.
+                TextColumn::make('last_seen')
+                    ->label('Last seen')
+                    ->state(function (Suggestion $record): string {
+                        $seen = data_get($record->evidence, 'last_seen_at');
+                        if (! $seen) {
+                            return 'unknown';
+                        }
+                        $when = Carbon::parse((string) $seen);
+
+                        return $when->isToday() ? 'today' : $when->diffForHumans();
+                    })
+                    ->badge()
+                    ->color(function (Suggestion $record): string {
+                        $seen = data_get($record->evidence, 'last_seen_at');
+                        if (! $seen) {
+                            return 'gray';
+                        }
+                        $when = Carbon::parse((string) $seen);
+
+                        return match (true) {
+                            $when->gt(now()->subDays(7)) => 'success',
+                            $when->gt(now()->subDays(30)) => 'warning',
+                            default => 'danger',
+                        };
+                    })
+                    ->sortable(query: fn (Builder $query, string $direction): Builder => $query->orderBy('evidence->last_seen_at', $direction)),
+
                 TextColumn::make('kind')->badge()->sortable()->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('correlation_id')
                     ->fontFamily('mono')
@@ -360,6 +400,39 @@ class SuggestionResource extends Resource
             ])
             ->defaultSort('supporting_competitors', 'desc')
             ->filters([
+                // 260913-qoi — narrow to opportunities a competitor is STILL
+                // selling. Default list is cumulative: every orphan SKU ever
+                // scraped and not yet rejected stays pending forever, because
+                // nothing expires one when a competitor delists it.
+                //
+                // Measured 2026-09-13: 9,083 pending, but only ~2,800 seen in
+                // the last 30 days and 4,586 absent from every scrape. Sourcing
+                // against the raw list means chasing months-dead listings.
+                SelectFilter::make('last_seen')
+                    ->label('Still listed')
+                    ->options([
+                        '7' => 'Seen in the last 7 days',
+                        '30' => 'Seen in the last 30 days',
+                        'stale' => 'NOT seen for 30+ days',
+                    ])
+                    ->query(function (Builder $query, array $data): Builder {
+                        $value = $data['value'] ?? null;
+                        if (! filled($value)) {
+                            return $query;
+                        }
+                        if ($value === 'stale') {
+                            return $query->where(fn (Builder $q): Builder => $q
+                                ->whereNull('evidence->last_seen_at')
+                                ->orWhere('evidence->last_seen_at', '<', now()->subDays(30)->toIso8601String()));
+                        }
+
+                        return $query->where(
+                            'evidence->last_seen_at',
+                            '>=',
+                            now()->subDays((int) $value)->toIso8601String(),
+                        );
+                    }),
+
                 // Phase 12 Plan 05 (Open Question O-5) — explicit kind options
                 // INCLUDE agent_guardrail_blocked so an admin can opt-in to
                 // viewing audit-blocked SEO runs. Default list hides them via
@@ -388,6 +461,7 @@ class SuggestionResource extends Resource
                     'pending' => 'Pending',
                     'approved' => 'Approved',
                     'rejected' => 'Rejected',
+                    'applying' => 'Creating…',
                     'applied' => 'Applied',
                     'failed' => 'Failed',
                 ])->default('pending'),

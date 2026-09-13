@@ -293,6 +293,59 @@ final class CreateWooProductJob implements ShouldQueue
             completenessScore: (int) ($fresh->completeness_score ?? 0),
             autoCreateStatus: (string) $fresh->auto_create_status,
         ));
+
+        // 260913-qoi — close the loop on the suggestion the operator clicked.
+        // ApplySuggestionJob marked it 'applying' at dispatch; the product now
+        // genuinely exists on Woo, so it is APPLIED.
+        $this->resolveOriginatingSuggestion(Suggestion::STATUS_APPLIED, [
+            'woo_product_id' => $wooId,
+            'product_id' => (int) $fresh->id,
+        ]);
+    }
+
+    /**
+     * Move the suggestion that triggered this job to its terminal state.
+     *
+     * 260913-qoi — before this, NewProductOpportunityApplier dispatched the job
+     * and ApplySuggestionJob immediately marked the suggestion 'applied'. That
+     * said "created" when it meant "queued", and a later failure left the row
+     * still reading 'applied' while the failure surfaced as a SEPARATE
+     * auto_create_failed suggestion. The operator watched the row they clicked
+     * and it never changed — the reported symptom on 2026-09-13.
+     *
+     * Never throws: a bookkeeping update must not fail a job whose real work
+     * already succeeded, nor mask the original error on the failure path.
+     *
+     * @param  array<string, mixed>  $extra
+     */
+    private function resolveOriginatingSuggestion(string $status, array $extra = []): void
+    {
+        if ($this->suggestionId === null || $this->suggestionId === '') {
+            return;
+        }
+
+        try {
+            $suggestion = Suggestion::find($this->suggestionId);
+            if ($suggestion === null) {
+                return;
+            }
+
+            $evidence = (array) $suggestion->evidence;
+            $evidence['auto_create'] = $extra + ['resolved_at' => now()->toIso8601String()];
+
+            $suggestion->forceFill([
+                'status' => $status,
+                'evidence' => $evidence,
+                'applied_at' => $status === Suggestion::STATUS_APPLIED ? now() : null,
+            ])->saveQuietly();
+        } catch (\Throwable $e) {
+            Log::warning('CreateWooProductJob: could not resolve originating suggestion', [
+                'sku' => $this->sku,
+                'suggestion_id' => $this->suggestionId,
+                'intended_status' => $status,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -452,6 +505,13 @@ final class CreateWooProductJob implements ShouldQueue
                 'error' => $e->getMessage(),
                 'exception' => $e::class,
             ],
+        ]);
+
+        // 260913-qoi — and mark the ORIGINATING suggestion failed, so the row
+        // the operator is watching turns red. The DLQ row above stays: it is
+        // what Replay acts on. This is the visible half.
+        $this->resolveOriginatingSuggestion(Suggestion::STATUS_FAILED, [
+            'error' => $e->getMessage(),
         ]);
     }
 

@@ -56,9 +56,17 @@ final class ApplySuggestionJob implements ShouldQueue
             $applier = $resolver->resolve($suggestion);
             $result = $applier->apply($suggestion);
 
+            // 260913-qoi — an applier that merely DISPATCHED work is not done.
+            // It reports `dispatched_job_class`; that job owns the terminal
+            // state and will set APPLIED or FAILED when it actually finishes.
+            // Synchronous appliers (no such key) are unchanged.
+            $dispatchedAsync = isset($result['dispatched_job_class']);
+
             $suggestion->update([
-                'status' => Suggestion::STATUS_APPLIED,
-                'applied_at' => now(),
+                'status' => $dispatchedAsync
+                    ? Suggestion::STATUS_APPLYING
+                    : Suggestion::STATUS_APPLIED,
+                'applied_at' => $dispatchedAsync ? null : now(),
             ]);
 
             $logger->log([

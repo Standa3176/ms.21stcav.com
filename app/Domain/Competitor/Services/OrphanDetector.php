@@ -6,6 +6,7 @@ namespace App\Domain\Competitor\Services;
 
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Suggestions\Models\Suggestion;
+use Illuminate\Support\Facades\Context;
 
 /**
  * Phase 5 Plan 02 Task 2 — Orphan-SKU producer (D-08 + D-09).
@@ -47,11 +48,12 @@ final class OrphanDetector
             return Suggestion::create([
                 'kind' => 'new_product_opportunity',
                 'status' => Suggestion::STATUS_PENDING,
-                'correlation_id' => (string) (\Illuminate\Support\Facades\Context::get('correlation_id') ?? ''),
+                'correlation_id' => (string) (Context::get('correlation_id') ?? ''),
                 'evidence' => [
                     'sku' => $sku,
                     'supporting_competitors' => 1,
                     'first_seen_at' => $now,
+                    'last_seen_at' => $now,
                     'competitor_sightings' => [$sighting],
                 ],
                 'payload' => ['sku' => $sku],
@@ -71,13 +73,34 @@ final class OrphanDetector
             }
         }
 
+        // 260913-qoi — an already-counted competitor still REFRESHES recency.
+        //
+        // This used to `return $existing` untouched (D-09 idempotent no-op).
+        // That correctly stops supporting_competitors being incremented twice
+        // for the same competitor — but it also meant `updated_at` only ever
+        // moved when a NEW competitor appeared. A SKU that Screenmoove has
+        // listed on every scrape since May still carried its original May
+        // timestamp, so the Suggestions inbox showed live, currently-sourceable
+        // products as a month stale.
+        //
+        // Measured 2026-09-13: of 6,965 pending suggestions untouched for 30+
+        // days, 1,631 were in THAT MORNING'S scrape. The operator could not
+        // tell a dead listing from a live one.
+        //
+        // D-09 still holds: the counter and the sightings array are untouched
+        // on this path. Only last_seen_at and the row timestamp move.
         if ($alreadyCounted) {
-            return $existing;                                // D-09 idempotent no-op
+            $evidence['last_seen_at'] = $now;
+            $existing->evidence = $evidence;
+            $existing->save();
+
+            return $existing;
         }
 
         $sightings[] = $sighting;
         $evidence['competitor_sightings'] = $sightings;
         $evidence['supporting_competitors'] = count($sightings);
+        $evidence['last_seen_at'] = $now;
 
         $existing->evidence = $evidence;
         $existing->save();

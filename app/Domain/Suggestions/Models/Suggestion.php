@@ -33,6 +33,20 @@ class Suggestion extends Model
 
     public const STATUS_REJECTED = 'rejected';
 
+    /**
+     * 260913-qoi — dispatched, but the work has NOT finished.
+     *
+     * Some appliers do the work inline; NewProductOpportunityApplier only
+     * DISPATCHES CreateWooProductJob and returns. Marking those 'applied' at
+     * dispatch told the operator the product existed when it was merely queued,
+     * and if the job later failed the row still read 'applied' while the
+     * failure appeared as a SEPARATE auto_create_failed suggestion elsewhere.
+     * The thing you were watching never changed.
+     *
+     * The dispatched job resolves this to APPLIED or FAILED.
+     */
+    public const STATUS_APPLYING = 'applying';
+
     public const STATUS_APPLIED = 'applied';
 
     public const STATUS_FAILED = 'failed';

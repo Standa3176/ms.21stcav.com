@@ -8,6 +8,7 @@ use App\Console\Commands\AuditStockDivergenceCommand;
 use App\Console\Commands\BackfillCategoryFromWooCommand;
 use App\Console\Commands\BackfillMerchantFeedCommand;
 use App\Console\Commands\BackfillProductBrandFromNameCommand;
+use App\Console\Commands\BackfillSuggestionLastSeenCommand;
 use App\Console\Commands\BackfillWooCostCommand;
 use App\Console\Commands\BackfillWooStockCommand;
 use App\Console\Commands\Cutover\AutoSyncDivergenceCommand;
@@ -1105,6 +1106,8 @@ class AppServiceProvider extends ServiceProvider
                 // 260913-pyz — one-time backfill of _alg_wc_cog_cost for products
                 // that reached Woo with no cost meta at all.
                 BackfillWooCostCommand::class,
+                // 260913-qoi — one-time repair of evidence->last_seen_at.
+                BackfillSuggestionLastSeenCommand::class,
                 // Quick task 260702-h50 — products:refresh-brands-to-add.
                 // Piece 1 of the "Brands to Add" workflow. Walks pending
                 // new_product_opportunity suggestions, resolves each SKU's

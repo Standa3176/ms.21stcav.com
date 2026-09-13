@@ -18,6 +18,7 @@ use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\ProductAutoCreate\Services\WooBrandCreator;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\ProductSupplierSku;
+use App\Domain\Products\Services\WooFieldComparator;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Sync\Concerns\HandlesWooWriteThrottle;
 use App\Domain\Sync\Exceptions\WooWriteThrottleException;
@@ -239,9 +240,7 @@ final class CreateWooProductJob implements ShouldQueue
                 : '0.00',
             'short_description' => (string) $product->short_description,
             'description' => (string) $product->long_description,
-            'meta_data' => [
-                ['key' => '_yoast_wpseo_metadesc', 'value' => (string) $product->meta_description],
-            ],
+            'meta_data' => $this->buildCreateMeta($product),
             'categories' => [['id' => $categoryId]],
             'images' => [],
         ];
@@ -322,6 +321,52 @@ final class CreateWooProductJob implements ShouldQueue
      * the mistake, and resuming would put a second listing of one physical part
      * on the storefront. Refuse, and let the duplicate gate do its job.
      */
+    /**
+     * Meta entries for the CREATE payload.
+     *
+     * 260913-pyz — cost of goods is written here so the product is BORN with
+     * it. Without this, every app-created product reached Woo with no
+     * `_alg_wc_cog_cost` and nothing ever backfilled it: WooFieldComparator
+     * SILENT-SKIPS buy_price when Woo lacks the key (its defensive contract,
+     * since most Woo installs have no WC COG plugin), so the nightly
+     * cutover:auto-sync never saw a divergence to push. Born blank meant blank
+     * forever — 6 of 25 sampled published products on 2026-09-13, every one
+     * created after the 2026-05-23 bulk load that populated the rest.
+     *
+     * Read from $product, not the local $buyPennies, for the same reason the
+     * payload above does: on a RESUME the row is the truth and may carry
+     * operator edits; on a fresh create the two are identical.
+     *
+     * OMITTED when cost is unknown rather than written as 0.0000 — a zero cost
+     * reads as a real value to WC COG (profit 100%) and to any B2BKing dynamic
+     * rule computing from it, which is strictly worse than an absent key.
+     *
+     * Safe to set unconditionally here because this is a POST creating the
+     * product: there is no existing meta to merge with. On UPDATE the same key
+     * MUST go through WooProductWriter::mergeBuyPriceMeta() — a blind PUT with
+     * meta_data=[{key:_alg_wc_cog_cost}] wipes every other entry, b2bking
+     * trade prices included.
+     *
+     * @return array<int, array{key: string, value: string}>
+     */
+    private function buildCreateMeta(Product $product): array
+    {
+        $meta = [
+            ['key' => '_yoast_wpseo_metadesc', 'value' => (string) $product->meta_description],
+        ];
+
+        $buyPrice = $product->buy_price !== null ? (float) $product->buy_price : 0.0;
+        if ($buyPrice > 0) {
+            // 4 dp matches WC COG storage and WooProductWriter.
+            $meta[] = [
+                'key' => WooFieldComparator::BUY_PRICE_META_KEY,
+                'value' => number_format($buyPrice, 4, '.', ''),
+            ];
+        }
+
+        return $meta;
+    }
+
     private function findResumableOrphan(): ?Product
     {
         $orphan = Product::query()

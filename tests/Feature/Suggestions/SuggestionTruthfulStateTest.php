@@ -125,3 +125,16 @@ it('surfaces the applying state in the inbox', function (): void {
         ->and($source)->toContain("TextColumn::make('last_seen')")
         ->and($source)->toContain("SelectFilter::make('last_seen')");
 });
+
+it('offers 7 / 14 / 30 day and stale windows, with an explicit All', function (): void {
+    // 260913-tad — the operator works the queue by recency, so the windows are
+    // the whole point of the filter. 'All' is named rather than left as a blank
+    // box so the default reads as a choice.
+    $source = file_get_contents(base_path('app/Domain/Suggestions/Filament/Resources/SuggestionResource.php'));
+
+    expect($source)->toContain("'7' => 'Seen in the last 7 days'")
+        ->and($source)->toContain("'14' => 'Seen in the last 14 days'")
+        ->and($source)->toContain("'30' => 'Seen in the last 30 days'")
+        ->and($source)->toContain("'stale' => 'NOT seen for 30+ days'")
+        ->and($source)->toContain("->placeholder('All')");
+});

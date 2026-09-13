@@ -50,6 +50,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
     protected $signature = 'products:generate-drafts
         {--skus= : Comma-separated supplier SKUs or MPNs (required)}
+        {--allow-thin : Generate even when the supplier gives no description AND the title is only a part number. Off by default — see the grounding floor.}
         {--dry-run : Generate + print content only; do NOT write Product drafts}';
 
     protected $description = 'AI-generate product content from supplier_db facts into local draft Products (review-first, no Woo writes)';
@@ -111,6 +112,8 @@ final class GenerateProductDraftsCommand extends BaseCommand
         $system = $this->systemPrompt();
         $totalPence = 0;
         $made = 0;
+        $thinSkipped = 0;
+        $allowThin = (bool) $this->option('allow-thin');
 
         foreach ($skus as $sku) {
             $stmt->bind_param('ss', $sku, $sku);
@@ -146,6 +149,33 @@ final class GenerateProductDraftsCommand extends BaseCommand
 
             $this->newLine();
             $this->line("→ <info>{$sku}</info>  {$facts['brand']} — ".Str::limit($facts['supplier_title'], 60));
+
+            // ── Grounding floor (260913-trd) ─────────────────────────────
+            // With no supplier detail column AND a title that is just a part
+            // number, the model has nothing to describe. It does not decline —
+            // it fills the shape with plausible nothing. Measured on the
+            // 2026-09-13 B-Tech pilot of 25:
+            //
+            //   BT8421-PRO/B  -> "Pro Monitor Arm Accessory ... designed to
+            //                     complement compatible B-Tech solutions"
+            //   BT5442        -> the same sentence again
+            //   BT735 - Black -> "Universal Flat-to-Wall TV Mount"   <- invented
+            //                     a product TYPE from a bare code
+            //
+            // The product category itself is guessed. That is worse than no
+            // listing: it cannot convert, and thin duplicated copy drags
+            // site-wide quality down. Skipping costs a supplier-DB read;
+            // generating costs 2p AND puts a wrong page on the storefront.
+            if (! $allowThin && $details === [] && ! $this->titleIsDescriptive(
+                (string) $facts['supplier_title'],
+                $sku,
+                (string) $facts['mpn'],
+            )) {
+                $thinSkipped++;
+                $this->warn('  skipped — nothing to ground on (no supplier detail, title is only a part number). --allow-thin overrides.');
+
+                continue;
+            }
 
             try {
                 $resp = $this->claude->generate(
@@ -290,6 +320,13 @@ final class GenerateProductDraftsCommand extends BaseCommand
             $totalPence,
             number_format($totalPence / 100, 2),
         ));
+        if ($thinSkipped > 0) {
+            $this->warn(sprintf(
+                '%d SKU(s) skipped by the grounding floor — no supplier description and the title is only a part '
+                .'number, so any copy would be invented. Re-run with --allow-thin to generate them anyway.',
+                $thinSkipped,
+            ));
+        }
         if (! $dryRun && $made > 0) {
             $this->line('Review them at /admin/auto-create-reviews (status: draft / needs brand+category).');
         }
@@ -381,6 +418,57 @@ final class GenerateProductDraftsCommand extends BaseCommand
      *
      * @return array<int, string>
      */
+    /**
+     * Is there enough in the supplier title to describe the product?
+     *
+     * 260913-trd — the grounding floor's test. Strips the part numbers we
+     * already know (sku, mpn), every token containing a digit (part numbers we
+     * do not), and pure-colour/variant words, then asks whether two real words
+     * survive.
+     *
+     * Measured against the 2026-09-13 B-Tech pilot:
+     *
+     *   "BT4002/B V2 Large Floor Base for BT8381 Columns"  -> LARGE FLOOR BASE   ok
+     *   "BT7056/C Floor Fixing Kit for 50mm Poles"         -> FLOOR FIXING KIT   ok
+     *   "BT8421-PRO/B"                                     -> (nothing)          thin
+     *   "BT5442"                                           -> (nothing)          thin
+     *   "BTEBT7353 - Black"                                -> (colour only)      thin
+     *
+     * Deliberately generous: two words is a low bar, because a false SKIP costs
+     * a listing we could have had, while a false PASS only costs 2p and a draft
+     * a human still reviews. The floor exists to catch the empty case, not to
+     * adjudicate quality.
+     */
+    private function titleIsDescriptive(string $title, string $sku, string $mpn): bool
+    {
+        $t = strtoupper($title);
+
+        // Remove the identifiers we already hold, punctuated and bare.
+        foreach ([$sku, $mpn] as $code) {
+            $code = trim($code);
+            if ($code === '') {
+                continue;
+            }
+            $t = str_replace(strtoupper($code), ' ', $t);
+            $bare = strtoupper((string) preg_replace('/[^A-Za-z0-9]/', '', $code));
+            if ($bare !== '') {
+                $t = str_replace($bare, ' ', $t);
+            }
+        }
+
+        // Any remaining token containing a digit is another part number,
+        // a dimension, or a model code — not a description.
+        $t = (string) preg_replace('/\S*\d\S*/', ' ', $t);
+
+        $stop = ['BLACK', 'WHITE', 'SILVER', 'GREY', 'GRAY', 'PRO', 'THE', 'AND', 'FOR', 'WITH'];
+        $words = array_filter(
+            preg_split('/[^A-Z]+/', $t) ?: [],
+            static fn (string $w): bool => strlen($w) >= 3 && ! in_array($w, $stop, true),
+        );
+
+        return count($words) >= 2;
+    }
+
     private function detectDetailColumns(\mysqli $m): array
     {
         $res = $m->query('SHOW COLUMNS FROM supplier_products');

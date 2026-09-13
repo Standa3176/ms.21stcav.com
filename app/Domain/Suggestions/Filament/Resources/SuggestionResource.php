@@ -410,8 +410,13 @@ class SuggestionResource extends Resource
                 // against the raw list means chasing months-dead listings.
                 SelectFilter::make('last_seen')
                     ->label('Still listed')
+                    // Blank = every suggestion regardless of age; naming it
+                    // "All" so the default reads as a deliberate choice rather
+                    // than an empty box.
+                    ->placeholder('All')
                     ->options([
                         '7' => 'Seen in the last 7 days',
+                        '14' => 'Seen in the last 14 days',
                         '30' => 'Seen in the last 30 days',
                         'stale' => 'NOT seen for 30+ days',
                     ])

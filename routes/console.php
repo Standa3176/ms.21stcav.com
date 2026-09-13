@@ -767,6 +767,41 @@ if ((bool) config('pricing.undercut_schedule_enabled', false)) {
         ->description('Core loop #1 — daily competitor-undercut repricing (08:00 Europe/London; opt-in via PRICING_UNDERCUT_SCHEDULE_ENABLED)');
 }
 
+// Core-loop step #2 — daily trade-price publish at 08:30 Europe/London
+// (quick task 260913-ik1).
+//
+// WHY 08:30 AND NOT 08:00. Trade price is derived FROM retail: it is a discount
+// off products.sell_price, floored at cost+6% and capped at cost+15%. Running it
+// before the undercut would publish trade prices computed against yesterday's
+// retail. The undercut writes sell_price synchronously, so the database is
+// correct the moment that command returns; 30 minutes is head-room for the run
+// itself plus the ~20 min its 60/min Woo push queue takes to drain, so trade
+// writes are not queued behind retail writes competing for the same throttle.
+//
+// WHY --changed-only. Without it every one of ~4,333 published products is
+// written each night: at the 60/min throttle that is 72 minutes of write budget
+// daily, for a number that moves on a few hundred. --changed-only spends a GET
+// per product instead (reads are not throttled) and writes only genuine
+// differences. Writes are the scarce resource here, not reads.
+//
+// withoutOverlapping(180) because a --changed-only sweep is GET-bound and can
+// run long; it must never collide with the next day's fire. The command already
+// carries its own guards from 260911-czm/t80: it waits out throttle windows
+// rather than counting them as failures, and aborts after 15 CONSECUTIVE write
+// failures so an environmental fault (an expired certificate, say) surfaces in
+// seconds instead of grinding through the catalogue for an hour.
+//
+// Config()-gated, NOT env() — env() returns the default under config:cache,
+// which is how the first post-cutover 08:00 undercut silently never fired.
+if ((bool) config('b2b.storefront.sync_schedule_enabled', true)) {
+    Schedule::command('trade:sync --live --changed-only')
+        ->dailyAt('08:30')
+        ->withoutOverlapping(180)
+        ->onOneServer()
+        ->timezone('Europe/London')
+        ->description('Core loop #2 — daily trade-price publish to B2BKing (08:30 Europe/London, after the undercut; off via B2B_TRADE_SYNC_SCHEDULE_ENABLED)');
+}
+
 // Phase 15 Plan 15a-02 — google:pull-ga4 twice-daily (06:00 + 14:00 London).
 // READ-ONLY pull of GA4 channel/campaign metrics into ga_channel_metrics_daily.
 // SAFE TO SHIP NOW: the command no-ops (logs + exits 0) whenever GA4 is

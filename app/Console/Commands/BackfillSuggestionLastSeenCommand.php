@@ -124,8 +124,9 @@ final class BackfillSuggestionLastSeenCommand extends BaseCommand
 
         $this->line('');
         $this->info(sprintf(
-            '%d would gain a date, %d already fresh, %d have no price history.',
+            '%d %s, %d already fresh, %d have no price history.',
             $set,
+            $apply ? 'written' : 'would gain a date',
             $alreadyFresh,
             $noHistory,
         ));

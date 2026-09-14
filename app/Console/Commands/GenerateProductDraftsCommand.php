@@ -9,6 +9,7 @@ use App\Domain\Integrations\Clients\ClaudeClient;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\ProductAutoCreate\Concerns\PrefersRealSupplierRow;
+use App\Domain\ProductAutoCreate\Services\IcecatClient;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use Illuminate\Support\Str;
@@ -59,6 +60,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
         private readonly IntegrationCredentialResolver $resolver,
         private readonly ClaudeClient $claude,
         private readonly TaxonomyResolver $taxonomy,
+        private readonly IcecatClient $icecat,
     ) {
         parent::__construct();
     }
@@ -150,6 +152,37 @@ final class GenerateProductDraftsCommand extends BaseCommand
             $this->newLine();
             $this->line("→ <info>{$sku}</info>  {$facts['brand']} — ".Str::limit($facts['supplier_title'], 60));
 
+            // ── Icecat grounding (260914-j0x) ────────────────────────────
+            // supplier_products carries NO prose — 14 columns, all identifiers,
+            // price and sync metadata. Icecat does, and this client was already
+            // fetching the whole record for image URLs and discarding the rest.
+            // Measured 70% coverage over 30 random published products, with
+            // descriptions to 6,042 chars and up to 19 spec groups.
+            //
+            // ENRICHMENT, not a requirement: a null here just means the floor
+            // below judges the title on its own, exactly as before.
+            $icecat = $this->icecat->fetchProductFacts(
+                $facts['ean'] !== '' ? $facts['ean'] : null,
+                $facts['brand'] !== '' ? $facts['brand'] : null,
+                $facts['mpn'] !== '' ? $facts['mpn'] : null,
+            );
+            if ($icecat !== null) {
+                if ($icecat['description'] !== '') {
+                    $facts['icecat_description'] = $icecat['description'];
+                }
+                if ($icecat['features'] !== []) {
+                    $facts['icecat_specifications'] = $icecat['features'];
+                }
+                $grounded = true;
+                $this->line(sprintf(
+                    '  <fg=green>icecat</> %d chars, %d spec(s)',
+                    strlen($icecat['description']),
+                    count($icecat['features']),
+                ));
+            } else {
+                $grounded = false;
+            }
+
             // ── Grounding floor (260913-trd) ─────────────────────────────
             // With no supplier detail column AND a title that is just a part
             // number, the model has nothing to describe. It does not decline —
@@ -166,7 +199,7 @@ final class GenerateProductDraftsCommand extends BaseCommand
             // listing: it cannot convert, and thin duplicated copy drags
             // site-wide quality down. Skipping costs a supplier-DB read;
             // generating costs 2p AND puts a wrong page on the storefront.
-            if (! $allowThin && $details === [] && ! $this->titleIsDescriptive(
+            if (! $allowThin && ! $grounded && $details === [] && ! $this->titleIsDescriptive(
                 (string) $facts['supplier_title'],
                 $sku,
                 (string) $facts['mpn'],

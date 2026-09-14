@@ -87,6 +87,139 @@ class IcecatClient
     }
 
     /**
+     * Product description + structured specs, for grounding generated content.
+     *
+     * 260914-j0x — the whole reason generated copy was thin. `supplier_products`
+     * has FOURTEEN columns and not one of them holds prose: sku, title,
+     * manufacturer, mpn, stock, price, rrp, ean, and sync metadata. So
+     * GenerateProductDraftsCommand::detectDetailColumns() returns [] for every
+     * supplier, permanently, and the model was left describing products from a
+     * part number. On the 2026-09-13 B-Tech pilot that produced "Pro Monitor Arm
+     * Accessory ... designed to complement compatible B-Tech solutions" — and,
+     * for a bare code, an invented product type.
+     *
+     * This client ALREADY fetched the full Icecat record and threw all of it
+     * away except the image URLs. Measured coverage on 30 random published
+     * products: 21 (70%) return data, with descriptions up to 6,042 characters
+     * and up to 19 feature groups. Philips, Epson, Samsung, Poly, Barco, iiyama,
+     * Chief, Yealink, SMART, LINDY, Neomounts, StarTech, ViewSonic, BenQ and LG
+     * all resolve; Logitech, Neat, Panasonic, Belkin and Huddly are
+     * brand-restricted on this account.
+     *
+     * GTIN first, then Brand+ProductCode — same order as fetchImageUrls().
+     *
+     * Returns null rather than throwing: grounding is an ENRICHMENT. A product
+     * Icecat does not carry must still be creatable from its title.
+     *
+     * @return array{description: string, features: array<string, string>}|null
+     */
+    public function fetchProductFacts(?string $ean, ?string $brand, ?string $mpn): ?array
+    {
+        $creds = $this->credentials();
+        if ($creds === null) {
+            return null;
+        }
+
+        $data = null;
+
+        $ean = $ean !== null ? trim($ean) : '';
+        if ($ean !== '') {
+            $data = $this->requestRawData($creds, ['GTIN' => $ean]);
+        }
+
+        $brand = $brand !== null ? trim($brand) : '';
+        $mpn = $mpn !== null ? trim($mpn) : '';
+        if ($data === null && $brand !== '' && $mpn !== '') {
+            $data = $this->requestRawData($creds, ['Brand' => $brand, 'ProductCode' => $mpn]);
+        }
+
+        if ($data === null) {
+            return null;
+        }
+
+        $description = $this->extractDescription($data);
+        $features = $this->extractFeatures($data);
+
+        // Nothing usable is the same as nothing — do not hand the model an
+        // empty shell and imply it was grounded.
+        if ($description === '' && $features === []) {
+            return null;
+        }
+
+        return ['description' => $description, 'features' => $features];
+    }
+
+    /**
+     * Longest available prose, preferring the full description.
+     *
+     * Icecat exposes several shapes and a product may carry only some of them —
+     * LH85WMBWLGCXEN returns 0 description characters but 11 feature groups.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function extractDescription(array $data): string
+    {
+        $gi = $data['GeneralInfo'] ?? [];
+        if (! is_array($gi)) {
+            return '';
+        }
+
+        $candidates = [
+            $gi['Description']['LongDesc'] ?? null,
+            $gi['SummaryDescription']['LongSummaryDescription'] ?? null,
+            $gi['SummaryDescription']['ShortSummaryDescription'] ?? null,
+            $gi['Description']['MiddleDesc'] ?? null,
+        ];
+
+        foreach ($candidates as $c) {
+            $text = trim(strip_tags((string) ($c ?? '')));
+            if ($text !== '') {
+                // 4000 is generous prose and still well inside the prompt
+                // budget alongside the feature table.
+                return Str::limit($text, 4000, '');
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Flatten Icecat FeaturesGroups into name => value pairs.
+     *
+     * The structured specs matter as much as the prose: they are what let the
+     * model write "VESA 400x400, 45kg capacity" instead of "professional
+     * mounting solution".
+     *
+     * @param  array<string, mixed>  $data
+     * @return array<string, string>
+     */
+    private function extractFeatures(array $data): array
+    {
+        $out = [];
+        foreach ((array) ($data['FeaturesGroups'] ?? []) as $group) {
+            if (! is_array($group)) {
+                continue;
+            }
+            foreach ((array) ($group['Features'] ?? []) as $feature) {
+                if (! is_array($feature)) {
+                    continue;
+                }
+                $name = trim((string) ($feature['Feature']['Name']['Value'] ?? $feature['LocalName'] ?? ''));
+                $value = trim(strip_tags((string) ($feature['PresentationValue'] ?? $feature['Value'] ?? '')));
+                if ($name === '' || $value === '') {
+                    continue;
+                }
+                $out[$name] = Str::limit($value, 120, '');
+                if (count($out) >= 60) {
+                    return $out;      // a spec table, not a datasheet dump
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
      * Lookup the first candidate GTIN/EAN for a brand+MPN pair.
      *
      * Returns the raw string from Icecat — the caller MUST pipe it through
@@ -204,22 +337,53 @@ class IcecatClient
         }
 
         try {
-            // A real, well-formed example GTIN (Icecat's own docs use it) so we
-            // don't trip GTIN-format validation — we only care that the account
-            // is accepted, not that this product is in the catalogue.
-            $resp = Http::timeout(15)
-                ->withHeaders($this->headers($creds))
-                ->get($this->baseUrl(), $this->query($creds, ['GTIN' => '0711719709695']));
+            // 260914-j0x — probe SEVERAL products, not one.
+            //
+            // This used to test a single GTIN (0711719709695, a Sony
+            // accessory). Sony is brand-restricted on an Open Icecat account,
+            // so Icecat replied "To access Full Icecat content, an app_key is
+            // required" — which the auth regex below matched on BOTH `access`
+            // and `app_key` and reported as an auth failure. The integration was
+            // switched off on 2026-05-24 at 11:15 and sat dormant for 113 days,
+            // while the account worked perfectly for the brands we actually
+            // sell: measured 2026-09-14, 21 of 30 random published products
+            // return full data on the username alone.
+            //
+            // The second GTIN is a Barco ClickShare CX-30, verified as Open
+            // Icecat content on this account. If ANY probe returns data the
+            // integration is working.
+            $probes = ['5415334038875', '0711719709695'];
+            $latency = 0;
+            $resp = null;
+            $json = null;
+            $msg = '';
+            foreach ($probes as $gtin) {
+                $resp = Http::timeout(15)
+                    ->withHeaders($this->headers($creds))
+                    ->get($this->baseUrl(), $this->query($creds, ['GTIN' => $gtin]));
+                $latency = (int) round((microtime(true) - $start) * 1000);
+                $json = $resp->json();
+                $msg = is_array($json) ? $this->extractMessage($json) : '';
 
-            $latency = (int) round((microtime(true) - $start) * 1000);
+                if (is_array($json) && isset($json['data']) && is_array($json['data'])) {
+                    return IntegrationTestResult::ok($latency);
+                }
+            }
 
-            $json = $resp->json();
-            $msg = is_array($json) ? $this->extractMessage($json) : '';
-            $detail = $msg !== '' ? $msg : Str::limit((string) $resp->body(), 200, '');
+            $detail = $msg !== '' ? $msg : Str::limit((string) $resp?->body(), 200, '');
 
-            $authProblem = $resp->status() === 401
-                || $resp->status() === 403
-                || ($msg !== '' && preg_match('/access|denied|unauthor|not known|shopname|app_key|api token|invalid (?:user|shop|account|username)|blocked|forbidden/i', $msg) === 1);
+            // "Not covered for THIS product" is not "your account is bad".
+            // Brand restrictions and Full-Icecat tier notices are normal on an
+            // Open Icecat account and must never disable the integration.
+            $notAnAuthProblem = $msg !== '' && preg_match(
+                '/brand restriction|access is limited|full icecat|app_key is required|not found|no product|does not exist/i',
+                $msg,
+            ) === 1;
+
+            $authProblem = ! $notAnAuthProblem
+                && ($resp?->status() === 401
+                    || $resp?->status() === 403
+                    || ($msg !== '' && preg_match('/denied|unauthor|not known|shopname|invalid (?:user|shop|account|username)|blocked|forbidden/i', $msg) === 1));
             if ($authProblem) {
                 return IntegrationTestResult::failed('Icecat auth/access: '.($detail !== '' ? $detail : "HTTP {$resp->status()}"), $latency);
             }
@@ -351,7 +515,7 @@ class IcecatClient
      *
      * @param  array{username:string, app_key:string, api_token:string, content_token:string}  $creds
      * @param  array<string, string>  $identifier  GTIN, or Brand+ProductCode
-     * @return array<string, mixed>|null  decoded `data` object, or null on miss / error
+     * @return array<string, mixed>|null decoded `data` object, or null on miss / error
      */
     protected function requestRawData(array $creds, array $identifier): ?array
     {

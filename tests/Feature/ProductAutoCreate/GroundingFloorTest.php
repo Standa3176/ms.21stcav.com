@@ -77,9 +77,18 @@ it('exposes an --allow-thin escape hatch', function (): void {
         ->and($source)->toContain('skipped by the grounding floor');
 });
 
-it('only applies the floor when there is NO supplier detail to ground on', function (): void {
-    // A supplier description is real grounding; the title then does not matter.
+it('only applies the floor when there is NOTHING to ground on', function (): void {
+    // Real grounding makes the title irrelevant. There are now two sources:
+    //
+    //   $details   — a supplier description column. supplier_products has none
+    //                and never will (14 columns, all identifiers), so this is
+    //                always [] in practice — but the check stays for any future
+    //                supplier that does carry prose.
+    //   $grounded  — 260914-j0x: Icecat returned a description or spec table.
+    //                Measured 70% coverage, so this is the one that actually
+    //                fires. A bare part number is fine to generate from when
+    //                Icecat can describe the product.
     $source = file_get_contents(base_path('app/Console/Commands/GenerateProductDraftsCommand.php'));
 
-    expect($source)->toContain('! $allowThin && $details === [] && ! $this->titleIsDescriptive');
+    expect($source)->toContain('! $allowThin && ! $grounded && $details === [] && ! $this->titleIsDescriptive');
 });

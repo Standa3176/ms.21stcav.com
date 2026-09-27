@@ -131,6 +131,15 @@ return [
     // Feeds refresh ~daily, so 24h tolerates same-run timing skew while flagging a
     // feed that's a day+ behind. Distinct from stale_feed_hours (48h alert cadence).
     'last_run_lag_hours' => (int) env('COMPETITOR_LAST_RUN_LAG_HOURS', 24),
+
+    // 260927-oje — recency window for the Competitor Feeds "SKUs" column
+    // (distinct SKUs priced per competitor). competitor_prices is append-only
+    // and never pruned (COMP-07), so an all-time count always reads "yes, this
+    // feed once had SKUs"; the window makes the number mean current coverage.
+    // 30 days is wide enough to survive a skipped weekly pull (the FTP pull
+    // runs Sun + Wed) and narrow enough that a feed that died last month shows
+    // as dead.
+    'sku_count_window_days' => (int) env('COMPETITOR_SKU_COUNT_WINDOW_DAYS', 30),
     'csv_chunk_size' => (int) env('COMPETITOR_CSV_CHUNK_SIZE', 100),
     'filename_regex' => '/^[a-z0-9_-]{1,64}_\d{4}-\d{2}-\d{2}\.csv$/',
 

@@ -7,6 +7,7 @@ namespace App\Domain\Competitor\Filament\Resources;
 use App\Domain\Competitor\Filament\Resources\CompetitorResource\Pages;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorFtpFeed;
+use App\Domain\Competitor\Models\CompetitorPrice;
 use Carbon\Carbon;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -20,6 +21,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ToggleColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 /**
@@ -149,6 +151,54 @@ class CompetitorResource extends Resource
         return self::$latestActiveFeedFileDateMemo;
     }
 
+    /**
+     * 260927-oje — distinct SKU count per competitor inside a recency window.
+     *
+     * WHY a window and not all time: competitor_prices is append-only and
+     * NEVER pruned (COMP-07), so an all-time count answers "did this feed ever
+     * carry SKUs", which is always yes. The question ops actually asks of this
+     * page is "how much of the market is this feed covering NOW" — and that is
+     * the number that exposed the degradation found on 2026-09-26: screenmoove
+     * absent for the whole of August, onedirect -44%, avitdirect -43%. A
+     * window also keeps the scan on competitor_prices_comp_recorded_idx
+     * instead of reading the full history.
+     *
+     * WHY one grouped query, cached: COUNT(DISTINCT sku) over a competitor's
+     * window is hundreds of thousands of rows (screenmoove alone was 182,868
+     * in 30 days). Per-row — the ftp_feeds_count pattern above — that is five
+     * of those per page render. One GROUP BY covers every competitor, and the
+     * TTL below is the staleness bound: a just-finished ingest can read up to
+     * 10 minutes old. That is the deliberate trade; this column is a coverage
+     * gauge, not a live progress bar.
+     *
+     * Not DB-sortable (computed state), so ->sortable() is dropped — same as
+     * ftp_feeds_count.
+     *
+     * @return array<int, int> competitor_id => distinct SKUs in the window
+     */
+    public static function skuCountsByCompetitor(): array
+    {
+        $days = max(1, (int) config('competitor.sku_count_window_days', 30));
+
+        // Defensive, matching getNavigationBadge(): this runs on every render of
+        // the Competitors list and a failed query must not 500 the admin.
+        try {
+            return Cache::remember(
+                "competitor:sku_counts:{$days}d",
+                now()->addMinutes(10),
+                fn (): array => CompetitorPrice::query()
+                    ->where('recorded_at', '>=', now()->subDays($days))
+                    ->groupBy('competitor_id')
+                    ->selectRaw('competitor_id, count(distinct sku) as sku_count')
+                    ->pluck('sku_count', 'competitor_id')
+                    ->map(fn ($count): int => (int) $count)
+                    ->all(),
+            );
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
     public static function form(Form $form): Form
     {
         return $form->schema([
@@ -238,6 +288,29 @@ class CompetitorResource extends Resource
                     ->label('Feeds')
                     ->state(fn (Competitor $record): int => $record->ftpFeeds()->count())
                     ->tooltip('Number of feed files configured for this competitor'),
+
+                // 260927-oje — coverage. 'Feeds' says how many files are
+                // CONFIGURED; this says how many SKUs actually arrived. A
+                // configured feed sitting at 0 is the failure mode that went
+                // unnoticed for a month, so it renders red rather than as a
+                // quiet zero. See skuCountsByCompetitor() for the window and
+                // the caching trade-off.
+                TextColumn::make('sku_count')
+                    ->label('SKUs')
+                    ->state(fn (Competitor $record): int => self::skuCountsByCompetitor()[$record->id] ?? 0)
+                    ->numeric()
+                    ->alignRight()
+                    // Both closures take the resolved $state Filament injects,
+                    // rather than looking the record up again — one source of
+                    // truth per cell, and the colour cannot disagree with the
+                    // number printed next to it.
+                    ->color(fn (int $state): string => $state === 0 ? 'danger' : 'gray')
+                    ->tooltip(fn (int $state): string => sprintf(
+                        '%s distinct SKU(s) priced in the last %d days%s',
+                        number_format($state),
+                        max(1, (int) config('competitor.sku_count_window_days', 30)),
+                        $state === 0 ? ' — nothing ingested in that window' : '',
+                    )),
 
                 TextColumn::make('last_ingest_at')
                     ->label('Last Ingest')

@@ -52,6 +52,42 @@ return [
     // because a competitor who publishes daily would otherwise dominate.
     'expected_sightings_per_week' => (float) env('AD_DEMAND_EXPECTED_SIGHTINGS_PER_WEEK', 2.0),
 
+    // ── PRODUCT FAMILIES — checked BEFORE the generic nouns ──────────────
+    //
+    // WHY THIS EXISTS: the generic keyword list below matches nouns ("webcam",
+    // "headset", "cable"). Real AV catalogue titles are brand + model code, and
+    // carry no such noun. Measured against 13 live SKUs on 2026-09-27:
+    //
+    //   Yealink MeetingBoard Pro 86 -> unknown
+    //   Yealink MVC S90             -> unknown
+    //   Barco ClickShare CX-50      -> unknown
+    //   Promethean AP10 86in        -> unknown
+    //   ... 13 of 13 unknown
+    //
+    // So every one of them collapsed onto the `unknown` base rate and the model
+    // could not tell a wireless presentation dongle from an 86in board. Family
+    // tokens fix that, and they live in config because new ranges appear
+    // constantly and a trader should not need a deploy to add one.
+    //
+    // THIS LIST IS INCOMPLETE BY CONSTRUCTION. It covers the families seen so
+    // far. Anything unmatched still falls through to the nouns and then to
+    // `unknown` — which is why the command reports the class per row: a
+    // shortlist full of `unknown` means this map needs extending, not that the
+    // products are unclassifiable.
+    'family_keywords' => [
+        // Self-contained IT purchases: unboxed, plugged in, no installer. These
+        // genuinely do sell through a web basket.
+        'wireless_presentation' => ['clickshare', 'wireless presentation', 'airtame', 'via connect', 'via go'],
+        // Teams/Zoom Rooms bundles — a compute module, a bar and a panel sold as
+        // a project. Researched online, bought through a quote.
+        'room_system' => ['mvc', 'mcore', 'teams rooms', 'zoom rooms', 'rooms kit', 'room bundle', 'mtr '],
+        // Interactive boards and panels — specified, delivered, wall-mounted.
+        'display_large' => [
+            'meetingboard', 'activpanel', 'ap10', 'ap7', 'ap6',
+            'interactive flat panel', 'ifp', 'commercial display', 'pk640',
+        ],
+    ],
+
     // ── ASSUMED: units/week across the UK web market, by product kind ─────
     // Order-of-magnitude priors. A cable sells in tens per week nationally; an
     // installed DSP sells in ones, and mostly through integrators rather than a
@@ -63,6 +99,13 @@ return [
         'webcam' => (float) env('AD_DEMAND_BASE_WEBCAM', 22),
         'speakerphone' => (float) env('AD_DEMAND_BASE_SPEAKERPHONE', 16),
         'uc_bar' => (float) env('AD_DEMAND_BASE_UC_BAR', 12),
+        // A ClickShare is bought the way a webcam is — no installer, no survey —
+        // so it earns a real web rate despite a four-figure price. The price band
+        // still discounts it heavily; this stops it being discounted twice.
+        'wireless_presentation' => (float) env('AD_DEMAND_BASE_WIRELESS_PRESENTATION', 9),
+        // A Rooms bundle is researched online and bought through a quote. Some
+        // web demand, well below a single device.
+        'room_system' => (float) env('AD_DEMAND_BASE_ROOM_SYSTEM', 4),
         'display_small' => (float) env('AD_DEMAND_BASE_DISPLAY_SMALL', 10),
         'networking' => (float) env('AD_DEMAND_BASE_NETWORKING', 8),
         'unknown' => (float) env('AD_DEMAND_BASE_UNKNOWN', 6),

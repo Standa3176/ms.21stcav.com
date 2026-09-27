@@ -92,6 +92,7 @@ final class WebDemandEstimator
      * Estimate weekly UK web units for one product.
      *
      * @param  string  $name  product title — the only local prose for classing
+     * @param  string  $sku  our SKU, also searched for family tokens
      * @param  int  $netSellPence  our sell price EX-VAT (same basis as margin)
      * @param  int  $competitorCount  DISTINCT tracked resellers currently listing it
      * @param  int  $daysSeen  distinct days it appeared in the window
@@ -113,8 +114,9 @@ final class WebDemandEstimator
         int $competitorCount,
         int $daysSeen,
         int $windowDays,
+        string $sku = '',
     ): array {
-        $class = $this->classify($name);
+        $class = $this->classify($name, $sku);
         $classBase = $this->classBase($class);
         [$priceFactor, $priceBand] = $this->priceBand($netSellPence);
         $breadthFactor = $this->breadthFactor($competitorCount);
@@ -150,10 +152,28 @@ final class WebDemandEstimator
      * alphabetical. The haystack is padded with spaces so a keyword written with
      * surrounding spaces (' tv ') anchors on word boundaries without a regex.
      */
-    public function classify(string $name): string
+    public function classify(string $name, string $sku = ''): string
     {
-        $collapsed = preg_replace('/\s+/', ' ', trim($name)) ?? '';
+        // The SKU is part of the haystack because model codes live there, not in
+        // the title: "LG 86in commercial" classified as unknown while its SKU,
+        // 86PK640S, carries the family token. Measured 2026-09-27.
+        $collapsed = preg_replace('/\s+/', ' ', trim($name.' '.$sku)) ?? '';
         $haystack = ' '.strtolower($collapsed).' ';
+
+        // Product FAMILIES first (config-driven). Measured 2026-09-27: 13 of 13
+        // live SKUs returned 'unknown' from the noun list alone, because real
+        // catalogue titles are brand + model code and carry no generic noun. The
+        // families are config so a new range does not need a deploy — see
+        // config/ad_demand.php for why the map is incomplete by construction.
+        /** @var array<string, array<int, string>> $families */
+        $families = (array) config('ad_demand.family_keywords', []);
+        foreach ($families as $class => $keywords) {
+            foreach ((array) $keywords as $keyword) {
+                if ($keyword !== '' && str_contains($haystack, strtolower((string) $keyword))) {
+                    return (string) $class;
+                }
+            }
+        }
 
         foreach (self::CLASS_KEYWORDS as $class => $keywords) {
             foreach ($keywords as $keyword) {

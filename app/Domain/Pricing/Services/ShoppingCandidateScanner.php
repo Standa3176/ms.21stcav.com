@@ -252,6 +252,7 @@ class ShoppingCandidateScanner
                         competitorCount: $competitorCount,
                         daysSeen: $skuDaysSeen,
                         windowDays: $demandWindowDays,
+                        sku: $sku,
                     );
 
                     $rows[] = [

@@ -161,3 +161,66 @@ it('respects a retuned config without a code change', function (): void {
 
     expect($after['units_per_week'])->toBeLessThan($before['units_per_week']);
 });
+
+/*
+|--------------------------------------------------------------------------
+| 260927-p41 follow-up — classification measured against REAL SKUs
+|--------------------------------------------------------------------------
+|
+| The generic noun list was written against invented examples ("Yealink UVC30
+| webcam") and looked fine. Run against 13 live catalogue rows it returned
+| `unknown` THIRTEEN TIMES — because real AV titles are brand + model code and
+| contain none of the nouns it matches on. The model could not tell a £1,600
+| wireless presentation dongle from a £5,900 interactive board, which is exactly
+| the distinction it exists to make.
+|
+| Two fixes, both pinned below: a config-driven FAMILY map checked before the
+| nouns, and the SKU added to the haystack (model codes live there — "LG 86in
+| commercial" is unclassifiable, its SKU 86PK640S is not).
+*/
+
+it('classifies the real catalogue SKUs that all returned unknown', function (string $name, string $sku, string $expected): void {
+    expect(estimator()->classify($name, $sku))->toBe($expected);
+})->with([
+    ['Yealink MeetingBoard Pro 86', 'MB86Pro-A02', 'display_large'],
+    ['Yealink MeetingBoard Pro 65', 'MB65PRO-A02', 'display_large'],
+    ['Yealink MVC S90', 'YEAMVCS90C5U', 'room_system'],
+    ['Yealink MVC S40', 'MVC S40-C5U-000', 'room_system'],
+    ['Yealink MCore kit', 'MCOREKIT-C5U-MS', 'room_system'],
+    ['Barco ClickShare CX-50 Gen 2', 'R9861622EUB2', 'wireless_presentation'],
+    ['Barco ClickShare CX-20 Gen 2', 'R9861612EUB1', 'wireless_presentation'],
+    ['Barco ClickShare Bar Pro', 'R9861633EUB2', 'wireless_presentation'],
+    ['Promethean AP10 86in bundle', 'AP10-A86-EU', 'display_large'],
+    // The SKU-only case: nothing in the title is classifiable.
+    ['LG 86in commercial', '86PK640S', 'display_large'],
+]);
+
+it('reads families from config so a new range needs no deploy', function (): void {
+    expect(estimator()->classify('Acme Foo 9000', 'FOO-1'))->toBe('unknown');
+
+    config()->set('ad_demand.family_keywords.uc_bar', ['foo 9000']);
+
+    expect(estimator()->classify('Acme Foo 9000', 'FOO-1'))->toBe('uc_bar');
+});
+
+it('prefers a family over a generic noun', function (): void {
+    // A ClickShare Bar Pro contains 'bar'. Without family-first it would take the
+    // uc_bar rate; it is a wireless presentation device and sells like one.
+    expect(estimator()->classify('Barco ClickShare Bar Pro', 'R9861633EUB2'))
+        ->toBe('wireless_presentation');
+});
+
+it('still falls through to unknown for a bare part number', function (): void {
+    // The families must not become a catch-all. An unmatched title is still
+    // reported as unknown, which is the signal that the map needs extending.
+    expect(estimator()->classify('BT8421-PRO/B', 'BT8421/B'))->toBe('unknown');
+});
+
+it('rates a self-serve device above a project bundle at the same price', function (): void {
+    // A ClickShare is unboxed and plugged in; an MVC bundle needs a room. Same
+    // price band, different web demand — the thing 13-of-13 'unknown' erased.
+    $clickshare = estimator()->estimate('Barco ClickShare CX-50 Gen 2', 283750, 3, 20, 84, 'R9861622EUB2');
+    $roomSystem = estimator()->estimate('Yealink MVC S50', 366667, 3, 20, 84, 'MVC S50-C5U-000');
+
+    expect($clickshare['units_per_week'])->toBeGreaterThan($roomSystem['units_per_week']);
+});

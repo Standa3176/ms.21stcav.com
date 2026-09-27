@@ -51,6 +51,9 @@ final class ReadMarginOpportunityTool extends TruncatingTool
 {
     private const QUERY_LIMIT = 20;
 
+    /** UK standard VAT as a divisor. Mirrors PriceCalculator's 2000bps default. */
+    private const VAT_DIVISOR = '1.2';
+
     private const COMPETITOR_WINDOW_DAYS = 90;
 
     public function name(): string
@@ -77,9 +80,17 @@ final class ReadMarginOpportunityTool extends TruncatingTool
             ->where('stock_status', 'instock')
             ->whereNotNull('sell_price')->where('sell_price', '>', 0)
             ->whereNotNull('buy_price')->where('buy_price', '>', 0)
-            ->whereColumn('sell_price', '>', 'buy_price')
+            // Profitable on the NET sell, not the gross one: sell_price > buy_price
+            // is satisfied by products we sell at a real loss once the VAT in the
+            // sell price is handed to HMRC (260927-p41).
+            ->whereRaw('sell_price / '.self::VAT_DIVISOR.' > buy_price')
             ->whereNotNull('sku')
-            ->orderByRaw('(sell_price - buy_price) DESC')
+            // 260927-p41 — ONE TAX BASIS. sell_price is VAT-INCLUSIVE, buy_price is
+            // the supplier's EX-VAT cost, so `sell - buy` ranked by "margin plus
+            // the VAT we owe HMRC" — which is monotonic in price, so the biggest
+            // "opportunities" were simply the dearest products. VAT_DIVISOR keeps
+            // the rate in one place; PriceCalculator::stripVat is the PHP twin.
+            ->orderByRaw('(sell_price / '.self::VAT_DIVISOR.' - buy_price) DESC')
             ->limit(self::QUERY_LIMIT)
             ->get(['sku', 'name', 'sell_price', 'buy_price', 'stock_status', 'last_sales_count_90d']);
 
@@ -100,9 +111,10 @@ final class ReadMarginOpportunityTool extends TruncatingTool
         }
 
         $items = $products->map(function (Product $p) use ($competitorBySku): array {
-            $sell = (float) $p->sell_price;
-            $buy = (float) $p->buy_price;
-            $margin = round($sell - $buy, 2);
+            $sell = (float) $p->sell_price;      // VAT-inclusive
+            $buy = (float) $p->buy_price;        // ex-VAT
+            $netSell = $sell / self::VAT_DIVISOR;
+            $margin = round($netSell - $buy, 2); // true cash margin
             $comp = $competitorBySku->get($p->sku);
 
             return [
@@ -110,8 +122,11 @@ final class ReadMarginOpportunityTool extends TruncatingTool
                 'name' => (string) $p->name,
                 'sell_price_gbp' => round($sell, 2),
                 'buy_price_gbp' => round($buy, 2),
+                'net_sell_price_gbp' => round($netSell, 2),
                 'margin_gbp' => $margin,
-                'margin_pct' => $sell > 0 ? round(($margin / $sell) * 100, 2) : 0.0,
+                // Both sides ex-VAT — against the gross sell this would
+                // understate the rate on the very same money.
+                'margin_pct' => $netSell > 0 ? round(($margin / $netSell) * 100, 2) : 0.0,
                 'sales_90d' => (int) $p->last_sales_count_90d,
                 'stock_status' => (string) $p->stock_status,
                 'min_competitor_price_ex_vat_gbp' => $comp !== null

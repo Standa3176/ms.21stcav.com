@@ -27,6 +27,14 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * running the exported CSV through Google Keyword Planner (location: United
  * Kingdom).
  *
+ * 260927-p41 — and the shop has now been dark for about a year, so own-site
+ * signals are not merely weaker than market data, they are ABSENT. Breadth
+ * alone also ranked a £9,000 LED wall above a £400 video bar, because it says
+ * nothing about whether a product is web-bought at all. `--sort=profit` (the
+ * new default) ranks on WebDemandEstimator's estimated weekly units x true cash
+ * margin, so price-driven demand decay and product class both count. The
+ * estimate's assumed inputs are in config/ad_demand.php.
+ *
  * ── Read-only contract ──
  * No DB writes, no Woo REST calls, no Google/Merchant API calls, no feed
  * generation or upload. The only file this command writes is the CSV the
@@ -42,11 +50,12 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
 final class ShoppingCandidatesCommand extends BaseCommand
 {
     protected $signature = 'products:shopping-candidates
-        {--min-margin-pence=19900 : Minimum (sell - buy) margin in pence}
+        {--min-margin-pence=19900 : Minimum TRUE CASH margin in pence — stripVat(sell) - buy, both sides ex-VAT}
         {--min-competitors=2 : Minimum DISTINCT competitors currently listing the SKU}
         {--competitor-window-days=30 : How recent a competitor price must be to count}
         {--allow-missing-gtin : Keep (and flag) products with no EAN — Google will likely disapprove them}
-        {--sort=score : score|margin|competitors (score = competitor_count x margin_pence)}
+        {--sort=profit : profit|demand|score|margin|competitors (profit = est weekly units x true cash margin)}
+        {--min-units-per-week= : Drop rows whose estimated weekly demand is below this (default from config/ad_demand.php)}
         {--limit=200 : Shortlist size}
         {--preview=25 : How many shortlist rows to print to the console}
         {--live-stock : Additionally confirm each shortlisted SKU against the LIVE fresh-supplier feed}
@@ -57,9 +66,16 @@ final class ShoppingCandidatesCommand extends BaseCommand
     /** CSV header — mirrored by the command test. */
     private const CSV_HEADER = [
         'rank', 'sku', 'name', 'brand', 'brand_id', 'woo_product_id', 'ean', 'has_gtin',
-        'buy_price_pence', 'sell_price_pence', 'margin_pence', 'margin_pct',
+        'buy_price_pence', 'net_sell_price_pence', 'sell_price_pence',
+        'margin_pence', 'margin_pct', 'margin_pence_gross_basis',
         'competitor_count', 'lowest_competitor_gross_pence', 'position',
         'delta_vs_lowest_pence', 'stock', 'supplier_name', 'score',
+        // 260927-p41 — the demand estimate and its inputs. The factor columns
+        // are exported deliberately: they are what makes a row's estimate
+        // arguable instead of an oracle.
+        'demand_class', 'price_band', 'days_seen', 'demand_window_days',
+        'factor_class_base', 'factor_price', 'factor_breadth', 'factor_persistence',
+        'est_units_per_week', 'est_units_band', 'est_weekly_profit_pence',
     ];
 
     protected function perform(): int
@@ -105,12 +121,38 @@ final class ShoppingCandidatesCommand extends BaseCommand
         /** @var array<string, int> $funnel */
         $funnel = $result['funnel'];
 
+        // 260927-p41 — the ad-viability floor on VOLUME. Under roughly one sale a
+        // month Google never gathers enough conversion data to optimise, so the
+        // campaign cannot learn however fat the margin is.
+        $minUnits = $this->option('min-units-per-week') !== null
+            ? (float) $this->option('min-units-per-week')
+            : (float) config('ad_demand.min_units_per_week', 0.25);
+
+        $demandDropped = 0;
+        if ($minUnits > 0) {
+            $before = count($rows);
+            $rows = array_values(array_filter(
+                $rows,
+                static fn (array $r): bool => (float) $r['est_units_per_week'] >= $minUnits,
+            ));
+            $demandDropped = $before - count($rows);
+        }
+
         $liveDropped = 0;
         if ((bool) $this->option('live-stock') && $rows !== []) {
             [$rows, $liveDropped] = $this->confirmAgainstLiveStock($rows);
         }
 
         $this->renderFunnel($funnel, $minMarginPence, $minCompetitors, $windowDays, $allowMissingGtin);
+
+        if ($demandDropped > 0) {
+            $this->line(sprintf(
+                '  demand floor (>= %.2f units/wk): dropped %d, kept %d',
+                $minUnits,
+                $demandDropped,
+                count($rows),
+            ));
+        }
 
         if ($liveDropped > 0 || (bool) $this->option('live-stock')) {
             $this->line(sprintf(
@@ -213,21 +255,23 @@ final class ShoppingCandidatesCommand extends BaseCommand
             $table[] = [
                 $i + 1,
                 $row['sku'],
-                $this->truncate((string) $row['name'], 38),
-                $this->truncate((string) ($row['brand'] ?? '—'), 16),
+                $this->truncate((string) $row['name'], 30),
+                $this->truncate((string) ($row['brand'] ?? '—'), 12),
+                $row['demand_class'],
                 $this->pounds((int) $row['margin_pence']),
                 sprintf('%.1f%%', ((int) $row['margin_pct_bps']) / 100),
                 (int) $row['competitor_count'],
-                $this->pounds((int) $row['lowest_comp_pence']),
-                $row['position'].' '.$this->pounds(abs((int) $row['delta_vs_lowest_pence'])),
-                (int) $row['stock'],
+                (int) $row['days_seen'],
+                // The band is the honest read; the number is shown because a
+                // ranking needs an ordering.
+                $row['est_units_band'],
+                $this->pounds((int) $row['est_weekly_profit_pence']).'/wk',
                 ((bool) $row['has_gtin']) ? 'yes' : 'NO',
-                (int) $row['score'],
             ];
         }
 
         $this->table(
-            ['#', 'SKU', 'Name', 'Brand', 'Margin', 'Margin%', 'Comps', 'Lowest', 'Vs lowest', 'Stock', 'GTIN', 'Score'],
+            ['#', 'SKU', 'Name', 'Brand', 'Class', 'Margin', 'Margin%', 'Comps', 'Days', 'Est demand', 'Est profit', 'GTIN'],
             $table,
         );
 
@@ -302,9 +346,11 @@ final class ShoppingCandidatesCommand extends BaseCommand
                 $row['ean'] ?? '',
                 ((bool) $row['has_gtin']) ? 'yes' : 'no',
                 $row['buy_price_pence'],
+                $row['net_sell_price_pence'],
                 $row['sell_price_pence'],
                 $row['margin_pence'],
                 sprintf('%.2f', ((int) $row['margin_pct_bps']) / 100),
+                $row['margin_pence_gross_basis'],
                 $row['competitor_count'],
                 $row['lowest_comp_pence'],
                 $row['position'],
@@ -312,6 +358,17 @@ final class ShoppingCandidatesCommand extends BaseCommand
                 $row['stock'],
                 $row['supplier_name'] ?? '',
                 $row['score'],
+                $row['demand_class'],
+                $row['price_band'],
+                $row['days_seen'],
+                $row['demand_window_days'],
+                $row['demand_factors']['class_base'],
+                $row['demand_factors']['price'],
+                $row['demand_factors']['breadth'],
+                $row['demand_factors']['persistence'],
+                $row['est_units_per_week'],
+                $row['est_units_band'],
+                $row['est_weekly_profit_pence'],
             ]);
         }
         fclose($handle);
@@ -327,12 +384,31 @@ final class ShoppingCandidatesCommand extends BaseCommand
     {
         $this->newLine();
         $this->line('── How to read this ─────────────────────────────────────────');
-        $this->warn('  Ranking uses COMPETITOR BREADTH as a DEMAND PROXY — not UK search volume.');
-        $this->line('  This app holds no UK market volume data (last_sales_count_90d and GA4 are');
-        $this->line('  own-site signals). "N competitors currently list this SKU" is evidence that');
-        $this->line('  the product sells somewhere, not evidence of how much it is searched for.');
-        $this->line('  Validate true demand in Google Keyword Planner (location: United Kingdom)');
-        $this->line('  on the exported SKU/name list before committing Shopping spend.');
+        $this->warn('  "Est demand" is MODELLED, not measured. Read the BAND, not the number.');
+        $this->line('');
+        $this->line('  The shop has taken no orders for about a year, so units-sold does not exist');
+        $this->line('  as a ranking input (last_sales_count_90d is stale-or-zero; GA4 has nothing');
+        $this->line('  to say about a dark site). The estimate is built from:');
+        $this->line('');
+        $this->line('    MEASURED   breadth      how many tracked resellers list the SKU now');
+        $this->line('               persistence  on how many distinct days it appeared (Days)');
+        $this->line('               price        our own net sell price');
+        $this->line('    ASSUMED    class base rate — units/week nationally for this KIND of');
+        $this->line('               product — plus the price-decay and weighting tables');
+        $this->line('');
+        $this->line('  The ASSUMED parts live in config/ad_demand.php with their reasoning. The');
+        $this->line('  class base rates are the biggest source of error and the thing a trader');
+        $this->line('  knows better than this codebase — correct them there and re-run; the');
+        $this->line('  shortlist re-ranks. The exported CSV carries every factor per row so any');
+        $this->line('  single estimate can be argued with.');
+        $this->line('');
+        $this->warn('  TO MAKE IT A MEASUREMENT: run the exported sku/name column through Google');
+        $this->line('  Keyword Planner (free, location: United Kingdom). That is real search');
+        $this->line('  volume for the top of the funnel and it is the one input missing here.');
+        $this->line('');
+        $this->line('  Margin is TRUE CASH margin — stripVat(sell) - buy, both sides ex-VAT');
+        $this->line('  (260927-p41). The column margin_pence_gross_basis in the CSV is what an');
+        $this->line('  export made before that fix would have claimed, for reconciliation.');
     }
 
     private function resolvePath(string $path): string

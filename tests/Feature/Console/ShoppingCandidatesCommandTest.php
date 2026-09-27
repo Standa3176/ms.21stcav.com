@@ -34,7 +34,7 @@ function seedShoppingCandidate(
     string $sku,
     int $buyPence,
     int $sellPence,
-    array $competitorGrossPences = [40000, 41000],
+    array $competitorNetPences = [40000, 41000],
     int $stock = 5,
     ?string $ean = '5012345678900',
     array $extra = [],
@@ -46,14 +46,17 @@ function seedShoppingCandidate(
         'status' => 'publish',
         'ean' => $ean,
         'buy_price' => $buyPence / 100,
-        'sell_price' => $sellPence / 100,
+        // 260927-p41 — PRICES IN ARE NET. sell_price is VAT-inclusive in
+        // production, so the fixture adds VAT and the caller's figure stays the
+        // net one the margin is computed against.
+        'sell_price' => (int) round($sellPence * 1.2) / 100,
     ], $extra));
 
-    foreach ($competitorGrossPences as $gross) {
+    foreach ($competitorNetPences as $net) {
         CompetitorPrice::factory()->forSku($sku)->create([
             'competitor_id' => Competitor::factory(),
-            'price_pennies_ex_vat' => (int) round($gross / 1.2),
-            'price_pennies_gross' => $gross,
+            'price_pennies_ex_vat' => $net,
+            'price_pennies_gross' => (int) round($net * 1.2),
         ]);
     }
 
@@ -93,7 +96,7 @@ it('prints the eligibility funnel with a per-gate drop count', function (): void
     seedShoppingCandidate('C-GOOD', 10000, 35000);
     seedShoppingCandidate('C-DRAFT', 10000, 35000, extra: ['status' => 'draft']);
     seedShoppingCandidate('C-MARGIN', 10000, 12000);
-    seedShoppingCandidate('C-COMPS', 10000, 35000, competitorGrossPences: [40000]);
+    seedShoppingCandidate('C-COMPS', 10000, 35000, competitorNetPences: [40000]);
     seedShoppingCandidate('C-NOGTIN', 10000, 35000, ean: null);
 
     $output = runShoppingCandidates();
@@ -109,51 +112,71 @@ it('prints the eligibility funnel with a per-gate drop count', function (): void
         ->and($output)->toContain('ELIGIBLE');
 });
 
-it('states that competitor breadth is a demand proxy needing Keyword Planner validation', function (): void {
+it('states that the demand figure is MODELLED and names what would measure it', function (): void {
     seedShoppingCandidate('C-GOOD', 10000, 35000);
 
     $output = runShoppingCandidates();
 
-    expect($output)->toContain('DEMAND PROXY')
+    expect($output)->toContain('MODELLED, not measured')
+        ->and($output)->toContain('MEASURED')
+        ->and($output)->toContain('ASSUMED')
+        ->and($output)->toContain('config/ad_demand.php')
+        // the one input that would make it a measurement
         ->and($output)->toContain('Keyword Planner')
-        ->and($output)->toContain('United Kingdom');
+        ->and($output)->toContain('United Kingdom')
+        // and that margin is now on one tax basis
+        ->and($output)->toContain('TRUE CASH margin');
 });
 
 it('writes the full shortlist to --csv with a header row and one row per product', function (): void {
-    seedShoppingCandidate('CSV-A', 10000, 35000, competitorGrossPences: [40000, 41000]);
-    seedShoppingCandidate('CSV-B', 10000, 40000, competitorGrossPences: [45000, 46000, 47000]);
+    seedShoppingCandidate('CSV-A', 10000, 35000, competitorNetPences: [40000, 41000]);
+    seedShoppingCandidate('CSV-B', 10000, 40000, competitorNetPences: [45000, 46000, 47000]);
     // excluded — only one competitor
-    seedShoppingCandidate('CSV-SKIP', 10000, 35000, competitorGrossPences: [40000]);
+    seedShoppingCandidate('CSV-SKIP', 10000, 35000, competitorNetPences: [40000]);
 
     $path = storage_path('app/testing/shopping-candidates-'.uniqid().'.csv');
 
-    runShoppingCandidates(['--csv' => $path]);
+    // --sort=score explicitly: the default became 'profit' in 260927-p41, and
+    // this case is about the CSV shape and the score ordering, not the default.
+    runShoppingCandidates(['--csv' => $path, '--sort' => 'score']);
 
     expect(file_exists($path))->toBeTrue();
 
     $rows = array_map('str_getcsv', array_filter(explode("\n", str_replace("\r\n", "\n", trim((string) file_get_contents($path))))));
 
-    expect($rows[0])->toBe([
+    $header = $rows[0];
+    expect($header)->toBe([
         'rank', 'sku', 'name', 'brand', 'brand_id', 'woo_product_id', 'ean', 'has_gtin',
-        'buy_price_pence', 'sell_price_pence', 'margin_pence', 'margin_pct',
+        'buy_price_pence', 'net_sell_price_pence', 'sell_price_pence',
+        'margin_pence', 'margin_pct', 'margin_pence_gross_basis',
         'competitor_count', 'lowest_competitor_gross_pence', 'position',
         'delta_vs_lowest_pence', 'stock', 'supplier_name', 'score',
+        'demand_class', 'price_band', 'days_seen', 'demand_window_days',
+        'factor_class_base', 'factor_price', 'factor_breadth', 'factor_persistence',
+        'est_units_per_week', 'est_units_band', 'est_weekly_profit_pence',
     ]);
+
+    // Index by NAME, not position — the previous literal offsets pointed at the
+    // wrong columns the moment two were inserted mid-header.
+    $col = array_flip($header);
 
     // CSV-B: 3 comps × 30000p = 90000 score; CSV-A: 2 × 25000 = 50000.
     expect($rows)->toHaveCount(3)
-        ->and($rows[1][0])->toBe('1')
-        ->and($rows[1][1])->toBe('CSV-B')
-        ->and($rows[1][12])->toBe('3')
-        ->and($rows[1][18])->toBe('90000')
-        ->and($rows[2][1])->toBe('CSV-A');
+        ->and($rows[1][$col['rank']])->toBe('1')
+        ->and($rows[1][$col['sku']])->toBe('CSV-B')
+        ->and($rows[1][$col['competitor_count']])->toBe('3')
+        ->and($rows[1][$col['score']])->toBe('90000')
+        ->and($rows[2][$col['sku']])->toBe('CSV-A')
+        // and the demand columns carry values rather than blanks
+        ->and($rows[1][$col['est_units_per_week']])->not->toBe('')
+        ->and($rows[1][$col['est_units_band']])->not->toBe('');
 
     @unlink($path);
 });
 
 it('honours --sort for the exported ordering', function (): void {
-    seedShoppingCandidate('S-A', 10000, 35000, competitorGrossPences: [40000, 41000]);           // 2 comps, 25000
-    seedShoppingCandidate('S-B', 10000, 30000, competitorGrossPences: [40000, 41000, 42000]);    // 3 comps, 20000
+    seedShoppingCandidate('S-A', 10000, 35000, competitorNetPences: [40000, 41000]);           // 2 comps, 25000
+    seedShoppingCandidate('S-B', 10000, 30000, competitorNetPences: [40000, 41000, 42000]);    // 3 comps, 20000
 
     $path = storage_path('app/testing/shopping-sort-'.uniqid().'.csv');
 
@@ -178,7 +201,7 @@ it('honours --allow-missing-gtin and flags the affected rows', function (): void
 });
 
 it('honours --min-margin-pence and --min-competitors overrides', function (): void {
-    seedShoppingCandidate('O-LOW', 10000, 20000, competitorGrossPences: [40000]);
+    seedShoppingCandidate('O-LOW', 10000, 20000, competitorNetPences: [40000]);
 
     expect(runShoppingCandidates())->not->toContain('O-LOW')
         ->and(runShoppingCandidates([
@@ -226,8 +249,8 @@ it('makes no outbound HTTP call (no Woo, no Google)', function (): void {
 });
 
 it('--live-stock confirms the shortlist against the live fresh-supplier signal', function (): void {
-    seedShoppingCandidate('LIVE-KEEP', 10000, 35000, competitorGrossPences: [40000, 41000]);
-    seedShoppingCandidate('LIVE-DROP', 10000, 40000, competitorGrossPences: [45000, 46000]);
+    seedShoppingCandidate('LIVE-KEEP', 10000, 35000, competitorNetPences: [40000, 41000]);
+    seedShoppingCandidate('LIVE-DROP', 10000, 40000, competitorNetPences: [45000, 46000]);
 
     $fake = new class extends LiveSupplierStockResolver
     {

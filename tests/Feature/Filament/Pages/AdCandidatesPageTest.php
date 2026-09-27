@@ -10,8 +10,10 @@ use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Filament\Pages\AdCandidatesPage;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Livewire\Livewire;
 use Spatie\Permission\Models\Role;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 uses(RefreshDatabase::class);
 
@@ -68,17 +70,20 @@ function seedAdCandidatePageProduct(string $sku, ?int $brandId = null, int $stoc
         'name' => "Product {$sku}",
         'type' => 'simple',
         'status' => 'publish',
-        'buy_price' => 100, // £100
-        'sell_price' => 350, // £350 → margin £250
+        'buy_price' => 100, // £100 ex-VAT cost
+        // 260927-p41 — £420 INC VAT = £350 net, so the true cash margin is £250
+        // (stripVat(420) - 100). The old £350 gross made it £191.67 and fell
+        // under the £199 floor once the margin was computed on one tax basis.
+        'sell_price' => 420,
         'brand_id' => $brandId,
     ]);
 
-    // Competitor at £400 gross → we undercut by £50.
+    // Competitor at £480 gross (£400 net) → we undercut by £60 gross / £50 net.
     CompetitorPrice::factory()
         ->forSku($sku)
         ->create([
-            'price_pennies_ex_vat' => (int) round(40000 / 1.2),
-            'price_pennies_gross' => 40000,
+            'price_pennies_ex_vat' => 40000,
+            'price_pennies_gross' => 48000,
         ]);
 
     SupplierOfferSnapshot::create([
@@ -161,7 +166,7 @@ it('the Copy SKU CSV bulk action returns a streamed CSV response', function (): 
         ->call();
     ob_end_clean();
 
-    expect($response)->toBeInstanceOf(\Symfony\Component\HttpFoundation\StreamedResponse::class);
+    expect($response)->toBeInstanceOf(StreamedResponse::class);
 
     ob_start();
     $response->sendContent();
@@ -195,7 +200,7 @@ it('the scanner is the single source of truth — page reads exactly its row set
         'type' => 'simple',
         'status' => 'publish',
         'buy_price' => 100,
-        'sell_price' => 350,
+        'sell_price' => 420, // £350 net — see seedAdCandidatePageProduct
         'brand_id' => 10,
     ]);
 
@@ -211,8 +216,8 @@ it('the scanner is the single source of truth — page reads exactly its row set
             int $minMarginPence = 19900,
             bool $stockRequired = true,
             bool $beatRequired = true,
-        ): \Illuminate\Support\Collection {
-            $row = new \stdClass;
+        ): Collection {
+            $row = new stdClass;
             $row->sku = (string) $this->product->sku;
             $row->name = (string) $this->product->name;
             $row->product_id = (int) $this->product->id;

@@ -19,7 +19,8 @@ use stdClass;
  *
  *   - status = 'publish' AND type = 'simple'
  *   - buy_price > 0 AND sell_price > 0
- *   - margin (sell - buy) >= minMarginPence (default £199 / 19900p)
+ *   - TRUE CASH margin >= minMarginPence (default £199 / 19900p), where
+ *     margin = stripVat(sell_price) - buy_price — both sides ex-VAT (260927-p41)
  *   - lowest current competitor (gross) within 30-day window EXISTS
  *   - sell < lowest_comp                       (when beatRequired = true)
  *   - has supplier_offer_snapshot stock > 0 within last 7 days
@@ -71,6 +72,9 @@ class AdCandidateScanner
     public function __construct(
         private readonly TaxonomyResolver $taxonomy,
         private readonly SupplierFreshnessResolver $freshness,
+        // 260927-p41 — VAT arithmetic stays in PriceCalculator (stripVat owns
+        // both the rate and the rounding mode).
+        private readonly PriceCalculator $prices,
         private readonly bool $excludeStaleSupplierStock = true,
     ) {}
 
@@ -129,7 +133,18 @@ class AdCandidateScanner
 
                 $sellPence = (int) round(((float) $product->sell_price) * 100);
                 $buyPence = (int) round(((float) $product->buy_price) * 100);
-                $marginPence = $sellPence - $buyPence;
+
+                // 260927-p41 — ONE TAX BASIS. `sell_price` is VAT-INCLUSIVE
+                // (PriceCalculator::compute returns gross); `buy_price` is the
+                // supplier's EX-VAT cost. `sell - buy` therefore counted the
+                // VAT we collect for HMRC as profit — every margin overstated
+                // by sell/6, and sell/6 alone clears the £199 default above a
+                // £1,194 sell price. On the expensive half of the catalogue the
+                // floor was sorting by price, not profit, and could rank a real
+                // loss as a +£800 winner. Ads against that list lose money per
+                // unit sold.
+                $netSellPence = $this->prices->stripVat($sellPence);
+                $marginPence = $netSellPence - $buyPence;
                 if ($marginPence < $minMarginPence) {
                     continue;
                 }
@@ -181,8 +196,12 @@ class AdCandidateScanner
                 $row->brand_id = $brandId;
                 $row->brand_name = $brandName;
                 $row->sell_price_pence = $sellPence;
+                $row->net_sell_price_pence = $netSellPence;
                 $row->buy_price_pence = $buyPence;
                 $row->margin_pence = $marginPence;
+                // What the pre-260927-p41 figure would have been, so a reader
+                // comparing against an older export sees how much was VAT.
+                $row->margin_pence_gross_basis = $sellPence - $buyPence;
                 $row->lowest_comp_pence = $lowestCompPence;
                 $row->beat_pct_bps = $beatPctBps;
                 $row->stock = $stock;

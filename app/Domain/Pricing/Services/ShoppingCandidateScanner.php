@@ -45,7 +45,10 @@ use Illuminate\Support\Facades\DB;
  * ── Gates (funnel order; each drop is counted and reported) ──
  *   1. status = 'publish' AND type = 'simple'
  *   2. non-empty sku AND buy_price > 0 AND sell_price > 0
- *   3. margin (sell - buy) >= $minMarginPence          (default 19900 = £199)
+ *   3. TRUE CASH margin >= $minMarginPence             (default 19900 = £199)
+ *      = stripVat(sell_price) - buy_price. Both sides ex-VAT — see the inline
+ *      note at the gate for why the old gross-minus-net form admitted
+ *      loss-makers (260927-p41).
  *   4. current fresh in-stock supplier offer            (stock > 0 within 7d,
  *      stale suppliers excluded via SupplierFreshnessResolver)
  *   5. distinct competitors with a CURRENT price >= $minCompetitors
@@ -84,10 +87,18 @@ class ShoppingCandidateScanner
     private const SUPPLIER_STOCK_WINDOW_DAYS = 7;
 
     /** @var array<int, string> */
-    public const SORTS = ['score', 'margin', 'competitors'];
+    // 260927-p41 — 'profit' is the default an ad budget should actually use:
+    // estimated weekly units x true cash margin. 'demand' ranks on the estimate
+    // alone. The pre-existing three are unchanged so saved commands keep working.
+    public const SORTS = ['score', 'margin', 'competitors', 'demand', 'profit'];
 
     public function __construct(
         private readonly SupplierFreshnessResolver $freshness,
+        // 260927-p41 — the one place VAT arithmetic lives. Injected rather than
+        // dividing by 1.2 inline so the rate and the rounding mode stay in
+        // PriceCalculator, which already owns both (stripVat / addVat).
+        private readonly PriceCalculator $prices,
+        private readonly WebDemandEstimator $demand,
         private readonly bool $excludeStaleSupplierStock = true,
     ) {}
 
@@ -118,6 +129,12 @@ class ShoppingCandidateScanner
 
         // Precompute the two lookup maps ONCE — the row loop stays O(N).
         $competitors = $this->currentCompetitorsByKey($competitorWindowDays);
+        // 260927-p41 — persistence is counted over the DEMAND window (12 weeks by
+        // default), deliberately longer than the competitor-price window: a SKU
+        // stocked all quarter is a different proposition from one that appeared
+        // last Tuesday, and a 30-day window cannot tell them apart.
+        $demandWindowDays = max(1, (int) config('ad_demand.window_days', 84));
+        $daysSeen = $this->daysSeenByKey($demandWindowDays);
         $supplierStock = $this->latestSupplierByProductId();
 
         $funnel = [
@@ -146,6 +163,8 @@ class ShoppingCandidateScanner
                 &$publishSimple,
                 $competitors,
                 $supplierStock,
+                $daysSeen,
+                $demandWindowDays,
                 $minMarginPence,
                 $minCompetitors,
                 $allowMissingGtin,
@@ -165,7 +184,21 @@ class ShoppingCandidateScanner
                     }
 
                     // ── Gate 3: margin floor ────────────────────────────
-                    $marginPence = $sellPence - $buyPence;
+                    // 260927-p41 — ONE TAX BASIS. `sell_price` is VAT-INCLUSIVE
+                    // (PriceCalculator::compute returns gross) and `buy_price`
+                    // is the supplier's EX-VAT cost, so the old
+                    // `$sellPence - $buyPence` was gross minus net: it counted
+                    // the VAT we collect for HMRC as our profit, overstating
+                    // every margin by sell/6 (16.67% of the sell price).
+                    //
+                    // That is not a rounding error at this gate. sell/6 alone
+                    // clears the £199 default at any sell price above £1,194,
+                    // so on the expensive half of an AV catalogue the floor was
+                    // filtering on PRICE, not profit — and rows reported at
+                    // +£800 could be real losses. Ad spend against that list
+                    // buys units we lose money on.
+                    $netSellPence = $this->prices->stripVat($sellPence);
+                    $marginPence = $netSellPence - $buyPence;
                     if ($marginPence < $minMarginPence) {
                         $funnel['dropped_below_min_margin']++;
 
@@ -205,6 +238,22 @@ class ShoppingCandidateScanner
 
                     $funnel['eligible']++;
 
+                    // ── 260927-p41: the demand estimate ──────────────────
+                    // The shop has taken no orders for about a year, so units
+                    // sold does not exist as a ranking input. This estimates it
+                    // from breadth (measured), persistence (measured), price
+                    // (measured) and a per-class base rate (ASSUMED — see
+                    // config/ad_demand.php). Every factor is carried on the row
+                    // so a ranking can be argued with rather than trusted.
+                    $skuDaysSeen = $daysSeen[$key] ?? 0;
+                    $demand = $this->demand->estimate(
+                        name: (string) $product->name,
+                        netSellPence: $netSellPence,
+                        competitorCount: $competitorCount,
+                        daysSeen: $skuDaysSeen,
+                        windowDays: $demandWindowDays,
+                    );
+
                     $rows[] = [
                         'product_id' => (int) $product->id,
                         'woo_product_id' => $product->woo_product_id === null
@@ -218,9 +267,18 @@ class ShoppingCandidateScanner
                         'has_gtin' => $hasGtin,
                         'buy_price_pence' => $buyPence,
                         'sell_price_pence' => $sellPence,
+                        'net_sell_price_pence' => $netSellPence,
                         'margin_pence' => $marginPence,
-                        // margin % OF THE SELL PRICE, in basis points.
-                        'margin_pct_bps' => intdiv($marginPence * 10000, $sellPence),
+                        // margin % of the NET sell price (both sides ex-VAT), in
+                        // basis points. Against gross it would understate the
+                        // rate on the same money.
+                        'margin_pct_bps' => $netSellPence > 0
+                            ? intdiv($marginPence * 10000, $netSellPence)
+                            : 0,
+                        // What the pre-260927-p41 report would have claimed, kept
+                        // so a reader comparing against an older CSV can see
+                        // exactly how much of the old figure was VAT.
+                        'margin_pence_gross_basis' => $sellPence - $buyPence,
                         'competitor_count' => $competitorCount,
                         'lowest_comp_pence' => $lowestCompPence,
                         'position' => $delta < 0 ? 'beat' : ($delta > 0 ? 'above' : 'level'),
@@ -230,6 +288,28 @@ class ShoppingCandidateScanner
                         // Demand proxy × value. See the class docblock: this is
                         // NOT search volume — validate in Keyword Planner.
                         'score' => $competitorCount * $marginPence,
+
+                        // ── demand (260927-p41) ──────────────────────────
+                        'days_seen' => $skuDaysSeen,
+                        'demand_window_days' => $demandWindowDays,
+                        'demand_class' => $demand['class'],
+                        'est_units_per_week' => $demand['units_per_week'],
+                        'est_units_band' => $demand['band'],
+                        'price_band' => $demand['price_band'],
+                        'demand_factors' => [
+                            'class_base' => $demand['class_base'],
+                            'price' => $demand['price_factor'],
+                            'breadth' => $demand['breadth_factor'],
+                            'persistence' => $demand['persistence_factor'],
+                        ],
+                        // The ranking number: expected weekly gross profit.
+                        // Margin alone favours expensive niche kit (cash rises
+                        // with price, demand falls with it); volume alone
+                        // favours cables we make nothing on.
+                        'est_weekly_profit_pence' => $this->demand->weeklyProfitPence(
+                            $demand['units_per_week'],
+                            $marginPence,
+                        ),
                     ];
                 }
             });
@@ -269,6 +349,9 @@ class ShoppingCandidateScanner
             $primary = match ($sort) {
                 'margin' => $b['margin_pence'] <=> $a['margin_pence'],
                 'competitors' => $b['competitor_count'] <=> $a['competitor_count'],
+                // 260927-p41
+                'profit' => $b['est_weekly_profit_pence'] <=> $a['est_weekly_profit_pence'],
+                'demand' => $b['est_units_per_week'] <=> $a['est_units_per_week'],
                 default => $b['score'] <=> $a['score'],
             };
 
@@ -327,6 +410,50 @@ class ShoppingCandidateScanner
                 }
                 $out[$k]['competitor_ids'][$competitorId] = true;
                 $out[$k]['lowest_gross'] = min($out[$k]['lowest_gross'], $price);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * 260927-p41 — lowercase match-key → number of DISTINCT DAYS the key appeared
+     * in competitor feeds inside the demand window. The persistence half of the
+     * demand model: a SKU in one feed and never again is usually clearance, a SKU
+     * in every feed for twelve weeks is a stocked line with repeat demand.
+     *
+     * COUNT(DISTINCT DATE(recorded_at)) rather than YEARWEEK() — DATE() exists on
+     * both MySQL and SQLite, and the suite runs on SQLite while production is
+     * MySQL. A MySQL-only function here would pass every local gate and fail on
+     * the only machine that matters.
+     *
+     * @return array<string, int>
+     */
+    private function daysSeenByKey(int $windowDays): array
+    {
+        $cutoff = now()->subDays($windowDays)->toDateTimeString();
+
+        $rows = DB::select(
+            'SELECT sku, mpn, COUNT(DISTINCT DATE(recorded_at)) AS days_seen '
+            .'FROM competitor_prices WHERE recorded_at >= ? '
+            .'GROUP BY sku, mpn',
+            [$cutoff],
+        );
+
+        /** @var array<string, int> $out */
+        $out = [];
+        foreach ($rows as $r) {
+            $days = (int) $r->days_seen;
+            // sku and mpn are both match keys (mirrors currentCompetitorsByKey),
+            // and two competitors may cover the same key on different days — so
+            // take the MAX rather than overwriting or summing. Summing would
+            // double-count a day two competitors both listed.
+            foreach ([(string) $r->sku, (string) ($r->mpn ?? '')] as $raw) {
+                $k = strtolower(trim($raw));
+                if ($k === '') {
+                    continue;
+                }
+                $out[$k] = max($out[$k] ?? 0, $days);
             }
         }
 

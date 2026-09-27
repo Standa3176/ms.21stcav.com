@@ -9,6 +9,7 @@ use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 uses(RefreshDatabase::class);
@@ -44,10 +45,14 @@ function bindAggregatorBrandTerms(array $brands): void
 
 function seedAggregatorRow(string $sku, int $marginPence): void
 {
-    // sell - buy = margin; comp gross ABOVE sell (we beat); supplier stock > 0.
+    // 260927-p41 — $marginPence is the TRUE cash margin, so the stored sell price
+    // is the GROSS price that yields it: stripVat(sell) - buy = margin. The old
+    // `$sell = $buy + $marginPence` assumed sell and buy shared a tax basis; they
+    // do not (sell_price is VAT-inclusive, buy_price is the ex-VAT cost), so it
+    // seeded rows whose real margin was margin - sell/6.
     $buy = 10000;
-    $sell = $buy + $marginPence;
-    $comp = $sell + 5000; // we beat by £50
+    $sell = (int) round(($buy + $marginPence) * 1.2);
+    $comp = $sell + 5000; // we beat by £50 gross
 
     $product = Product::factory()->create([
         'sku' => $sku,
@@ -113,8 +118,8 @@ it('returns zero payload when the scanner throws (defensive try/catch)', functio
             int $minMarginPence = 19900,
             bool $stockRequired = true,
             bool $beatRequired = true,
-        ): \Illuminate\Support\Collection {
-            throw new \RuntimeException('synthetic scanner failure');
+        ): Collection {
+            throw new RuntimeException('synthetic scanner failure');
         }
     };
     app()->instance(AdCandidateScanner::class, $throwingScanner);

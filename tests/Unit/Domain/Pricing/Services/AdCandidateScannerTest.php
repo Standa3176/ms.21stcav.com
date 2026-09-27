@@ -21,6 +21,17 @@ uses(RefreshDatabase::class);
 | AND the BackfillMerchantFeedCommand share. Single SQL surface — drift is
 | structurally impossible.
 |
+| ── Fixture basis (260927-p41) ──
+| A real product's `sell_price` is VAT-INCLUSIVE and `buy_price` is the
+| supplier's EX-VAT cost, so the scanner strips VAT off the sell before
+| subtracting. Every price the cases below pass is therefore NET, and
+| seedAdCandidateRow() adds VAT on the way in — for the product's sell_price and
+| for each competitor's gross price alike.
+|
+| That is what the matrix always MEANT: "£250 margin" is the true margin only on
+| a net basis. Scaling both sides preserves every net-vs-net relation, so
+| beat_pct_bps (a ratio) is unchanged and each row keeps its verdict.
+|
 | 5-row matrix (defaults: minMarginPence=19900, stockRequired=true,
 |                          beatRequired=true):
 |
@@ -65,9 +76,15 @@ function bindAdCandidateBrandTerms(array $brands): void
     app()->instance(TaxonomyResolver::class, $taxonomyFake);
 }
 
+/** Gross (VAT-inclusive) pennies from a net figure — mirrors PriceCalculator::addVat. */
+function adGrossFromNet(int $netPence): int
+{
+    return (int) round($netPence * 1.2);
+}
+
 /**
  * Seed a Product with a synthetic supplier offer snapshot and a competitor
- * price. Returns the Product for assertion convenience.
+ * price. PRICES IN ARE NET. Returns the Product for assertion convenience.
  *
  * @param  array<string, mixed>  $extra  extra Product attributes
  */
@@ -75,7 +92,7 @@ function seedAdCandidateRow(
     string $sku,
     int $buyPence,
     int $sellPence,
-    int $compGrossPence,
+    int $compNetPence,
     int $stock,
     ?int $brandId = null,
     bool $supplierFresh = true,
@@ -87,17 +104,17 @@ function seedAdCandidateRow(
         'type' => 'simple',
         'status' => 'publish',
         'buy_price' => $buyPence / 100,
-        'sell_price' => $sellPence / 100,
+        // NET in, GROSS stored — see the fixture-basis note above.
+        'sell_price' => adGrossFromNet($sellPence) / 100,
         'brand_id' => $brandId,
     ], $extra));
 
     // Competitor — store both ex-vat and gross; scanner reads gross.
-    $exVatPence = (int) round($compGrossPence / 1.2);
     CompetitorPrice::factory()
         ->forSku($sku)
         ->create([
-            'price_pennies_ex_vat' => $exVatPence,
-            'price_pennies_gross' => $compGrossPence,
+            'price_pennies_ex_vat' => $compNetPence,
+            'price_pennies_gross' => adGrossFromNet($compNetPence),
         ]);
 
     // Supplier offer snapshot — fresh (today) or stale (10d ago) to
@@ -127,7 +144,7 @@ beforeEach(function (): void {
 it('Row A — £250 margin + in stock + undercuts comp → INCLUDED at defaults', function (): void {
     // sell=£200 (20000p), buy=£175 (17500p) → margin £25 (2500p) — NOT golden.
     // Use £350 sell, £100 buy → margin £250 (25000p), comp gross £400 (40000p) → we beat by £50.
-    seedAdCandidateRow('A-IN', buyPence: 10000, sellPence: 35000, compGrossPence: 40000, stock: 5);
+    seedAdCandidateRow('A-IN', buyPence: 10000, sellPence: 35000, compNetPence: 40000, stock: 5);
 
     $rows = app(AdCandidateScanner::class)->scan();
 
@@ -137,7 +154,7 @@ it('Row A — £250 margin + in stock + undercuts comp → INCLUDED at defaults'
 
 it('Row B — above-competitor row is EXCLUDED when beatRequired=true and INCLUDED when false', function (): void {
     // sell £420, buy £170 → margin £250. Comp gross £400 → we are ABOVE comp by £20.
-    seedAdCandidateRow('B-ABOVE', buyPence: 17000, sellPence: 42000, compGrossPence: 40000, stock: 5);
+    seedAdCandidateRow('B-ABOVE', buyPence: 17000, sellPence: 42000, compNetPence: 40000, stock: 5);
 
     $defaults = app(AdCandidateScanner::class)->scan();
     expect($defaults->pluck('sku')->all())->not->toContain('B-ABOVE');
@@ -151,7 +168,7 @@ it('Row C — stale supplier snapshot (>7d) is EXCLUDED when stockRequired and I
         'C-STALE',
         buyPence: 10000,
         sellPence: 35000,
-        compGrossPence: 40000,
+        compNetPence: 40000,
         stock: 5,
         supplierFresh: false, // recorded 10 days ago — outside 7d window
     );
@@ -166,7 +183,7 @@ it('Row C — stale supplier snapshot (>7d) is EXCLUDED when stockRequired and I
 it('Row D — £100 margin is EXCLUDED at default minMargin and INCLUDED when threshold drops', function (): void {
     // sell £200, buy £100 → margin £100 (10000p). Default minMarginPence=19900 excludes.
     // minMarginPence=9900 includes.
-    seedAdCandidateRow('D-LOW', buyPence: 10000, sellPence: 20000, compGrossPence: 25000, stock: 5);
+    seedAdCandidateRow('D-LOW', buyPence: 10000, sellPence: 20000, compNetPence: 25000, stock: 5);
 
     $defaults = app(AdCandidateScanner::class)->scan();
     expect($defaults->pluck('sku')->all())->not->toContain('D-LOW');
@@ -177,9 +194,9 @@ it('Row D — £100 margin is EXCLUDED at default minMargin and INCLUDED when th
 
 it('Row E — brand-filter narrows to only the requested brand', function (): void {
     // Three rows: one brand=10 (X), one brand=20 (Y), one brand=null.
-    seedAdCandidateRow('E-X', buyPence: 10000, sellPence: 35000, compGrossPence: 40000, stock: 5, brandId: 10);
-    seedAdCandidateRow('E-Y', buyPence: 10000, sellPence: 35000, compGrossPence: 40000, stock: 5, brandId: 20);
-    seedAdCandidateRow('E-NONE', buyPence: 10000, sellPence: 35000, compGrossPence: 40000, stock: 5, brandId: null);
+    seedAdCandidateRow('E-X', buyPence: 10000, sellPence: 35000, compNetPence: 40000, stock: 5, brandId: 10);
+    seedAdCandidateRow('E-Y', buyPence: 10000, sellPence: 35000, compNetPence: 40000, stock: 5, brandId: 20);
+    seedAdCandidateRow('E-NONE', buyPence: 10000, sellPence: 35000, compNetPence: 40000, stock: 5, brandId: null);
 
     $all = app(AdCandidateScanner::class)->scan();
     expect($all->pluck('sku')->all())->toEqualCanonicalizing(['E-X', 'E-Y', 'E-NONE']);
@@ -192,7 +209,7 @@ it('Row E — brand-filter narrows to only the requested brand', function (): vo
 });
 
 it('returned rows expose the full decorated shape (sku, name, brand_name, prices, margin, stock, best_supplier)', function (): void {
-    seedAdCandidateRow('SHAPE-1', buyPence: 10000, sellPence: 35000, compGrossPence: 40000, stock: 7, brandId: 10);
+    seedAdCandidateRow('SHAPE-1', buyPence: 10000, sellPence: 35000, compNetPence: 40000, stock: 7, brandId: 10);
 
     $rows = app(AdCandidateScanner::class)->scan();
 
@@ -203,11 +220,18 @@ it('returned rows expose the full decorated shape (sku, name, brand_name, prices
     expect($row->name)->toBe('Product SHAPE-1');
     expect($row->brand_id)->toBe(10);
     expect($row->brand_name)->toBe('BrandX');
-    expect($row->sell_price_pence)->toBe(35000);
+    // sell_price_pence is the stored GROSS price; net_sell_price_pence is the
+    // figure the margin is computed from.
+    expect($row->sell_price_pence)->toBe(adGrossFromNet(35000));
+    expect($row->net_sell_price_pence)->toBe(35000);
     expect($row->buy_price_pence)->toBe(10000);
     expect($row->margin_pence)->toBe(25000);
-    expect($row->lowest_comp_pence)->toBe(40000);
-    // beat_pct_bps = (sell - comp) * 10000 / comp = (35000-40000)*10000/40000 = -1250
+    // The pre-260927-p41 figure, kept on the row so an older export reconciles:
+    // gross 42000 - net cost 10000 = 32000. £70 of that "£320" was VAT.
+    expect($row->margin_pence_gross_basis)->toBe(32000);
+    expect($row->lowest_comp_pence)->toBe(adGrossFromNet(40000));
+    // beat_pct_bps is a RATIO, so scaling both sides leaves it unchanged:
+    // (42000-48000) * 10000 / 48000 = -1250
     expect($row->beat_pct_bps)->toBe(-1250);
     expect($row->stock)->toBe(7);
     expect($row->best_supplier)->toBe('TestSupplier');

@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domain\Competitor\Services\LowestCompetitorResolver;
 use App\Domain\Pricing\Services\PricePositionClassifier;
 use App\Domain\Products\Models\Product;
+use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\DB;
@@ -78,12 +80,18 @@ final class PricePositionReportCommand extends BaseCommand
         $this->line(sprintf('  %d part number(s) · competitor window %dd', count($wanted), $windowDays));
 
         $products = $this->loadProducts();
-        $competitors = $this->lowestCompetitorByKey($windowDays);
+        // 260930-eo3 follow-up — the VERDICT uses the pricing job's own resolver
+        // so the two cannot disagree. `$looseByKey` is a SEPARATE, deliberately
+        // wider lookup used ONLY to annotate catalogue gaps ("competitors list
+        // it"), never to score a row.
+        $resolver = app(LowestCompetitorResolver::class);
+        $cutoff = now()->subDays($windowDays);
+        $looseByKey = $this->looseCompetitorByKey($windowDays);
         $classifier = app(PricePositionClassifier::class);
 
         $rows = [];
         foreach ($wanted as [$name, $partNumber]) {
-            $rows[] = $this->buildRow($name, $partNumber, $products, $competitors, $classifier);
+            $rows[] = $this->buildRow($name, $partNumber, $products, $resolver, $cutoff, $looseByKey, $classifier);
         }
 
         $this->renderSummary($rows);
@@ -170,16 +178,19 @@ final class PricePositionReportCommand extends BaseCommand
     }
 
     /**
-     * Normalised match key → lowest CURRENT competitor gross pennies + how many
-     * distinct competitors listed it.
+     * A DELIBERATELY LOOSE normalised-key lookup, used for ONE thing: telling an
+     * operator that competitors stock a part number we do not carry.
      *
-     * "Current" = the latest row per (competitor, sku) inside the window, the
-     * same windowed reduction the ad scanners use, so a competitor with a year
-     * of daily rows counts once rather than 365 times.
+     * It is NOT used to score any row. Verdicts come from
+     * LowestCompetitorResolver, which matches exactly the way the pricing job
+     * does; widening the match there would mean reporting positions the pricing
+     * job would never act on. Here the looser match is right, because a
+     * catalogue gap is worth surfacing even when the part number is written
+     * differently in the feed.
      *
      * @return array<string, array{lowest: int, competitors: int}>
      */
-    private function lowestCompetitorByKey(int $windowDays): array
+    private function looseCompetitorByKey(int $windowDays): array
     {
         $cutoff = now()->subDays($windowDays)->toDateTimeString();
 
@@ -230,7 +241,9 @@ final class PricePositionReportCommand extends BaseCommand
         string $name,
         string $partNumber,
         array $products,
-        array $competitors,
+        LowestCompetitorResolver $resolver,
+        Carbon $cutoff,
+        array $looseByKey,
         PricePositionClassifier $classifier,
     ): array {
         $key = self::normaliseKey($partNumber);
@@ -243,27 +256,27 @@ final class PricePositionReportCommand extends BaseCommand
             $match = $product !== null ? 'normalised' : null;
         }
 
-        $comp = $competitors[$key] ?? null;
-
         if ($product === null) {
             // A catalogue gap, NOT a pricing verdict. Say whether competitors
             // carry it, because "they stock it and we do not" is the actionable
             // version of this row.
+            $loose = $looseByKey[$key] ?? null;
+
             return [
                 'name' => $name,
                 'part_number' => $partNumber,
                 'match' => 'NOT FOUND',
                 'sku' => null,
                 'status' => 'not_in_catalogue',
-                'label' => $comp !== null ? 'Not in catalogue (competitors list it)' : 'Not in catalogue',
+                'label' => $loose !== null ? 'Not in catalogue (competitors list it)' : 'Not in catalogue',
                 'tone' => 'muted',
                 'sell_gross_pence' => null,
                 'buy_pence' => null,
                 'net_sell_pence' => null,
                 'true_margin_pence' => null,
                 'floor_gross_pence' => null,
-                'lowest_comp_pence' => $comp['lowest'] ?? null,
-                'competitors' => $comp['competitors'] ?? 0,
+                'lowest_comp_pence' => $loose['lowest'] ?? null,
+                'competitors' => $loose['competitors'] ?? 0,
                 'delta_vs_lowest_pence' => null,
                 'undercut_target_pence' => null,
                 'headroom_pence' => null,
@@ -275,7 +288,11 @@ final class PricePositionReportCommand extends BaseCommand
         $sellGross = (int) round(((float) $product->sell_price) * 100);
         $buy = (int) round(((float) $product->buy_price) * 100);
 
-        $verdict = $classifier->classify($sellGross, $buy, $comp['lowest'] ?? null);
+        // Resolved on OUR sku, through the pricing job's own rule — anomaly
+        // quarantine, paused competitors and match exclusions all applied.
+        $comp = $resolver->resolve((string) $product->sku, $cutoff);
+
+        $verdict = $classifier->classify($sellGross, $buy, $comp['lowest']);
         $describe = PricePositionClassifier::describe($verdict['status']);
 
         return [
@@ -291,8 +308,8 @@ final class PricePositionReportCommand extends BaseCommand
             'net_sell_pence' => $verdict['net_sell_pence'],
             'true_margin_pence' => $verdict['true_margin_pence'],
             'floor_gross_pence' => $verdict['floor_gross_pence'],
-            'lowest_comp_pence' => $comp['lowest'] ?? null,
-            'competitors' => $comp['competitors'] ?? 0,
+            'lowest_comp_pence' => $comp['lowest'],
+            'competitors' => $comp['competitors'],
             'delta_vs_lowest_pence' => $verdict['delta_vs_lowest_pence'],
             'undercut_target_pence' => $verdict['undercut_target_pence'],
             'headroom_pence' => $verdict['headroom_pence'],

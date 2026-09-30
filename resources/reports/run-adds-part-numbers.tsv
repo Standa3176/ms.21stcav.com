@@ -1,0 +1,65 @@
+# Quick task 260930-eo3 — "RUN ADDS ON THESE PRODUCTS"
+#
+# Operator-supplied ad shortlist, 2026-09-30. Format: name<TAB>part number.
+# Lines starting with # are ignored, as are blank lines.
+#
+# Transcribed verbatim from the supplied spreadsheet. Two things worth knowing
+# before reading a report built from it:
+#
+#   * "Lenovo ThinkSmart PC Gen 2 - Teams" and "Lenovo ThinkSmart Core Gen 2 -
+#     NUC PC" carry the SAME part number (12X2S0000F). One of them is wrong in
+#     the source. The report resolves both to the same product and says so
+#     rather than quietly showing a duplicate row.
+#   * These are MANUFACTURER part numbers. Our products.sku may differ, so the
+#     command reports how each row matched (exact / normalised / not found) —
+#     a "not found" is a catalogue gap, not a pricing verdict.
+Logitech Rally Bar + Tap IP	991-000423
+Logitech Rally Bar Mini + Tap IP	991-000389
+Logitech Rally Bar	960-001311
+Logitech Rally Bar Mini	960-001340
+Logitech Rally Plus	960-001242
+Logitech Teams Base Bundle - NUC + TAP	TAPMSTBASELNV4
+Yealink A40 + CTP25	A40-031
+Yealink A50 + CTP25	A50-031
+Yealink A25 + CTP25	A25-031
+Yealink MVCS 40	MVC S40-C5U-000
+Yealink MVCS 50	MVC S50-C5U-000
+Yealink MVC S80	MVC S80-C5U-000
+Yealink MVC S98	MVC S98-C5U-004
+Yealink MVC S90	MVC S90-C5U-004
+Maxhub W70 Kit	W70 KIT
+Maxhub V50 Kit	V50 KIT
+Maxhub V70 Kit	V70 KIT
+Neat Board Pro	NEATBOARDPROBUNUK
+Neat Bar Pro + Pad	NEATBARPROBUNUK
+Neat Bar 2 + Pad	NEATBAR2BUNUK
+Neat Board 50	NEATBOARD50-SE
+Logitech Board 65" Graphite	960-001699
+Yealink Meetingboard Pro 65	MB65Pro-A02
+Yealink Meetingboard Pro 75	MB75Pro-A02
+Yealink Meetingboard Pro 86	MB86Pro-A02
+Barco Clickshare CX-20	R9861612EUB1
+Barco Clickshare CX-30	R9861613EUB2
+Barco Clickshare CX-50	R9861622EUB2
+Neat Board 32	NEATBOARD32BUNUK
+Poly X32 - Bar Only	A3SV5AA#ABU
+Poly X52 - Bar Only	8D8K2AA#ABU
+Poly X72 - Bar Only	A4LZ8AA#ABU
+Barco Clickshare Hub Core	R9461811EU
+Barco Clickshare Hub Pro	R9461810EU
+Barco Bar Core	R9861632EUB1
+Barco Bar Pro	R9861633EUB2
+Logitech Google Meet Base Bundle	TAPGGLBASECTL/2
+Logitech Board 65" White	960-001731
+Iiyama 98 Prolight Display	LE9864UHS-B1AG
+Cisco Webex Room Bar + Table Navigator	CS-BAR-T-C-K9
+Cisco Room Kit EQ	CS-KIT-EQ-K9
+Cisco Room Kit Pro	CS-KITPRO-K9
+Cisco Webex Board Pro 55"	CS-BRDP55-K9
+Cisco Webex Board Pro 75"	CS-BRDP75-K9
+Rally Bar Huddle + Tap IP	991-000482
+Lenovo Google Meet Kit Medium	21N60005UK
+Lenovo Google Meet Kit Large	21N60002UK
+Lenovo ThinkSmart PC Gen 2 - Teams	12X2S0000F
+Lenovo ThinkSmart Core Gen 2 - NUC PC	12X2S0000F
+Yealink SmartVision 80 PTZ	SmartVision 80

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Competitor\Models\Competitor;
-use App\Domain\Competitor\Models\CompetitorMatchExclusion;
-use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Competitor\Services\LowestCompetitorResolver;
 use App\Domain\Pricing\Events\ProductPriceChanged;
 use App\Domain\Pricing\Exceptions\NoPricingRuleMatchedException;
 use App\Domain\Pricing\Services\CeilingBlockClassifier;
@@ -281,59 +280,21 @@ final class CompetitorUndercutPricingCommand extends BaseCommand
     }
 
     /**
-     * Lowest CURRENT competitor gross price (pennies) for a SKU: the latest row
-     * per competitor (within the freshness window), then the minimum across
-     * competitors. Null when no fresh competitor data exists. Matches on the
-     * competitor row's sku OR mpn (mirrors how the feeds are keyed).
+     * Lowest CURRENT competitor gross price (pennies) for a SKU.
      *
-     * Guard 2b (2026-08-09 incident response) — quarantined rows
-     * (is_price_anomaly=true, flagged by CompetitorCsvRowWriter's feed-jump
-     * detector) are excluded here so a single bad feed row can never drive a
-     * live sell-price change; the row still exists for audit/history, it is
-     * just invisible to this "current competitor" lookup.
+     * 260930-eo3 — the rule itself moved to LowestCompetitorResolver, unchanged,
+     * because a second caller appeared (the price-position report) and got a
+     * DIFFERENT answer: it reproduced the recency window but not the anomaly,
+     * paused-competitor and match-exclusion guards, so a quarantined £299 feed
+     * row set the "lowest competitor" for a ~£6,900 Neat Board Pro. Two
+     * definitions of "what the market charges" is how a report starts
+     * recommending prices this command would refuse to set.
+     *
+     * The guards and their incident history now live in that class's docblock.
      */
     private function lowestCurrentCompetitorGross(string $sku, Carbon $cutoff): ?int
     {
-        $rows = CompetitorPrice::query()
-            ->where(static fn ($q) => $q->where('sku', $sku)->orWhere('mpn', $sku))
-            ->where('recorded_at', '>=', $cutoff)
-            ->where('is_price_anomaly', false)
-            ->orderByDesc('recorded_at')
-            ->get(['competitor_id', 'price_pennies_gross', 'recorded_at']);
-
-        if ($rows->isEmpty()) {
-            return null;
-        }
-
-        $paused = Competitor::pausedIds();
-        $latestPerCompetitor = [];
-        foreach ($rows as $row) {
-            $cid = (int) $row->competitor_id;
-
-            // 260825-h2r — SKU homonym. CP4 is a Unicol/AVM ceiling mount here
-            // and a Crestron control processor at AVITDirect; both feeds are
-            // right about their own product. Excluded rows are dropped BEFORE
-            // the lowest-price pick, so they cannot set or floor a price.
-            // 260826-cpp - a competitor paused for pricing is skipped whole.
-            // screenmoove went silent on 2026-07-19 holding 65% of all rows;
-            // age already excludes it, but a pause is what stops five-week-old
-            // prices snapping back the instant the feed is repaired.
-            if (array_key_exists($cid, $paused)) {
-                continue;
-            }
-
-            if (CompetitorMatchExclusion::excludes($cid, $sku)) {
-                continue;
-            }
-
-            if (! array_key_exists($cid, $latestPerCompetitor)) {
-                $latestPerCompetitor[$cid] = (int) $row->price_pennies_gross; // first seen = latest (desc sort)
-            }
-        }
-
-        $positive = array_filter($latestPerCompetitor, static fn (int $p): bool => $p > 0);
-
-        return $positive === [] ? null : min($positive);
+        return app(LowestCompetitorResolver::class)->lowestGrossPence($sku, $cutoff);
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Console\Commands\PricePositionReportCommand;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Competitor\Services\LowestCompetitorResolver;
 use App\Domain\Pricing\Services\PricePositionClassifier;
 use App\Domain\Products\Models\Product;
 use Illuminate\Contracts\Console\Kernel;
@@ -56,7 +57,7 @@ function seedPositionRow(string $sku, int $buyPence, int $sellGrossPence, array 
     return $product;
 }
 
-function classifier(): PricePositionClassifier
+function positionClassifier(): PricePositionClassifier
 {
     return app(PricePositionClassifier::class);
 }
@@ -69,7 +70,7 @@ it('registers the command', function (): void {
 
 it('calls us BEST PRICE when we undercut the cheapest competitor', function (): void {
     // cost £100 net, we sell £150 inc, cheapest rival £160 inc.
-    $r = classifier()->classify(15000, 10000, 16000);
+    $r = positionClassifier()->classify(15000, 10000, 16000);
 
     expect($r['status'])->toBe(PricePositionClassifier::BEST_PRICE)
         ->and($r['delta_vs_lowest_pence'])->toBe(-1000);
@@ -78,7 +79,7 @@ it('calls us BEST PRICE when we undercut the cheapest competitor', function (): 
 it('calls us COULD BE BEST when undercutting still clears the floor', function (): void {
     // cost £100 net → floor is £100 + 6% + VAT = £127.20. Rival at £160, we are
     // at £170: dropping to £159.99 is far above the floor.
-    $r = classifier()->classify(17000, 10000, 16000);
+    $r = positionClassifier()->classify(17000, 10000, 16000);
 
     expect($r['status'])->toBe(PricePositionClassifier::COULD_BE_BEST)
         ->and($r['undercut_target_pence'])->toBe(15999)
@@ -89,7 +90,7 @@ it('calls it CANNOT WIN when the leader is below our floor', function (): void {
     // cost £100 net → floor £127.20 inc. The rival sells at £120 inc, which is
     // under it. Chasing that price would breach the floor, so the undercut job
     // would hold — and the report must say so rather than calling it winnable.
-    $r = classifier()->classify(17000, 10000, 12000);
+    $r = positionClassifier()->classify(17000, 10000, 12000);
 
     expect($r['status'])->toBe(PricePositionClassifier::CANNOT_WIN)
         ->and($r['floor_gross_pence'])->toBeGreaterThan(12000);
@@ -97,7 +98,7 @@ it('calls it CANNOT WIN when the leader is below our floor', function (): void {
 
 it('flags BELOW COST when the net sell price is under the supplier cost', function (): void {
     // £100 inc = £83.33 net, against a £90 net cost. A loss on every unit.
-    $r = classifier()->classify(10000, 9000, null);
+    $r = positionClassifier()->classify(10000, 9000, null);
 
     expect($r['status'])->toBe(PricePositionClassifier::BELOW_COST)
         ->and($r['true_margin_pence'])->toBeLessThan(0);
@@ -107,7 +108,7 @@ it('flags BELOW FLOOR when we are profitable but under the floor', function (): 
     // cost £100 net, floor £127.20 inc. Selling at £125 inc = £104.17 net, so a
     // real £4.17 margin — profitable, but under the floor the pricing job
     // enforces. A distinct finding from an outright loss, and shown as one.
-    $r = classifier()->classify(12500, 10000, null);
+    $r = positionClassifier()->classify(12500, 10000, null);
 
     expect($r['status'])->toBe(PricePositionClassifier::BELOW_FLOOR)
         ->and($r['true_margin_pence'])->toBeGreaterThan(0);
@@ -116,7 +117,7 @@ it('flags BELOW FLOOR when we are profitable but under the floor', function (): 
 it('reports the loss even when the loss is what makes us cheapest', function (): void {
     // The trap: cheapest on the market BECAUSE we are selling under cost.
     // "Best price" must not mask it.
-    $r = classifier()->classify(10000, 9000, 20000);
+    $r = positionClassifier()->classify(10000, 9000, 20000);
 
     expect($r['status'])->toBe(PricePositionClassifier::BELOW_COST)
         // and the competitive position is still reported, not discarded
@@ -126,14 +127,14 @@ it('reports the loss even when the loss is what makes us cheapest', function ():
 it('says NO COMPETITOR rather than implying we are cheapest', function (): void {
     // Absence of evidence. Calling this "best price" would be a lie the whole
     // report hangs on.
-    $r = classifier()->classify(15000, 10000, null);
+    $r = positionClassifier()->classify(15000, 10000, null);
 
     expect($r['status'])->toBe(PricePositionClassifier::NO_COMPETITOR);
 });
 
 it('says NO COST rather than assuming a floor of zero', function (): void {
     // With no cost every price looks safe, which is the opposite of the truth.
-    $r = classifier()->classify(15000, 0, 16000);
+    $r = positionClassifier()->classify(15000, 0, 16000);
 
     expect($r['status'])->toBe(PricePositionClassifier::NO_COST)
         ->and($r['floor_gross_pence'])->toBe(0);
@@ -152,7 +153,7 @@ it('treats the floor margin as markup on cost, not a share of the sell price', f
     // 600bps on a £100 net cost is cost + 6% = £106 net = £127.20 inc.
     // Read as 6% OF THE SELL PRICE it would be £106.38 net — a different number,
     // and the confusion decides whether a row reads as a loss.
-    $r = classifier()->classify(20000, 10000, null);
+    $r = positionClassifier()->classify(20000, 10000, null);
 
     expect($r['floor_gross_pence'])->toBe(12720);
 });
@@ -292,4 +293,87 @@ it('ships the operator list with all 50 part numbers', function (): void {
     // would hide a data-entry error the operator should see.
     $numbers = array_map(static fn (string $l): string => trim(explode("\t", $l)[1] ?? ''), $rows);
     expect(array_count_values($numbers)['12X2S0000F'] ?? 0)->toBe(2);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 260930-eo3 follow-up — the guards the first live run exposed
+|--------------------------------------------------------------------------
+|
+| The first production run reported Neat Board Pro against a "lowest competitor"
+| of £299.00 on a ~£6,900 product, and marked it "Cannot win at floor". £299 was
+| a quarantined feed row (is_price_anomaly), which the pricing job ignores and
+| this report did not — it had reproduced the recency window but none of the
+| three guards. One bad feed line flipped a winnable SKU to unwinnable, which is
+| the wrong call to hand someone planning ad spend.
+|
+| Fixed by extracting the pricing job's own lookup into LowestCompetitorResolver
+| and having BOTH call it. These pin each guard through the report, not just
+| through the resolver, because the report is what gets read.
+*/
+
+it('ignores a quarantined competitor row when deciding the verdict', function (): void {
+    $product = seedPositionRow('QUAR-1', 10000, 15000, [16000]);
+
+    // The Neat Board Pro case: an absurd price, flagged by the feed-jump
+    // detector. Visible in history, invisible to pricing.
+    CompetitorPrice::factory()->forSku('QUAR-1')->create([
+        'competitor_id' => Competitor::factory(),
+        'price_pennies_ex_vat' => 250,
+        'price_pennies_gross' => 299,
+        'is_price_anomaly' => true,
+    ]);
+
+    expect($product->exists)->toBeTrue();
+
+    $resolved = app(LowestCompetitorResolver::class)
+        ->resolve('QUAR-1', now()->subDays(30));
+
+    // £160.00, not £2.99.
+    expect($resolved['lowest'])->toBe(16000)
+        ->and($resolved['competitors'])->toBe(1);
+});
+
+it('skips a competitor paused for pricing', function (): void {
+    seedPositionRow('PAUSE-1', 10000, 15000, []);
+
+    $live = Competitor::factory()->create();
+    $paused = Competitor::factory()->create(['pricing_paused_until' => now()->addWeek()]);
+
+    foreach ([[$live, 16000], [$paused, 11000]] as [$c, $gross]) {
+        CompetitorPrice::factory()->forSku('PAUSE-1')->create([
+            'competitor_id' => $c->id,
+            'price_pennies_ex_vat' => (int) round($gross / 1.2),
+            'price_pennies_gross' => $gross,
+        ]);
+    }
+
+    $resolved = app(LowestCompetitorResolver::class)
+        ->resolve('PAUSE-1', now()->subDays(30));
+
+    // The paused competitor's £110 must not become the market price.
+    expect($resolved['lowest'])->toBe(16000);
+});
+
+it('keeps ONE definition of the lowest competitor price', function (): void {
+    // The whole point of the extraction. If the pricing command grows its own
+    // query again, the report starts recommending prices the command refuses to
+    // set — the failure this follow-up exists to close.
+    $command = file_get_contents(base_path('app/Console/Commands/CompetitorUndercutPricingCommand.php'));
+    $report = file_get_contents(base_path('app/Console/Commands/PricePositionReportCommand.php'));
+
+    expect($command)->toContain('LowestCompetitorResolver::class')
+        ->and($report)->toContain('LowestCompetitorResolver')
+        // and neither may hand-roll the guards any more
+        ->and($command)->not->toContain("->where('is_price_anomaly', false)")
+        ->and($report)->not->toContain("->where('is_price_anomaly', false)");
+});
+
+it('uses the loose match ONLY to flag catalogue gaps, never to score a row', function (): void {
+    $source = file_get_contents(base_path('app/Console/Commands/PricePositionReportCommand.php'));
+
+    // The verdict path resolves on our own SKU through the shared resolver...
+    expect($source)->toContain('$resolver->resolve((string) $product->sku, $cutoff)')
+        // ...and the loose map is only read in the not-in-catalogue branch.
+        ->and($source)->toContain('$loose = $looseByKey[$key] ?? null;');
 });

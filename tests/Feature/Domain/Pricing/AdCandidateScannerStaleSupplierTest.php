@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Pricing\Contracts\LowestCompetitorSource;
 use App\Domain\Pricing\Services\AdCandidateScanner;
 use App\Domain\Pricing\Services\PriceCalculator;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
@@ -110,6 +111,7 @@ it('Test B: flag OFF keeps the same candidate (back-compat operator override)', 
         $taxonomy,
         $freshness,
         app(PriceCalculator::class),
+        app(LowestCompetitorSource::class),
         excludeStaleSupplierStock: false,
     );
 

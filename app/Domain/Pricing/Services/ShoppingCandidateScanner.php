@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Pricing\Services;
 
+use App\Domain\Pricing\Contracts\LowestCompetitorSource;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Support\Facades\DB;
@@ -99,6 +100,7 @@ class ShoppingCandidateScanner
         // PriceCalculator, which already owns both (stripVat / addVat).
         private readonly PriceCalculator $prices,
         private readonly WebDemandEstimator $demand,
+        private readonly LowestCompetitorSource $competitorPrices,
         private readonly bool $excludeStaleSupplierStock = true,
     ) {}
 
@@ -382,36 +384,19 @@ class ShoppingCandidateScanner
      */
     private function currentCompetitorsByKey(int $windowDays): array
     {
-        $cutoff = now()->subDays($windowDays)->toDateTimeString();
-
-        $priceRows = DB::select(
-            'SELECT competitor_id, sku, mpn, price_pennies_gross FROM ('
-            .'SELECT competitor_id, sku, mpn, price_pennies_gross, '
-            .'ROW_NUMBER() OVER (PARTITION BY competitor_id, sku ORDER BY recorded_at DESC) AS rn '
-            .'FROM competitor_prices WHERE recorded_at >= ? AND price_pennies_gross > 0'
-            .') t WHERE t.rn = 1',
-            [$cutoff],
-        );
-
-        /** @var array<string, array{competitor_ids: array<int, true>, lowest_gross: int}> $out */
+        // 261006-r3n — delegated. This was a private windowed query applying the
+        // recency window and NONE of the pricing job's guards, so a quarantined
+        // feed row could decide which SKUs we are shown to "undercut" — and a
+        // Shopping shortlist gets read as a spending instruction.
         $out = [];
-        foreach ($priceRows as $r) {
-            $price = (int) $r->price_pennies_gross;
-            if ($price <= 0) {
-                continue;
-            }
-            $competitorId = (int) $r->competitor_id;
-            foreach ([(string) $r->sku, (string) ($r->mpn ?? '')] as $raw) {
-                $k = strtolower(trim($raw));
-                if ($k === '') {
-                    continue;
-                }
-                if (! isset($out[$k])) {
-                    $out[$k] = ['competitor_ids' => [], 'lowest_gross' => $price];
-                }
-                $out[$k]['competitor_ids'][$competitorId] = true;
-                $out[$k]['lowest_gross'] = min($out[$k]['lowest_gross'], $price);
-            }
+        foreach ($this->competitorPrices->bulkCurrentByKey($windowDays) as $key => $row) {
+            // Shape preserved for the callers below. The shared source returns a
+            // COUNT rather than the id set, and the count is all that was ever
+            // read from 'competitor_ids'.
+            $out[$key] = [
+                'competitor_ids' => array_fill(0, $row['competitors'], true),
+                'lowest_gross' => $row['lowest'],
+            ];
         }
 
         return $out;
@@ -422,6 +407,13 @@ class ShoppingCandidateScanner
      * in competitor feeds inside the demand window. The persistence half of the
      * demand model: a SKU in one feed and never again is usually clearance, a SKU
      * in every feed for twelve weeks is a stocked line with repeat demand.
+     *
+     * 261006-r3n — this one deliberately does NOT apply the price guards that
+     * LowestCompetitorSource applies, and the distinction is the point: a
+     * quarantined row has a suspect PRICE but still proves the SKU was listed
+     * that day, and a competitor paused for pricing is still evidence the
+     * product is on the market. Filtering them here would under-count
+     * persistence and make live products look like clearance.
      *
      * COUNT(DISTINCT DATE(recorded_at)) rather than YEARWEEK() — DATE() exists on
      * both MySQL and SQLite, and the suite runs on SQLite while production is

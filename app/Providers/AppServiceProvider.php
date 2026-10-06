@@ -76,6 +76,7 @@ use App\Domain\Competitor\Policies\CompetitorIngestRunPolicy;
 use App\Domain\Competitor\Policies\CompetitorPolicy;
 use App\Domain\Competitor\Policies\CompetitorPricePolicy;
 use App\Domain\Competitor\Policies\CsvParseErrorPolicy;
+use App\Domain\Competitor\Services\LowestCompetitorResolver;
 use App\Domain\CRM\Appliers\CrmPushRetryApplier;
 use App\Domain\CRM\Appliers\QuotePushRetryApplier;
 use App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand;
@@ -114,6 +115,7 @@ use App\Domain\Pricing\Console\Commands\PricingRecomputeCommand;
 use App\Domain\Pricing\Console\Commands\ScanSourcingGapsCommand;
 use App\Domain\Pricing\Console\Commands\TradePreviewCommand;
 use App\Domain\Pricing\Console\Commands\TradeSyncCommand;
+use App\Domain\Pricing\Contracts\LowestCompetitorSource;
 use App\Domain\Pricing\Models\PricingRule;
 use App\Domain\Pricing\Models\ProductOverride;
 use App\Domain\Pricing\Policies\PricingRulePolicy;
@@ -220,6 +222,16 @@ class AppServiceProvider extends ServiceProvider
         // mapping shared with PushPriceChangeToWoo — duplicating the ex-VAT
         // maths inside Sync would be a silent 20% error waiting to drift.
         $this->app->bind(SellPriceFormatter::class, WooRegularPriceFormatter::class);
+
+        // 261006-r3n — same inversion, same reason. Pricing may not depend on
+        // Competitor (the arrow runs the other way), so both ad scanners wrote
+        // their own windowed query against competitor_prices — and applied the
+        // recency window but NONE of the guards the pricing job applies:
+        // quarantined feed rows, paused competitors, SKU-homonym exclusions.
+        // That is how a £299 quarantined row became the "lowest competitor" for
+        // a £6,938 product on 2026-09-30. Pricing now depends on an interface it
+        // owns; Competitor implements it; one definition of the rule.
+        $this->app->bind(LowestCompetitorSource::class, LowestCompetitorResolver::class);
 
         // Phase 3 Plan 04 Task 1 — PriceRecomputer is the shared "recompute a
         // SKU's price" core used by BOTH the event-driven RecomputePriceListener

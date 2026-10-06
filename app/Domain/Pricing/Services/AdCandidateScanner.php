@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Pricing\Services;
 
+use App\Domain\Pricing\Contracts\LowestCompetitorSource;
 use App\Domain\ProductAutoCreate\Services\TaxonomyResolver;
 use App\Domain\Products\Models\Product;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
@@ -75,6 +76,7 @@ class AdCandidateScanner
         // 260927-p41 — VAT arithmetic stays in PriceCalculator (stripVat owns
         // both the rate and the rounding mode).
         private readonly PriceCalculator $prices,
+        private readonly LowestCompetitorSource $competitorPrices,
         private readonly bool $excludeStaleSupplierStock = true,
     ) {}
 
@@ -234,34 +236,15 @@ class AdCandidateScanner
      */
     private function lowestCompetitorGrossByKey(): array
     {
-        $cutoff = now()->subDays(self::COMPETITOR_WINDOW_DAYS)->toDateTimeString();
-
-        $rows = DB::select(
-            'SELECT competitor_id, sku, mpn, price_pennies_gross FROM ('
-            .'SELECT competitor_id, sku, mpn, price_pennies_gross, '
-            .'ROW_NUMBER() OVER (PARTITION BY competitor_id, sku ORDER BY recorded_at DESC) AS rn '
-            .'FROM competitor_prices WHERE recorded_at >= ? AND price_pennies_gross > 0'
-            .') t WHERE t.rn = 1',
-            [$cutoff],
-        );
-
-        /** @var array<string, int> $lowest */
-        $lowest = [];
-        foreach ($rows as $r) {
-            $price = (int) $r->price_pennies_gross;
-            if ($price <= 0) {
-                continue;
-            }
-            foreach ([(string) $r->sku, (string) $r->mpn] as $raw) {
-                $k = strtolower(trim($raw));
-                if ($k === '') {
-                    continue;
-                }
-                $lowest[$k] = isset($lowest[$k]) ? min($lowest[$k], $price) : $price;
-            }
+        // 261006-r3n — delegated to the one guarded definition. See
+        // LowestCompetitorSource for why Pricing cannot name the Competitor
+        // class directly, and what this private query used to miss.
+        $out = [];
+        foreach ($this->competitorPrices->bulkCurrentByKey(self::COMPETITOR_WINDOW_DAYS) as $key => $row) {
+            $out[$key] = $row['lowest'];
         }
 
-        return $lowest;
+        return $out;
     }
 
     /**

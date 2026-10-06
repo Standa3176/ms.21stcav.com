@@ -7,7 +7,9 @@ namespace App\Domain\Competitor\Services;
 use App\Domain\Competitor\Models\Competitor;
 use App\Domain\Competitor\Models\CompetitorMatchExclusion;
 use App\Domain\Competitor\Models\CompetitorPrice;
+use App\Domain\Pricing\Contracts\LowestCompetitorSource;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Quick task 260930-eo3 — "the lowest current competitor price", in ONE place.
@@ -48,7 +50,7 @@ use Carbon\Carbon;
  * beyond what the pricing job would act on, which is the drift this class
  * exists to prevent.
  */
-final class LowestCompetitorResolver
+final class LowestCompetitorResolver implements LowestCompetitorSource
 {
     /**
      * Lowest CURRENT competitor gross price in pennies, or null when no usable
@@ -61,6 +63,83 @@ final class LowestCompetitorResolver
     public function lowestGrossPence(string $sku, Carbon $cutoff): ?int
     {
         return $this->resolve($sku, $cutoff)['lowest'];
+    }
+
+    /**
+     * 261006-r3n — the SAME rule, for a whole-catalogue pass.
+     *
+     * `resolve()` issues one query per SKU, which is right for 50 rows and
+     * ruinous for 4,300: the ad scanners sweep the entire catalogue, so they
+     * need one windowed query and a PHP-side reduction. They had exactly that
+     * already — and NONE of the three guards, which is how the price-position
+     * report came to report a £299 lowest competitor on a £6,938 product.
+     * An ad shortlist built on unguarded prices picks its "we undercut them"
+     * winners partly from bad feed rows.
+     *
+     * Keyed by the competitor row's sku AND mpn, both lower-cased and trimmed,
+     * mirroring how the scanners look products up.
+     *
+     * @return array<string, array{lowest: int, competitors: int}>
+     */
+    public function bulkCurrentByKey(int $windowDays): array
+    {
+        $cutoff = now()->subDays($windowDays)->toDateTimeString();
+
+        // Guard 1 applied in SQL; the window function gives the LATEST row per
+        // (competitor, sku) so a daily publisher counts once, not 365 times.
+        $rows = DB::select(
+            'SELECT competitor_id, sku, mpn, price_pennies_gross FROM ('
+            .'SELECT competitor_id, sku, mpn, price_pennies_gross, '
+            .'ROW_NUMBER() OVER (PARTITION BY competitor_id, sku ORDER BY recorded_at DESC) AS rn '
+            .'FROM competitor_prices '
+            .'WHERE recorded_at >= ? AND price_pennies_gross > 0 AND is_price_anomaly = 0'
+            .') t WHERE t.rn = 1',
+            [$cutoff],
+        );
+
+        $paused = Competitor::pausedIds();
+
+        /** @var array<string, array{lowest: int, ids: array<int, true>}> $acc */
+        $acc = [];
+        foreach ($rows as $r) {
+            $price = (int) $r->price_pennies_gross;
+            if ($price <= 0) {
+                continue;
+            }
+
+            $competitorId = (int) $r->competitor_id;
+
+            // Guard 2 — a competitor paused for pricing is skipped whole.
+            if (array_key_exists($competitorId, $paused)) {
+                continue;
+            }
+
+            foreach ([(string) $r->sku, (string) ($r->mpn ?? '')] as $raw) {
+                $key = strtolower(trim($raw));
+                if ($key === '') {
+                    continue;
+                }
+
+                // Guard 3 — SKU homonyms. Checked per (competitor, key) because
+                // an exclusion can name one competitor or all of them.
+                if (CompetitorMatchExclusion::excludes($competitorId, $key)) {
+                    continue;
+                }
+
+                if (! isset($acc[$key])) {
+                    $acc[$key] = ['lowest' => $price, 'ids' => []];
+                }
+                $acc[$key]['lowest'] = min($acc[$key]['lowest'], $price);
+                $acc[$key]['ids'][$competitorId] = true;
+            }
+        }
+
+        $out = [];
+        foreach ($acc as $key => $v) {
+            $out[$key] = ['lowest' => $v['lowest'], 'competitors' => count($v['ids'])];
+        }
+
+        return $out;
     }
 
     /**

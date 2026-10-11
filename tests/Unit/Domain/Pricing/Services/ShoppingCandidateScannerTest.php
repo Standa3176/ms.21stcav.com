@@ -298,6 +298,9 @@ it('produces a funnel whose counts add up to the total product count', function 
         ->and($f['returned'])->toBe(1);
 
     $sum = $f['dropped_not_publish_simple']
+        // 261011-o26 — every product must still land in exactly ONE bucket, so a
+        // new gate has to join this sum or the guard quietly stops being total.
+        + $f['dropped_brand_filter']
         + $f['dropped_no_price_or_sku']
         + $f['dropped_below_min_margin']
         + $f['dropped_no_fresh_stock']
@@ -366,4 +369,73 @@ it('resolves the brand name from local attributes_json without any Woo call', fu
 
     expect($row['brand'])->toBe('Yealink')
         ->and($row['brand_id'])->toBe(77);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 261011-o26 — brand filter
+|--------------------------------------------------------------------------
+|
+| Matched against NAME + SKU, not brand_id. In this catalogue brand_id and
+| attributes_json are sparse — the live shortlist printed an empty Brand column
+| for most rows — while the title nearly always leads with the manufacturer.
+| Matching what is populated beats matching what ought to be.
+|
+| Whole-word, because the short terms are dangerous as substrings: "hp" is
+| inside "sharp" and "graphics", "poly" is inside "polycarbonate".
+*/
+
+it('keeps only the requested brands', function (): void {
+    seedShoppingCandidate('Y-1', 10000, 35000, extra: ['name' => 'Yealink A10 Meeting Bar']);
+    seedShoppingCandidate('L-1', 10000, 35000, extra: ['name' => 'Logitech Rally Bar Mini']);
+    seedShoppingCandidate('S-1', 10000, 35000, extra: ['name' => 'Sony FW-65BZ40L Display']);
+
+    $skus = shoppingSkus(app(ShoppingCandidateScanner::class)->scan(brands: ['yealink', 'logitech']));
+
+    expect($skus)->toContain('Y-1')
+        ->and($skus)->toContain('L-1')
+        ->and($skus)->not->toContain('S-1');
+});
+
+it('matches whole words only, so "hp" does not catch "sharp"', function (): void {
+    seedShoppingCandidate('HP-1', 10000, 35000, extra: ['name' => 'HP Poly Studio X52']);
+    seedShoppingCandidate('SHARP-1', 10000, 35000, extra: ['name' => 'Sharp PN-LC862 Display']);
+    seedShoppingCandidate('POLYC-1', 10000, 35000, extra: ['name' => 'Polycarbonate Screen Guard']);
+
+    $skus = shoppingSkus(app(ShoppingCandidateScanner::class)->scan(brands: ['hp', 'poly']));
+
+    expect($skus)->toContain('HP-1')
+        ->and($skus)->not->toContain('SHARP-1')
+        ->and($skus)->not->toContain('POLYC-1');
+});
+
+it('matches on the SKU too, for titles that omit the brand', function (): void {
+    // The HP/Poly range carries a '#ABU' SKU suffix and some titles lead with
+    // the model rather than the maker.
+    seedShoppingCandidate('A09D4AA#ABU', 10000, 35000, extra: ['name' => 'Studio V52 USB Video Bar']);
+
+    expect(shoppingSkus(app(ShoppingCandidateScanner::class)->scan(brands: ['#ABU'])))
+        ->toContain('A09D4AA#ABU');
+});
+
+it('counts brand drops in their own funnel bucket', function (): void {
+    // The funnel is read to decide which gate to loosen, so a brand drop must
+    // not be charged to the margin or competitor gates.
+    seedShoppingCandidate('Y-2', 10000, 35000, extra: ['name' => 'Yealink A10']);
+    seedShoppingCandidate('S-2', 10000, 35000, extra: ['name' => 'Sony Display']);
+
+    $f = app(ShoppingCandidateScanner::class)->scan(brands: ['yealink'])['funnel'];
+
+    expect($f['dropped_brand_filter'])->toBe(1)
+        ->and($f['dropped_below_min_margin'])->toBe(0)
+        ->and($f['eligible'])->toBe(1);
+});
+
+it('is a no-op when no brands are given', function (): void {
+    seedShoppingCandidate('ANY-1', 10000, 35000, extra: ['name' => 'Sony Display']);
+
+    $result = app(ShoppingCandidateScanner::class)->scan();
+
+    expect(shoppingSkus($result))->toContain('ANY-1')
+        ->and($result['funnel']['dropped_brand_filter'])->toBe(0);
 });

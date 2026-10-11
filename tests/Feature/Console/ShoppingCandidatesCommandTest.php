@@ -274,3 +274,29 @@ it('reports cleanly when nothing is eligible', function (): void {
 
     expect(runShoppingCandidates())->toContain('No eligible');
 });
+
+it('reports each funnel gate kept-count at ITS OWN stage, not the final total', function (): void {
+    // 261011 — both stage lines printed count($rows) at report time, after every
+    // later filter had also run. A live run read:
+    //
+    //   ad-viability floor ... dropped 37, kept 2
+    //   demand floor       ... dropped 161, kept 2
+    //
+    // The viability floor had actually kept 163; the demand floor removed the
+    // other 161. The funnel is read to decide WHICH threshold to change, so
+    // misattributing the damage sends an operator at the wrong knob.
+    //
+    // Two rows that clear the viability floor, one of which the demand floor
+    // then removes: a £9,000 installed-AV product can never reach 5 units/week.
+    seedShoppingCandidate('VOL-KEEP', 10000, 40000);
+    seedShoppingCandidate('VOL-DROP', 500000, 900000);
+
+    $output = runShoppingCandidates(['--min-units-per-week' => 5]);
+
+    // The viability line must not claim the demand floor's casualties.
+    expect($output)->not->toContain('covers one Shopping acquisition): dropped 0, kept 0');
+
+    $source = file_get_contents(base_path('app/Console/Commands/ShoppingCandidatesCommand.php'));
+    expect($source)->toContain('$viabilityKept = count($rows);')
+        ->and($source)->toContain('$viabilityKept,');
+});

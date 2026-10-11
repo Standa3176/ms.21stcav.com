@@ -117,10 +117,11 @@ it('puts unknown between the busiest and quietest classes', function (): void {
 });
 
 it('reports a band, because the model cannot justify decimal precision', function (): void {
+    // ASCII hyphens since 261011-lpg — see the terminal-mangling test below.
     expect(estimator()->band(0.1))->toBe('under 1/wk')
-        ->and(estimator()->band(1.5))->toBe('1–2/wk')
-        ->and(estimator()->band(4.0))->toBe('2–5/wk')
-        ->and(estimator()->band(9.0))->toBe('5–15/wk')
+        ->and(estimator()->band(1.5))->toBe('1-2/wk')
+        ->and(estimator()->band(4.0))->toBe('2-5/wk')
+        ->and(estimator()->band(9.0))->toBe('5-15/wk')
         ->and(estimator()->band(40.0))->toBe('15+/wk');
 });
 
@@ -223,4 +224,90 @@ it('rates a self-serve device above a project bundle at the same price', functio
     $roomSystem = estimator()->estimate('Yealink MVC S50', 366667, 3, 20, 84, 'MVC S50-C5U-000');
 
     expect($clickshare['units_per_week'])->toBeGreaterThan($roomSystem['units_per_week']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| 261011-lpg — three defects the FIRST LIVE SHORTLIST exposed
+|--------------------------------------------------------------------------
+|
+| 193 rows came back and the top of the ranking was wrong:
+|
+|   #1  Lenovo ThinkSmart Hub, est £3,150/wk — because 'hub' was an accessory
+|       keyword, so a ~£1,900 room console took the 35/week base rate meant for
+|       USB hubs. One over-broad token decided the top of the list.
+|   #38 Samsung 85in and #43 LG 98in came back as `display_small`, because
+|       display_large matched only words like "interactive" and "signage". A
+|       98in panel took the 10/week desktop-monitor rate.
+|   #56 "Neat Bar Generation 2" was `unknown`.
+|
+| The size rule is the structural one: the diagonal is in the title, so large
+| vs small is now MEASURED rather than keyword-guessed.
+*/
+
+it('does not let a USB-hub keyword swallow a room console', function (): void {
+    expect(estimator()->classify('Lenovo ThinkSmart Hub Intel Core', '11H1000KUK'))->toBe('room_system')
+        ->and(estimator()->classify('Yealink conference camera AVHub', 'AVHub'))->toBe('uc_bar')
+        // and a real USB hub is still an accessory
+        ->and(estimator()->classify('StarTech USB-C Hub 4 port', 'HUB-4P'))->toBe('accessory');
+});
+
+it('classifies a display by its DIAGONAL, not by whether the title says "signage"', function (string $name, string $expected): void {
+    expect(estimator()->classify($name, 'SKU-X'))->toBe($expected);
+})->with([
+    ['Samsung 85" QM85C Display', 'display_large'],
+    ['LG 98" 98UH5J-H Display', 'display_large'],
+    ['iiyama LH7575UHS-B2AG 75" ProLite Display', 'display_large'],
+    ['Sony FW-65EZ20L 65" 4K Ultra HD Commercial Display', 'display_large'],
+    // Below the threshold these stay small — the rule has to cut both ways.
+    ['Sony FW-32BZ30J1 32" BRAVIA 4K Display', 'display_small'],
+    ['ViewSonic CDE4330 43" Display', 'display_small'],
+    ['Samsung LH46OHDEBGBXEN OH46DX 46" Display', 'display_small'],
+]);
+
+it('reads the diagonal from the title only, never the SKU', function (): void {
+    // "98UH5J-H" and "LH46OHDEBGBXEN" are full of digits that are not inches.
+    // A title with no stated size keeps whatever the keywords decided.
+    // Deliberately NOT "commercial display" — that is a family keyword meaning
+    // large in its own right, which would mask what this test is checking.
+    expect(estimator()->classify('LG Display', '98UH5J-H'))->toBe('display_small');
+});
+
+it('leaves a monitor ARM an accessory however many inches it mentions', function (): void {
+    // The size rule must only apply once a title is already a display. A 27in
+    // mount is a £40 bracket.
+    expect(estimator()->classify('Ergotron 27" CareFit Combo System Stand', '45-618-251'))->toBe('accessory');
+});
+
+it('takes the largest stated diagonal when a title mentions several', function (): void {
+    expect(estimator()->classify('Yealink 75" display with 10" touch panel', 'X'))->toBe('display_large');
+});
+
+it('honours a retuned size threshold from config', function (): void {
+    config()->set('ad_demand.display_large_min_inches', 90);
+
+    expect(estimator()->classify('Samsung 85" QM85C Display', 'X'))->toBe('display_small')
+        ->and(estimator()->classify('LG 98" Display', 'X'))->toBe('display_large');
+});
+
+it('prints demand bands in ASCII so a terminal cannot mangle them', function (): void {
+    // The first live run rendered "2-5/wk" as "25/wk" and "5-15/wk" as "515/wk"
+    // because the labels used en dashes and the operator terminal dropped them.
+    // A demand band displayed an order of magnitude out, in the column the whole
+    // ranking is read from.
+    foreach ((array) config('ad_demand.bands') as $band) {
+        expect($band['label'])->toMatch('/^[\x20-\x7E]+$/');
+    }
+});
+
+it('enforces the ad-viability cash floor instead of only documenting it', function (): void {
+    // config/ad_demand.php described this as the backstop for a lowered margin
+    // floor and nothing read it, so --min-margin-pence=4000 shortlisted £42-£46
+    // rows: less cash than one Shopping acquisition costs.
+    $source = file_get_contents(base_path('app/Console/Commands/ShoppingCandidatesCommand.php'));
+
+    expect(config('ad_demand.min_margin_pence'))->toBeGreaterThan(0)
+        ->and($source)->toContain("config('ad_demand.min_margin_pence'")
+        // whichever bar is higher wins — an operator may raise it, not lower it
+        ->and($source)->toContain('if ($viabilityFloor > $minMarginPence)');
 });

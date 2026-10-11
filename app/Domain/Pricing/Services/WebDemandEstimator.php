@@ -66,7 +66,14 @@ final class WebDemandEstimator
         'accessory' => [
             'cable', 'adapter', 'adaptor', 'bracket', 'mount', 'wall plate', 'faceplate',
             'stand', 'trolley', 'cart', 'pole', 'column', 'shelf', 'fixing kit',
-            'power supply', 'psu', 'charger', 'dock', 'hub', 'splitter', 'patch',
+            // 261011-lpg — 'hub' was 'usb hub'. A bare 'hub' swallowed the
+            // Lenovo ThinkSmart Hub (a ~£1,900 room console) and the Yealink
+            // AVHub, handing both the 35/week accessory base rate. That put the
+            // ThinkSmart Hub at #1 on the first live shortlist, at an estimated
+            // £3,150/week of profit. One over-broad token decided the top of the
+            // ranking.
+            'power supply', 'psu', 'charger', 'dock', 'usb hub', 'usb-c hub',
+            'splitter', 'patch',
             'connector', 'coupler', 'lead', 'remote control', 'battery', 'case',
             'cover', 'pouch', 'strap', 'ear cushion', 'eartip', 'spare',
         ],
@@ -79,7 +86,13 @@ final class WebDemandEstimator
         'webcam' => ['webcam', 'web cam', 'personal camera', 'usb camera'],
         'speakerphone' => ['speakerphone', 'speaker phone', 'conference phone', 'microphone', 'mic pod', 'table mic'],
         // Video bars / all-in-one UC devices and soundbars.
-        'uc_bar' => ['video bar', 'videobar', 'soundbar', 'sound bar', 'collaboration bar', 'meeting bar', 'rally bar', 'studio bar', 'all-in-one', 'room system', 'room kit', 'room bundle'],
+        'uc_bar' => [
+            'video bar', 'videobar', 'soundbar', 'sound bar', 'collaboration bar',
+            'meeting bar', 'rally bar', 'studio bar', 'all-in-one',
+            'room system', 'room kit', 'room bundle',
+            // 261011-lpg — seen as `unknown` or mis-classed on the first live run.
+            'neat bar', 'panacast', 'avhub', 'av hub', 'conferencing bar',
+        ],
         'networking' => ['switch', 'router', 'access point', 'wireless ap', 'poe injector', 'network card'],
         'projector' => ['projector', 'projection'],
         // Interactive panels, large-format screens — specified and installed.
@@ -178,12 +191,68 @@ final class WebDemandEstimator
         foreach (self::CLASS_KEYWORDS as $class => $keywords) {
             foreach ($keywords as $keyword) {
                 if (str_contains($haystack, $keyword)) {
-                    return $class;
+                    return $this->refineDisplayBySize($class, $name);
                 }
             }
         }
 
         return 'unknown';
+    }
+
+    /**
+     * 261011-lpg — once a title is known to be a display, the DIAGONAL decides
+     * large vs small, because the keywords could not.
+     *
+     * `display_large` matched only words like "interactive" and "signage", so
+     * "Samsung 85in QM85C Display" and "LG 98in Display" fell through to
+     * `display_small` and took its 10/week base rate. A 98in commercial panel is
+     * specified, delivered and wall-mounted; it does not sell like a desktop
+     * monitor, and at that base rate it outranked products that genuinely do.
+     *
+     * The size is read from the TITLE only. Taking it from the SKU would be a
+     * trap: "LH46OHDEBGBXEN" and "98UH5J-H" are full of digits that are not
+     * inches. A title with no diagonal keeps whatever the keywords decided.
+     *
+     * Runs only for the two display classes, so a 27in monitor ARM — which
+     * matched `accessory` first — is untouched.
+     */
+    private function refineDisplayBySize(string $class, string $name): string
+    {
+        if ($class !== 'display_small' && $class !== 'display_large') {
+            return $class;
+        }
+
+        $inches = $this->screenInches($name);
+        if ($inches === null) {
+            return $class;
+        }
+
+        $threshold = max(1, (int) config('ad_demand.display_large_min_inches', 55));
+
+        return $inches >= $threshold ? 'display_large' : 'display_small';
+    }
+
+    /**
+     * Screen diagonal in inches, or null when the title does not state one.
+     *
+     * Requires an explicit inch marker so a model number cannot be read as a
+     * size. Bounded to 15-120in: below that is not a commercial display, above
+     * it is a typo or a millimetre figure.
+     */
+    private function screenInches(string $name): ?int
+    {
+        if (preg_match_all('/(\d{2,3})\s*(?:"|-?inch\b|\s?in\b)/i', $name, $m) === 0) {
+            return null;
+        }
+
+        $sizes = array_filter(
+            array_map('intval', $m[1]),
+            static fn (int $n): bool => $n >= 15 && $n <= 120,
+        );
+
+        // Largest stated diagonal: a title like "65in display with a 10in
+        // controller" is describing a 65in product.
+        return $sizes === [] ? null : max($sizes);
     }
 
     private function classBase(string $class): float

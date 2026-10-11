@@ -139,6 +139,13 @@ final class ShoppingCandidatesCommand extends BaseCommand
         // lower it through it.
         $viabilityFloor = max(0, (int) config('ad_demand.min_margin_pence', 6000));
         $viabilityDropped = 0;
+        // 261011 — capture the survivor count AT EACH STAGE. Both lines used to
+        // print count($rows) at report time, i.e. after every later filter had
+        // also run, so the viability line read "dropped 37, kept 2" when it had
+        // actually kept 163 and the demand floor removed the other 161. A funnel
+        // that misattributes which gate did the damage is worse than no funnel:
+        // it is read to decide which threshold to change.
+        $viabilityKept = 0;
         if ($viabilityFloor > $minMarginPence) {
             $before = count($rows);
             $rows = array_values(array_filter(
@@ -146,6 +153,7 @@ final class ShoppingCandidatesCommand extends BaseCommand
                 static fn (array $r): bool => (int) $r['margin_pence'] >= $viabilityFloor,
             ));
             $viabilityDropped = $before - count($rows);
+            $viabilityKept = count($rows);
         }
 
         $demandDropped = 0;
@@ -170,7 +178,7 @@ final class ShoppingCandidatesCommand extends BaseCommand
                 '  ad-viability floor (margin >= %s, covers one Shopping acquisition): dropped %d, kept %d',
                 $this->pounds($viabilityFloor),
                 $viabilityDropped,
-                count($rows),
+                $viabilityKept,
             ));
         }
 

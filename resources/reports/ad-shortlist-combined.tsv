@@ -86,37 +86,20 @@ Yealink SmartVision 80	SmartVision 80
 Yealink RoomCast E2	RoomCast E2
 Yealink conference phone 1204613	1204613
 
-# ═══ C. Yealink with sell-out over £1,000 — TO BE APPENDED ════════════════
+# ═══ C. Yealink with sell-out over £1,000 — NO LONGER A MANUAL STEP ══════
 #
-# NOT FILLED IN, deliberately, rather than guessed.
+# 261011-ru9 — the report now pulls these from the catalogue itself:
 #
-# "Any Yealink over £1,000" is a question about the whole catalogue, and the
-# shortlist command cannot answer it: products:shopping-candidates only ever
-# shows SKUs that already cleared the margin, stock and GTIN gates. The live
-# Yealink run proved that matters — 144 Yealink products entered it and only 46
-# came out, with 11 dropped for stale supplier stock and 11 for a missing EAN.
-# Several of the dearest lines (MVC S50 / S80 / S90 / S98, MeetingBoard Pro 86)
-# are in that excluded group, so taking "over £1,000" from the shortlist would
-# systematically miss the expensive end — the exact opposite of what was asked.
+#   php artisan products:price-position-report #     --list=resources/reports/ad-shortlist-combined.tsv #     --brand=yealink --min-sell-pence=100000 #     --pdf=storage/app/research/ad-shortlist-combined.pdf #     --csv=storage/app/research/ad-shortlist-combined.csv
 #
-# Append them with this, which reads the catalogue directly and emits rows in
-# this file's format:
+# Everything above is kept, every Yealink at or above £1,000 inc VAT is added,
+# and anything already named here is not repeated. No tinker, no de-dup pass.
 #
-#   php artisan tinker --execute='
-#   App\Domain\Products\Models\Product::query()
-#     ->where("status","publish")->where("type","simple")
-#     ->where("sell_price",">",1000)
-#     ->where(fn($q)=>$q->where("name","like","%yealink%")->orWhere("sku","like","%yealink%"))
-#     ->orderByDesc("sell_price")
-#     ->get(["sku","name","sell_price"])
-#     ->each(fn($p)=>print(trim($p->name)."\t".trim($p->sku).PHP_EOL));
-#   ' >> resources/reports/ad-shortlist-combined.tsv
+# It has to come from the CATALOGUE rather than the Shopping shortlist: that
+# only shows SKUs which already cleared the margin, stock and GTIN gates, and
+# the dearest Yealink lines — MVC S50/S80/S90/S98, MeetingBoard Pro 86 — are
+# precisely the ones those gates drop. 144 Yealink products entered the live
+# shortlist run and 46 came out.
 #
-# NOTE sell_price is VAT-INCLUSIVE, so "over £1,000" above means over £1,000
-# inc VAT (about £833 net). Change the 1000 to 1200 if you meant £1,000 net.
-#
-# De-duplicate afterwards — several of section B are already over £1,000:
-#
-#   awk -F'\t' '!/^#/ && NF==2 && !seen[$2]++ || /^#/ || NF<2' \
-#     resources/reports/ad-shortlist-combined.tsv > /tmp/c.tsv \
-#     && mv /tmp/c.tsv resources/reports/ad-shortlist-combined.tsv
+# sell_price is VAT-INCLUSIVE, so 100000 means £1,000 gross (~£833 net). Use
+# 120000 for £1,000 net.

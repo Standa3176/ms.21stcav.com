@@ -420,3 +420,103 @@ it('ships the recommended ad shortlist, with no duplicate part numbers', functio
     expect(array_filter($numbers, static fn (string $n): bool => $n === ''))->toBeEmpty()
         ->and(count(array_unique($numbers)))->toBe(count($numbers));
 });
+
+/*
+|--------------------------------------------------------------------------
+| 261011-ru9 — pull candidates from the catalogue, not just a hand-kept list
+|--------------------------------------------------------------------------
+|
+| "Every Yealink over £1,000" cannot come from a TSV somebody maintains, and it
+| cannot come from the Shopping shortlist either: that only ever shows SKUs
+| which already cleared the margin, stock and GTIN gates, and the dearest lines
+| (MVC S50/S80/S90/S98, MeetingBoard Pro 86) are exactly the ones those gates
+| drop. Asking the shortlist for the expensive end returns the opposite.
+*/
+
+it('pulls matching products straight from the catalogue', function (): void {
+    seedPositionRow('YEA-BIG', 80000, 150000, [160000]);
+    Product::where('sku', 'YEA-BIG')->update(['name' => 'Yealink MVC S90 Room System']);
+
+    seedPositionRow('YEA-SMALL', 1000, 50000, [60000]);
+    Product::where('sku', 'YEA-SMALL')->update(['name' => 'Yealink Cable']);
+
+    seedPositionRow('OTHER-1', 80000, 150000, [160000]);
+    Product::where('sku', 'OTHER-1')->update(['name' => 'Sony Display']);
+
+    $list = storage_path('app/testing/pp-'.uniqid().'.tsv');
+    File::ensureDirectoryExists(dirname($list));
+    File::put($list, "# empty list, catalogue only\n");
+
+    $csv = storage_path('app/testing/pp-'.uniqid().'.csv');
+    $pdf = storage_path('app/testing/pp-'.uniqid().'.pdf');
+
+    $this->artisan('products:price-position-report', [
+        '--list' => $list, '--pdf' => $pdf, '--csv' => $csv,
+        '--brand' => 'yealink', '--min-sell-pence' => 100000,
+    ])->assertExitCode(0);
+
+    $body = (string) File::get($csv);
+
+    expect($body)->toContain('YEA-BIG')
+        // under the price floor
+        ->and($body)->not->toContain('YEA-SMALL')
+        // wrong brand
+        ->and($body)->not->toContain('OTHER-1');
+
+    @unlink($csv);
+    @unlink($pdf);
+    @unlink($list);
+});
+
+it('does not duplicate a product the list already names', function (): void {
+    // De-duplicated on the normalised key, so "MVC S40-C5U-000" in the list
+    // suppresses a catalogue row spelled "MVCS40-C5U-000".
+    seedPositionRow('MVCS40-C5U-000', 80000, 150000, [160000]);
+    Product::where('sku', 'MVCS40-C5U-000')->update(['name' => 'Yealink MVC S40']);
+
+    $list = storage_path('app/testing/pp-'.uniqid().'.tsv');
+    File::ensureDirectoryExists(dirname($list));
+    File::put($list, "Yealink MVC S40\tMVC S40-C5U-000\n");
+
+    $csv = storage_path('app/testing/pp-'.uniqid().'.csv');
+    $pdf = storage_path('app/testing/pp-'.uniqid().'.pdf');
+
+    $this->artisan('products:price-position-report', [
+        '--list' => $list, '--pdf' => $pdf, '--csv' => $csv,
+        '--brand' => 'yealink', '--min-sell-pence' => 100000,
+    ])->assertExitCode(0);
+
+    $lines = array_filter(explode("\n", str_replace("\r\n", "\n", trim((string) File::get($csv)))));
+
+    // header + exactly one product row
+    expect($lines)->toHaveCount(2);
+
+    @unlink($csv);
+    @unlink($pdf);
+    @unlink($list);
+});
+
+it('leaves the list alone when no brand is given', function (): void {
+    seedPositionRow('CAT-ONLY', 80000, 150000, [160000]);
+    Product::where('sku', 'CAT-ONLY')->update(['name' => 'Yealink Something']);
+    seedPositionRow('LIST-1', 10000, 20000, [25000]);
+
+    $list = storage_path('app/testing/pp-'.uniqid().'.tsv');
+    File::ensureDirectoryExists(dirname($list));
+    File::put($list, "Listed\tLIST-1\n");
+
+    $csv = storage_path('app/testing/pp-'.uniqid().'.csv');
+    $pdf = storage_path('app/testing/pp-'.uniqid().'.pdf');
+
+    $this->artisan('products:price-position-report', [
+        '--list' => $list, '--pdf' => $pdf, '--csv' => $csv,
+    ])->assertExitCode(0);
+
+    $body = (string) File::get($csv);
+    expect($body)->toContain('LIST-1')
+        ->and($body)->not->toContain('CAT-ONLY');
+
+    @unlink($csv);
+    @unlink($pdf);
+    @unlink($list);
+});

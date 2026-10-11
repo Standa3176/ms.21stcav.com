@@ -124,6 +124,7 @@ class ShoppingCandidateScanner
         bool $allowMissingGtin = false,
         string $sort = 'score',
         int $limit = self::DEFAULT_LIMIT,
+        array $brands = [],
     ): array {
         $sort = in_array($sort, self::SORTS, true) ? $sort : 'score';
         $competitorWindowDays = max(1, $competitorWindowDays);
@@ -142,6 +143,7 @@ class ShoppingCandidateScanner
         $funnel = [
             'products_total' => Product::query()->count(),
             'dropped_not_publish_simple' => 0,
+            'dropped_brand_filter' => 0,
             'dropped_no_price_or_sku' => 0,
             'dropped_below_min_margin' => 0,
             'dropped_no_fresh_stock' => 0,
@@ -170,9 +172,22 @@ class ShoppingCandidateScanner
                 $minMarginPence,
                 $minCompetitors,
                 $allowMissingGtin,
+                $brands,
             ): void {
                 foreach ($products as $product) {
                     $publishSimple++;
+
+                    // ── Gate 1b: brand (261011) ──────────────────────────
+                    // Matched against NAME + SKU, not brand_id. brand_id and
+                    // attributes_json are sparse — the live shortlist printed an
+                    // empty Brand column for most rows — while the title nearly
+                    // always leads with the manufacturer. Matching what is
+                    // actually populated beats matching what should be.
+                    if ($brands !== [] && ! self::matchesBrand($product, $brands)) {
+                        $funnel['dropped_brand_filter']++;
+
+                        continue;
+                    }
 
                     // ── Gate 2: identity + prices ────────────────────────
                     $sku = trim((string) $product->sku);
@@ -346,6 +361,45 @@ class ShoppingCandidateScanner
      *
      * @return callable(array<string, mixed>, array<string, mixed>): int
      */
+    /**
+     * Whole-word brand match over "name sku".
+     *
+     * Word boundaries matter for the short ones: a bare substring test for "hp"
+     * hits "graphics" and "sharp", and "poly" hits "polycarbonate". The HP/Poly
+     * range also carries a '#ABU' SKU suffix, so a caller can pass that as its
+     * own pattern when a title omits the brand.
+     *
+     * @param  array<int, string>  $brands
+     */
+    private static function matchesBrand(object $product, array $brands): bool
+    {
+        $haystack = trim(((string) $product->name).' '.((string) $product->sku));
+        if ($haystack === '') {
+            return false;
+        }
+
+        foreach ($brands as $brand) {
+            $needle = trim((string) $brand);
+            if ($needle === '') {
+                continue;
+            }
+            // Guard only the ends that are themselves word characters. A fixed
+            // lookbehind rejected '#ABU' inside 'A09D4AA#ABU', because the
+            // character before the '#' is alphanumeric — which is the correct
+            // reading of a word boundary, and the wrong rule for a pattern that
+            // opens on punctuation.
+            $quoted = preg_quote($needle, '/');
+            $left = preg_match('/^[a-z0-9]/i', $needle) === 1 ? '(?<![a-z0-9])' : '';
+            $right = preg_match('/[a-z0-9]$/i', $needle) === 1 ? '(?![a-z0-9])' : '';
+
+            if (preg_match('/'.$left.$quoted.$right.'/i', $haystack) === 1) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function comparator(string $sort): callable
     {
         return static function (array $a, array $b) use ($sort): int {

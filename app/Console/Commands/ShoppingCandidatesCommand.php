@@ -56,6 +56,7 @@ final class ShoppingCandidatesCommand extends BaseCommand
         {--allow-missing-gtin : Keep (and flag) products with no EAN — Google will likely disapprove them}
         {--sort=profit : profit|demand|score|margin|competitors (profit = est weekly units x true cash margin)}
         {--min-units-per-week= : Drop rows whose estimated weekly demand is below this (default from config/ad_demand.php)}
+        {--brand= : Comma-separated brand terms, matched as whole words against product name + SKU (e.g. yealink,logitech,poly,hp)}
         {--limit=200 : Shortlist size}
         {--preview=25 : How many shortlist rows to print to the console}
         {--live-stock : Additionally confirm each shortlisted SKU against the LIVE fresh-supplier feed}
@@ -95,6 +96,15 @@ final class ShoppingCandidatesCommand extends BaseCommand
         $preview = max(0, (int) $this->option('preview'));
         $csvPath = $this->option('csv') !== null ? trim((string) $this->option('csv')) : '';
 
+        // 261011 — brand terms, matched against NAME + SKU rather than brand_id,
+        // because brand_id and attributes_json are sparse in this catalogue
+        // (most live shortlist rows print an empty Brand column) while the title
+        // nearly always leads with the manufacturer.
+        $brands = array_values(array_filter(array_map(
+            static fn (string $b): string => trim($b),
+            explode(',', (string) ($this->option('brand') ?? '')),
+        ), static fn (string $b): bool => $b !== ''));
+
         $this->newLine();
         $this->line('── products:shopping-candidates — Google Shopping shortlist (READ-ONLY) ──');
         $this->line(sprintf(
@@ -106,6 +116,9 @@ final class ShoppingCandidatesCommand extends BaseCommand
             $allowMissingGtin ? 'optional (flagged)' : 'required',
         ));
         $this->line(sprintf('  sort=%s · limit=%d', $sort, $limit));
+        if ($brands !== []) {
+            $this->line('  brands: '.implode(', ', $brands));
+        }
 
         $result = app(ShoppingCandidateScanner::class)->scan(
             minMarginPence: $minMarginPence,
@@ -114,6 +127,7 @@ final class ShoppingCandidatesCommand extends BaseCommand
             allowMissingGtin: $allowMissingGtin,
             sort: $sort,
             limit: $limit,
+            brands: $brands,
         );
 
         /** @var array<int, array<string, mixed>> $rows */
@@ -250,6 +264,7 @@ final class ShoppingCandidatesCommand extends BaseCommand
 
         $gates = [
             ['not publish/simple', $funnel['dropped_not_publish_simple'], ''],
+            ['brand filter', $funnel['dropped_brand_filter'], ''],
             ['no SKU / buy+sell price', $funnel['dropped_no_price_or_sku'], ''],
             [sprintf('margin < %dp (%s)', $minMarginPence, $this->pounds($minMarginPence)), $funnel['dropped_below_min_margin'], ''],
             ['no fresh in-stock supplier offer (7d)', $funnel['dropped_no_fresh_stock'], ''],

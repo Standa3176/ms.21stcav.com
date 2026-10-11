@@ -371,3 +371,67 @@ it('keeps classify() a pure title+sku function', function (): void {
     // classifies without one.
     expect(estimator()->classify('Neat Board Pro Adaptive Stand', 'X'))->toBe('accessory');
 });
+
+/*
+|--------------------------------------------------------------------------
+| 261011-rex — absence of evidence is not evidence
+|--------------------------------------------------------------------------
+|
+| Both measured inputs are floored — breadth bottoms out at 0.5, persistence at
+| 0.4 — so a SKU NO tracked reseller has ever listed still came out at 1.60
+| units/week with a confident "1-2/wk" band. On the live Yealink run that hit the
+| conference phone, the RoomCast E2 and MTouch Plus, all showing 0 competitors
+| and 0 days, and the fabricated number ranked them mid-table on estimated
+| profit — above products with real sightings behind them.
+|
+| The price-position report already refuses this: it prints "No competitor data"
+| rather than claiming we are cheapest. The demand model now matches.
+*/
+
+it('reports no estimate when there is no market evidence at all', function (): void {
+    $r = estimator()->estimate('Yealink conference phone', 48900, 0, 0, 84, '1204613');
+
+    expect($r['units_per_week'])->toBe(0.0)
+        ->and($r['band'])->toBe('no market evidence')
+        ->and($r['has_evidence'])->toBeFalse();
+});
+
+it('estimates normally on the slightest evidence', function (string $label, int $comps, int $days): void {
+    // One sighting is weak, not absent — the floors exist precisely to handle
+    // that case, and must keep doing so.
+    $r = estimator()->estimate('Yealink conference phone', 48900, $comps, $days, 84, 'X');
+
+    expect($r['has_evidence'])->toBeTrue()
+        ->and($r['units_per_week'])->toBeGreaterThan(0.0)
+        ->and($r['band'])->not->toBe('no market evidence');
+})->with([
+    ['one competitor, never dated', 1, 0],
+    ['no competitor, one sighting', 0, 1],
+    ['both', 1, 12],
+]);
+
+it('keeps an unevidenced row out of a profit ranking', function (): void {
+    // The actual harm: a fabricated 1.6 units/week became a four-figure weekly
+    // profit estimate and outranked measured products.
+    $r = estimator()->estimate('Mystery device', 100000, 0, 0, 84, 'X');
+
+    expect(estimator()->weeklyProfitPence($r['units_per_week'], 20000))->toBe(0);
+});
+
+it('recognises Yealink MeetingBar as one word', function (): void {
+    // Yealink spell the range "MeetingBar"; 'meeting bar' never matched it, so
+    // the whole A10/A25/A40/A50 line came back unknown and one A40 title even
+    // reached installed_av.
+    expect(estimator()->classify('Yealink MeetingBar A40 - Video Conferencing', 'A40-031'))->toBe('uc_bar')
+        ->and(estimator()->classify('Yealink MeetingBar A50', 'A50-031'))->toBe('uc_bar');
+});
+
+it('treats a floor stand as an accessory whatever it is bolted to', function (): void {
+    // "Yealink Floorstand for 75in MeetingBoard" matched the 'meetingboard'
+    // family and became display_large — and the size rule then read the 75in of
+    // the screen it HOLDS.
+    expect(estimator()->classify('Yealink Floorstand for 75 MeetingBoard', 'MB-FS-P750T'))->toBe('accessory')
+        ->and(estimator()->classify('Yealink collaboration device', 'MB-FS-P650T'))->toBe('accessory')
+        // and the board itself is still a display
+        ->and(estimator()->classify('Yealink MeetingBoard Pro 65', 'MB65PRO-A02'))->toBe('display_large');
+});

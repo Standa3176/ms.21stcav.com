@@ -128,6 +128,26 @@ final class ShoppingCandidatesCommand extends BaseCommand
             ? (float) $this->option('min-units-per-week')
             : (float) config('ad_demand.min_units_per_week', 0.25);
 
+        // 261011-lpg — the CASH viability floor, which config has described
+        // since 260927 and nothing enforced. A Shopping acquisition in UK AV
+        // costs on the order of £30-£100, so a product carrying £45 of margin
+        // cannot pay for the sale it generates. The first live run was made with
+        // --min-margin-pence=4000 and duly shortlisted £42-£46 rows.
+        //
+        // It is a FLOOR, not a replacement for --min-margin-pence: whichever is
+        // higher wins, so an operator can raise the bar but not unknowingly
+        // lower it through it.
+        $viabilityFloor = max(0, (int) config('ad_demand.min_margin_pence', 6000));
+        $viabilityDropped = 0;
+        if ($viabilityFloor > $minMarginPence) {
+            $before = count($rows);
+            $rows = array_values(array_filter(
+                $rows,
+                static fn (array $r): bool => (int) $r['margin_pence'] >= $viabilityFloor,
+            ));
+            $viabilityDropped = $before - count($rows);
+        }
+
         $demandDropped = 0;
         if ($minUnits > 0) {
             $before = count($rows);
@@ -144,6 +164,15 @@ final class ShoppingCandidatesCommand extends BaseCommand
         }
 
         $this->renderFunnel($funnel, $minMarginPence, $minCompetitors, $windowDays, $allowMissingGtin);
+
+        if ($viabilityDropped > 0) {
+            $this->line(sprintf(
+                '  ad-viability floor (margin >= %s, covers one Shopping acquisition): dropped %d, kept %d',
+                $this->pounds($viabilityFloor),
+                $viabilityDropped,
+                count($rows),
+            ));
+        }
 
         if ($demandDropped > 0) {
             $this->line(sprintf(

@@ -80,7 +80,11 @@ return [
         'wireless_presentation' => ['clickshare', 'wireless presentation', 'airtame', 'via connect', 'via go'],
         // Teams/Zoom Rooms bundles — a compute module, a bar and a panel sold as
         // a project. Researched online, bought through a quote.
-        'room_system' => ['mvc', 'mcore', 'teams rooms', 'zoom rooms', 'rooms kit', 'room bundle', 'mtr '],
+        // 261011-lpg — 'mtr ' removed: it matched "Yealink mtr interactive
+        // display" (an MB75 MeetingBoard) and split one product family across two
+        // classes, because our catalogue names the 65 and the 75 differently.
+        // 'thinksmart' added for the Lenovo room consoles.
+        'room_system' => ['mvc', 'mcore', 'teams rooms', 'zoom rooms', 'rooms kit', 'room bundle', 'thinksmart'],
         // Interactive boards and panels — specified, delivered, wall-mounted.
         'display_large' => [
             'meetingboard', 'activpanel', 'ap10', 'ap7', 'ap6',
@@ -146,23 +150,50 @@ return [
     // clearance, not a stocked line — worth less, not worthless.
     'persistence_floor' => (float) env('AD_DEMAND_PERSISTENCE_FLOOR', 0.4),
 
+    // ── Display size decides large vs small ──────────────────────────────
+    //
+    // 261011-lpg — keywords alone could not tell an 85in Samsung from a 24in
+    // monitor: `display_large` matched only words like "interactive" and
+    // "signage", so "Samsung 85in QM85C Display" and "LG 98in Display" both
+    // fell through to `display_small` and took its 10/week base rate. A 98in
+    // commercial panel is specified, delivered and wall-mounted; it does not
+    // sell like a desktop monitor.
+    //
+    // The diagonal is in the title, so it is MEASURED rather than guessed. At or
+    // above this many inches a display is treated as large. Applied only once a
+    // title is already recognised as a display, so a 27in monitor ARM stays an
+    // accessory.
+    'display_large_min_inches' => (int) env('AD_DEMAND_DISPLAY_LARGE_MIN_INCHES', 55),
+
     // ── Reporting bands ──────────────────────────────────────────────────
     // The model cannot justify decimal precision, so the command prints a band
     // next to the number and the band is what should be read.
     'bands' => [
+        // 261011-lpg — ASCII hyphens, deliberately. These labels were written
+        // with en dashes and the operator's terminal DROPS them, so the first
+        // live run printed "2-5/wk" as "25/wk" and "5-15/wk" as "515/wk" — a
+        // demand band rendered as a number an order of magnitude out, in the
+        // column the whole ranking is read from. The PDF and CSV were fine; the
+        // console is the primary read and it was not.
         ['max_units' => 0.5, 'label' => 'under 1/wk'],
-        ['max_units' => 2.0, 'label' => '1–2/wk'],
-        ['max_units' => 5.0, 'label' => '2–5/wk'],
-        ['max_units' => 15.0, 'label' => '5–15/wk'],
+        ['max_units' => 2.0, 'label' => '1-2/wk'],
+        ['max_units' => 5.0, 'label' => '2-5/wk'],
+        ['max_units' => 15.0, 'label' => '5-15/wk'],
         ['max_units' => INF, 'label' => '15+/wk'],
     ],
 
     // ── Ad-viability gates ───────────────────────────────────────────────
     // A Shopping click in UK AV runs roughly £0.40–£1.20 and converts at 1–2%,
     // so acquiring one order costs on the order of £30–£100. Below that the
-    // margin cannot pay for the click, whatever the volume. The existing £199
-    // margin floor already clears this comfortably; this is the backstop for
-    // when an operator lowers it.
+    // margin cannot pay for the click, whatever the volume.
+    //
+    // 261011-lpg — this was written as "the backstop for when an operator lowers
+    // the margin floor" and then never wired to anything. The first live run used
+    // --min-margin-pence=4000 and duly shortlisted products carrying £42-£46 of
+    // cash margin: real money, but less than one Shopping acquisition costs, so
+    // every sale would have been bought at a loss. Dead config is worse than no
+    // config, because the comment claims a protection that does not exist. Now
+    // enforced by the command.
     'min_margin_pence' => (int) env('AD_DEMAND_MIN_MARGIN_PENCE', 6000),
 
     // Under about one sale a month there is never enough conversion data for

@@ -50,6 +50,8 @@ final class PricePositionReportCommand extends BaseCommand
 {
     protected $signature = 'products:price-position-report
         {--list=resources/reports/run-adds-part-numbers.tsv : TSV of name<TAB>part-number; # comments allowed}
+        {--brand= : ALSO pull every catalogue product matching these comma-separated brand terms (name + SKU, whole word)}
+        {--min-sell-pence=0 : With --brand, only pull products at or above this VAT-INCLUSIVE sell price}
         {--window-days=30 : How recent a competitor price must be to count}
         {--pdf=storage/app/research/price-position.pdf : Where to write the PDF}
         {--csv= : Also write the same rows as CSV}
@@ -68,6 +70,29 @@ final class PricePositionReportCommand extends BaseCommand
 
         $windowDays = max(1, (int) $this->option('window-days'));
         $wanted = $this->readList($listPath);
+
+        // 261011-ru9 — a hand-kept list cannot answer "every Yealink over
+        // £1,000", and the previous answer was a tinker one-liner plus a manual
+        // de-duplication pass. Worse, it could not be answered from the Shopping
+        // shortlist either: that only ever shows SKUs which already cleared the
+        // margin, stock and GTIN gates, and the dearest lines (MVC S50/S80/S90/
+        // S98, MeetingBoard Pro 86) are exactly the ones those gates drop. So
+        // the report pulls them from the catalogue itself.
+        $brands = array_values(array_filter(array_map(
+            static fn (string $b): string => trim($b),
+            explode(',', (string) ($this->option('brand') ?? '')),
+        ), static fn (string $b): bool => $b !== ''));
+
+        if ($brands !== []) {
+            $minSell = max(0, (int) $this->option('min-sell-pence'));
+            $added = $this->appendFromCatalogue($wanted, $brands, $minSell);
+            $this->line(sprintf(
+                '  + %d from the catalogue (%s%s)',
+                $added,
+                implode(', ', $brands),
+                $minSell > 0 ? ' at or above '.$this->pounds($minSell).' inc VAT' : '',
+            ));
+        }
 
         if ($wanted === []) {
             $this->error('The list is empty.');
@@ -107,6 +132,83 @@ final class PricePositionReportCommand extends BaseCommand
         }
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * Append every catalogue product matching the brand terms, skipping any part
+     * number the list already carries.
+     *
+     * De-duplicated on the SAME normalised key the matcher uses, so a list entry
+     * written "MVC S40-C5U-000" suppresses a catalogue row spelled
+     * "MVCS40-C5U-000". Doing it any other way would quietly report the same
+     * product twice.
+     *
+     * @param  array<int, array{0: string, 1: string}>  $wanted  modified in place
+     * @param  array<int, string>  $brands
+     * @return int how many were appended
+     */
+    private function appendFromCatalogue(array &$wanted, array $brands, int $minSellPence): int
+    {
+        $seen = [];
+        foreach ($wanted as [, $partNumber]) {
+            $seen[self::normaliseKey($partNumber)] = true;
+        }
+
+        $added = 0;
+        Product::query()
+            ->where('status', 'publish')
+            ->where('type', 'simple')
+            ->whereNotNull('sku')
+            ->when($minSellPence > 0, fn ($q) => $q->where('sell_price', '>=', $minSellPence / 100))
+            ->orderByDesc('sell_price')
+            ->select(['sku', 'name', 'sell_price'])
+            ->chunkById(500, function ($chunk) use (&$wanted, &$seen, &$added, $brands): void {
+                foreach ($chunk as $product) {
+                    if (! self::matchesBrandTerms((string) $product->name, (string) $product->sku, $brands)) {
+                        continue;
+                    }
+                    $key = self::normaliseKey((string) $product->sku);
+                    if ($key === '' || isset($seen[$key])) {
+                        continue;
+                    }
+                    $seen[$key] = true;
+                    $wanted[] = [trim((string) $product->name), trim((string) $product->sku)];
+                    $added++;
+                }
+            }, 'sku', 'sku');
+
+        return $added;
+    }
+
+    /**
+     * Whole-word brand match over name + SKU. Mirrors
+     * ShoppingCandidateScanner::matchesBrand — the boundary is only applied at
+     * the ends that are themselves word characters, so a pattern opening on
+     * punctuation ('#ABU') still matches inside 'A09D4AA#ABU'.
+     *
+     * @param  array<int, string>  $brands
+     */
+    private static function matchesBrandTerms(string $name, string $sku, array $brands): bool
+    {
+        $haystack = trim($name.' '.$sku);
+        if ($haystack === '') {
+            return false;
+        }
+
+        foreach ($brands as $brand) {
+            $needle = trim($brand);
+            if ($needle === '') {
+                continue;
+            }
+            $left = preg_match('/^[a-z0-9]/i', $needle) === 1 ? '(?<![a-z0-9])' : '';
+            $right = preg_match('/[a-z0-9]$/i', $needle) === 1 ? '(?![a-z0-9])' : '';
+
+            if (preg_match('/'.$left.preg_quote($needle, '/').$right.'/i', $haystack) === 1) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

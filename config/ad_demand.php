@@ -75,6 +75,13 @@ return [
     // shortlist full of `unknown` means this map needs extending, not that the
     // products are unclassifiable.
     'family_keywords' => [
+        // 261011 — FIRST, deliberately. Families are tested before the generic
+        // nouns, so "Yealink Floorstand for 75in MeetingBoard" matched the
+        // 'meetingboard' family and became a display_large — and the size rule
+        // then read the 75in of the screen it HOLDS. A stand is an accessory
+        // whatever it is bolted to, and the price rule reclassifies the dear
+        // ones as accessory_major from there.
+        'accessory' => ['floorstand', 'floor stand', 'wall stand', 'mb-fs'],
         // Self-contained IT purchases: unboxed, plugged in, no installer. These
         // genuinely do sell through a web basket.
         'wireless_presentation' => ['clickshare', 'wireless presentation', 'airtame', 'via connect', 'via go'],

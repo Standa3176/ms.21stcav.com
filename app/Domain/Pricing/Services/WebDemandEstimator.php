@@ -66,6 +66,11 @@ final class WebDemandEstimator
         'accessory' => [
             'cable', 'adapter', 'adaptor', 'bracket', 'mount', 'wall plate', 'faceplate',
             'stand', 'trolley', 'cart', 'pole', 'column', 'shelf', 'fixing kit',
+            // 261011 — "Yealink Floorstand for 75in MeetingBoard" classed as a
+            // display_large: the family token won and the size rule then read
+            // the 75in of the screen it HOLDS. A stand is an accessory whatever
+            // it is bolted to.
+            'floorstand', 'floor stand', 'wall stand',
             // 261011-lpg — 'hub' was 'usb hub'. A bare 'hub' swallowed the
             // Lenovo ThinkSmart Hub (a ~£1,900 room console) and the Yealink
             // AVHub, handing both the 35/week accessory base rate. That put the
@@ -92,6 +97,10 @@ final class WebDemandEstimator
             'room system', 'room kit', 'room bundle',
             // 261011-lpg — seen as `unknown` or mis-classed on the first live run.
             'neat bar', 'panacast', 'avhub', 'av hub', 'conferencing bar',
+            // 261011 — Yealink spell their range "MeetingBar", one word, so
+            // 'meeting bar' never matched it: the A10/A25/A40/A50 line came back
+            // `unknown`, and one A40 title even reached `installed_av`.
+            'meetingbar', 'meetingboard bar',
         ],
         'networking' => ['switch', 'router', 'access point', 'wireless ap', 'poe injector', 'network card'],
         'projector' => ['projector', 'projection'],
@@ -113,6 +122,7 @@ final class WebDemandEstimator
      * @return array{
      *     units_per_week: float,
      *     band: string,
+     *     has_evidence: bool,
      *     class: string,
      *     class_base: float,
      *     price_factor: float,
@@ -137,9 +147,33 @@ final class WebDemandEstimator
 
         $units = $classBase * $priceFactor * $breadthFactor * $persistenceFactor;
 
+        // 261011-rex — NO MARKET EVIDENCE AT ALL.
+        //
+        // Both measured inputs are floored: breadth bottoms out at 0.5 and
+        // persistence at 0.4, so a SKU that NO tracked reseller has EVER listed
+        // still came out at 1.60 units/week with a confident "1-2/wk" band. On
+        // the live Yealink run that applied to the conference phone, the RoomCast
+        // E2 and MTouch Plus — all showing 0 competitors and 0 days seen — and
+        // the fabricated number then ranked them mid-table on estimated profit,
+        // above products with real sightings behind them.
+        //
+        // That is the same error this project already refuses to make elsewhere:
+        // the price-position report says "No competitor data" rather than
+        // claiming we are cheapest. Absence of evidence is not evidence.
+        //
+        // Zero on BOTH inputs means the model has nothing to work from, so it
+        // reports nothing rather than a floor-product dressed as an estimate.
+        // The row stays visible — with --min-units-per-week=0 — but it cannot
+        // buy a place in a profit ranking with a number nobody measured.
+        $hasEvidence = $competitorCount > 0 || $daysSeen > 0;
+        if (! $hasEvidence) {
+            $units = 0.0;
+        }
+
         return [
             'units_per_week' => round($units, 2),
-            'band' => $this->band($units),
+            'band' => $hasEvidence ? $this->band($units) : 'no market evidence',
+            'has_evidence' => $hasEvidence,
             'class' => $class,
             'class_base' => $classBase,
             'price_factor' => $priceFactor,

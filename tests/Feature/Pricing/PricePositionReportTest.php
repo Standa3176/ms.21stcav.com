@@ -377,3 +377,27 @@ it('uses the loose match ONLY to flag catalogue gaps, never to score a row', fun
         // ...and the loose map is only read in the not-in-catalogue branch.
         ->and($source)->toContain('$loose = $looseByKey[$key] ?? null;');
 });
+
+it('ships the recommended ad shortlist, with no duplicate part numbers', function (): void {
+    // 261011 — the curated list: everything that cleared the £60 ad-viability
+    // floor on measured margin across the live runs, minus every SKU sitting at
+    // the 5.7% undercut floor (cheapest only because the pricing job clamped it,
+    // with nothing left to fund a click).
+    //
+    // Unlike the operator-supplied list, this one is assembled rather than
+    // transcribed, so a duplicate here would be MY error and worth catching.
+    $path = base_path('resources/reports/ad-shortlist-recommended.tsv');
+    expect(File::exists($path))->toBeTrue();
+
+    $rows = array_values(array_filter(
+        preg_split('/\R/', (string) File::get($path)) ?: [],
+        static fn (string $l): bool => trim($l) !== '' && ! str_starts_with(trim($l), '#'),
+    ));
+
+    expect($rows)->not->toBeEmpty();
+
+    $numbers = array_map(static fn (string $l): string => trim(explode("\t", $l)[1] ?? ''), $rows);
+
+    expect(array_filter($numbers, static fn (string $n): bool => $n === ''))->toBeEmpty()
+        ->and(count(array_unique($numbers)))->toBe(count($numbers));
+});

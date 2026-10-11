@@ -1,0 +1,89 @@
+# Recommended Google Ads shortlist — assembled 2026-10-11
+#
+# Format: name<TAB>part number. '#' lines and blanks ignored.
+# Render with price positions:
+#
+#   php artisan products:price-position-report \
+#     --list=resources/reports/ad-shortlist-recommended.tsv \
+#     --pdf=storage/app/research/ad-shortlist-recommended.pdf \
+#     --csv=storage/app/research/ad-shortlist-recommended.csv
+#
+# ── Where these came from ────────────────────────────────────────────────
+# Every SKU below appeared in a live run of products:shopping-candidates or
+# products:price-position-report on 2026-10-11, and cleared the £60 ad-viability
+# floor on TRUE CASH margin (stripVat(sell) - buy).
+#
+# Selected on MARGIN, which is measured, rather than on the estimated demand
+# band, which rests on assumed class base rates and has needed correcting three
+# times from live output. Where the two disagree, margin wins.
+#
+# DELIBERATELY EXCLUDED: every SKU sitting at exactly 5.7% margin. That is the
+# undercut floor (cost + 6% markup) — cheapest only because the pricing job
+# clamped it there, with no headroom left to fund a click. That rules out most
+# of the Logitech Rally range, the Poly Studio V52 and the ClickShare CX-10.
+
+# ── Tier 1: Sony commercial displays — 19-29% margin, the strongest block ──
+Sony FW-85BZ40L 85in	FW-85BZ40L
+Sony FW-85BZ35L 85in	FW-85BZ35L
+Sony FW-75EZ20L 75in	FW-75EZ20L
+Sony FW-75BZ40L 75in	FW-75BZ40L
+Sony FW-75BZ35L 75in	FW-75BZ35L
+Sony FW-65BZ40L 65in	FW-65BZ40L
+Sony FW-65EZ20L 65in	FW-65EZ20L
+Sony FW-55BZ35L 55in	FW-55BZ35L
+Sony FW-55EZ20L 55in	FW-55EZ20L
+Sony FW-50EZ20L 50in	FW-50EZ20L
+Sony FW-43EZ20L 43in	FW-43EZ20L
+Sony FW-32BZ30J1 32in	FW-32BZ30J1
+
+# ── Tier 2: Barco ClickShare — 12-20%, self-serve IT purchase ──
+Barco ClickShare CX-30 Gen 2	R9861613EUB2
+Barco ClickShare CX-20 Gen 2	R9861612EUB1
+Barco ClickShare Bar Pro	R9861633EUB2
+Barco ClickShare Bar Core	R9861632EUB1
+Barco ClickShare R9861710EUB2	R9861710EUB2
+Barco ClickShare Hub Pro	R9461810EU
+
+# ── Tier 3: large-format panels — 15-23% ──
+LG 86UH5N-M 86in	86UH5N-M
+LG 98UH5J-H 98in	98UH5J-H
+iiyama LH7575UHS-B2AG 75in	LH7575UHS-B2AG
+ViewSonic CDE8614-2C 86in	CDE8614-2C
+ViewSonic CDE7514-2C 75in	CDE7514-2C
+ViewSonic CDE6514-2C 65in	CDE6514-2C
+ViewSonic CDE5514-2C 55in	CDE5514-2C
+ViewSonic CDE5014-2C 50in	CDE5014-2C
+ViewSonic CDE4314-2C 43in	CDE4314-2C
+ViewSonic CDE4330 43in	CDE4330
+ViewSonic IFP65G1 ViewBoard	IFP65G1
+Lenovo ThinkSmart Hub	11H1000KUK
+
+# ── Tier 4: Yealink — the only one of the three named brands with headroom ──
+# MeetingBoard Pro 65 and 75 carry 9-13%; the A10 is the single highest-volume
+# product in the whole catalogue that still clears the viability floor.
+Yealink MeetingBoard Pro 65	MB65PRO-A02
+Yealink MeetingBoard Pro 75	MB75Pro-A02
+Yealink A10 Meeting Bar	A10-010
+Yealink A50 Meeting Bar	A50-031
+Yealink A50 Meeting Bar	A50-010
+Yealink A40 + CTP25	A40-031
+
+# ── Tier 5: Yealink the shortlist HIDES — see the note below ─────────────
+# These carry the largest cash margins of any Yealink we stock (£415-£1,568
+# true margin, from the 2026-10-11 price-position run) and none of them reach
+# the Shopping shortlist, because products:shopping-candidates requires TWO
+# tracked competitors and these have 0-1.
+#
+# That gate exists as a demand proxy — "resellers stock what sells". For an ad
+# list it cuts the wrong way on this family: no competitor means no price
+# pressure, which is a reason to advertise, not a reason to skip. Verify with
+#   --brand=yealink --min-competitors=0
+# before committing spend, because thin competitor coverage also means the
+# market read on them is weak.
+Yealink MeetingBoard Pro 86	MB86Pro-A02
+Yealink MVC S98	MVC S98-C5U-004
+Yealink MVC S90	MVC S90-C5U-004
+Yealink MVC S80	MVC S80-C5U-000
+Yealink MVC S50	MVC S50-C5U-000
+Yealink MVC S40	MVC S40-C5U-000
+Yealink A25 + CTP25	A25-031

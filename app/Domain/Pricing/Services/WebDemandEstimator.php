@@ -129,7 +129,7 @@ final class WebDemandEstimator
         int $windowDays,
         string $sku = '',
     ): array {
-        $class = $this->classify($name, $sku);
+        $class = $this->refineAccessoryByPrice($this->classify($name, $sku), $netSellPence);
         $classBase = $this->classBase($class);
         [$priceFactor, $priceBand] = $this->priceBand($netSellPence);
         $breadthFactor = $this->breadthFactor($competitorCount);
@@ -253,6 +253,29 @@ final class WebDemandEstimator
         // Largest stated diagonal: a title like "65in display with a 10in
         // controller" is describing a 65in product.
         return $sizes === [] ? null : max($sizes);
+    }
+
+    /**
+     * 261011-lpg — an accessory above a price threshold is a different animal.
+     *
+     * `accessory` matches "stand", "trolley" and "mount", which in an AV
+     * catalogue covers £700 floor trolleys and £2,000 Neat Board stands as well
+     * as £15 cables — and they all inherited the cable base rate of 35/week. On
+     * the second live run that put three such products in the top three places.
+     *
+     * Done HERE rather than in classify() because classify() sees only a title
+     * and a SKU; the price is what distinguishes the two cases, and it is
+     * measured rather than guessed. Same shape as the display-diagonal rule.
+     */
+    private function refineAccessoryByPrice(string $class, int $netSellPence): string
+    {
+        if ($class !== 'accessory') {
+            return $class;
+        }
+
+        $threshold = max(1, (int) config('ad_demand.accessory_major_min_net_pence', 40000));
+
+        return $netSellPence >= $threshold ? 'accessory_major' : $class;
     }
 
     private function classBase(string $class): float

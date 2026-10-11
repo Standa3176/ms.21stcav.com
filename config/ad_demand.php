@@ -99,6 +99,9 @@ return [
     // product is neither promoted nor silently dropped.
     'class_base_units_per_week' => [
         'accessory' => (float) env('AD_DEMAND_BASE_ACCESSORY', 35),
+        // Stands, trolleys and mounts above the threshold above. Specified
+        // alongside a room, not dropped in a basket.
+        'accessory_major' => (float) env('AD_DEMAND_BASE_ACCESSORY_MAJOR', 4),
         'headset' => (float) env('AD_DEMAND_BASE_HEADSET', 30),
         'webcam' => (float) env('AD_DEMAND_BASE_WEBCAM', 22),
         'speakerphone' => (float) env('AD_DEMAND_BASE_SPEAKERPHONE', 16),
@@ -164,6 +167,26 @@ return [
     // title is already recognised as a display, so a 27in monitor ARM stays an
     // accessory.
     'display_large_min_inches' => (int) env('AD_DEMAND_DISPLAY_LARGE_MIN_INCHES', 55),
+
+    // ── A £2,000 stand is not a £15 cable ────────────────────────────────
+    //
+    // 261011-lpg — `accessory` carries a 35/week base rate calibrated for
+    // cables, brackets and adapters. It also matches "stand", "trolley" and
+    // "mount", which in an AV catalogue includes £700 floor trolleys and £2,000
+    // Neat Board stands. On the second live run those took the top three places:
+    //
+    //   #1 B-Tech BT8558/B     ~£730 net   est 5-15/wk  £1,840/wk
+    //   #2 ViewSonic EP5542T   ~£2,240 net est 2-5/wk   £1,399/wk
+    //   #3 Neat adaptive stand ~£2,018 net est 5-15/wk  £581/wk
+    //
+    // The price-band decay alone could not fix it: 35 x 0.18 is still ~6/week
+    // for a £2,000 stand. The base rate was the wrong starting point, not the
+    // multiplier.
+    //
+    // Above this NET price an accessory is a considered purchase rather than an
+    // impulse one, and gets its own base rate. Same shape as the display rule:
+    // a MEASURED price refining a keyword-guessed class.
+    'accessory_major_min_net_pence' => (int) env('AD_DEMAND_ACCESSORY_MAJOR_MIN_NET_PENCE', 40000),
 
     // ── Reporting bands ──────────────────────────────────────────────────
     // The model cannot justify decimal precision, so the command prints a band

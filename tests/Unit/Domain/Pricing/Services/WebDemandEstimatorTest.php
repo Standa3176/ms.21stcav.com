@@ -311,3 +311,63 @@ it('enforces the ad-viability cash floor instead of only documenting it', functi
         // whichever bar is higher wins — an operator may raise it, not lower it
         ->and($source)->toContain('if ($viabilityFloor > $minMarginPence)');
 });
+
+/*
+|--------------------------------------------------------------------------
+| 261011-lpg (second run) — a £2,000 stand is not a £15 cable
+|--------------------------------------------------------------------------
+|
+| With the hub and display defects fixed, the top three of the live shortlist
+| were all expensive "accessories" riding the 35/week cable base rate:
+|
+|   #1 B-Tech BT8558/B     ~£730 net    est £1,840/wk
+|   #2 ViewSonic EP5542T   ~£2,240 net  est £1,399/wk
+|   #3 Neat adaptive stand ~£2,018 net  est   £581/wk
+|
+| `accessory` matches "stand", "trolley" and "mount", which in an AV catalogue
+| spans two completely different products. The price-band decay could not save
+| it: 35 x 0.18 is still ~6/week for a £2,000 stand. The BASE was wrong, not the
+| multiplier.
+*/
+
+it('rates an expensive stand far below a cheap cable', function (): void {
+    $cable = estimator()->estimate('StarTech 2m HDMI Cable', 1500, 3, 25, 84, 'X');
+    $stand = estimator()->estimate('Neat Board Pro Adaptive Stand', 201800, 3, 25, 84, 'X');
+
+    expect($cable['class'])->toBe('accessory')
+        ->and($stand['class'])->toBe('accessory_major')
+        ->and($stand['units_per_week'])->toBeLessThan($cable['units_per_week'] / 10);
+});
+
+it('splits on price, not on wording', function (): void {
+    // Identical title, two price points. The word "stand" says nothing about
+    // whether it is a desk riser or a floor-standing trolley for a 98in panel.
+    $cheap = estimator()->estimate('Universal Display Stand', 5000, 3, 25, 84, 'X');
+    $dear = estimator()->estimate('Universal Display Stand', 150000, 3, 25, 84, 'X');
+
+    expect($cheap['class'])->toBe('accessory')
+        ->and($dear['class'])->toBe('accessory_major');
+});
+
+it('honours a retuned accessory threshold', function (): void {
+    config()->set('ad_demand.accessory_major_min_net_pence', 1000);
+
+    expect(estimator()->estimate('StarTech 2m HDMI Cable', 1500, 3, 25, 84, 'X')['class'])
+        ->toBe('accessory_major');
+});
+
+it('leaves non-accessory classes alone whatever the price', function (): void {
+    // The refinement must not reach into displays or UC devices — they have
+    // their own base rates and their own price decay.
+    expect(estimator()->estimate('Sony 85" Commercial Display', 289000, 3, 25, 84, 'X')['class'])
+        ->toBe('display_large')
+        ->and(estimator()->estimate('Barco ClickShare CX-20', 136700, 3, 25, 84, 'X')['class'])
+        ->toBe('wireless_presentation');
+});
+
+it('keeps classify() a pure title+sku function', function (): void {
+    // The price refinement lives in estimate(), because classify() cannot see a
+    // price. Worth pinning: moving it would silently change every caller that
+    // classifies without one.
+    expect(estimator()->classify('Neat Board Pro Adaptive Stand', 'X'))->toBe('accessory');
+});

@@ -1,0 +1,122 @@
+# COMBINED Google Ads shortlist — assembled 2026-10-11
+#
+# Format: name<TAB>part number. '#' lines and blanks ignored.
+#
+#   php artisan products:price-position-report \
+#     --list=resources/reports/ad-shortlist-combined.tsv \
+#     --pdf=storage/app/research/ad-shortlist-combined.pdf \
+#     --csv=storage/app/research/ad-shortlist-combined.csv
+#
+# Three sources, merged and de-duplicated (8 Yealink SKUs appeared in both of
+# the first two and are listed once):
+#
+#   A. The curated margin-led shortlist — Sony / Barco / ViewSonic / LG / iiyama
+#      / Lenovo, every row clearing the £60 ad-viability floor on measured
+#      margin, with every 5.7%-floor-clamped SKU excluded.
+#   B. Everything returned by the live Yealink run
+#      (--brand=yealink --min-competitors=0), 26 rows.
+#   C. Yealink with a sell-out over £1,000 — SEE THE NOTE AT THE BOTTOM. That
+#      section is NOT filled in here, because it needs a catalogue query this
+#      list cannot do for itself.
+
+# ═══ A. Sony commercial displays — 19-29% margin ═══
+Sony FW-85BZ40L 85in	FW-85BZ40L
+Sony FW-85BZ35L 85in	FW-85BZ35L
+Sony FW-75EZ20L 75in	FW-75EZ20L
+Sony FW-75BZ40L 75in	FW-75BZ40L
+Sony FW-75BZ35L 75in	FW-75BZ35L
+Sony FW-65BZ40L 65in	FW-65BZ40L
+Sony FW-65EZ20L 65in	FW-65EZ20L
+Sony FW-55BZ35L 55in	FW-55BZ35L
+Sony FW-55EZ20L 55in	FW-55EZ20L
+Sony FW-50EZ20L 50in	FW-50EZ20L
+Sony FW-43EZ20L 43in	FW-43EZ20L
+Sony FW-32BZ30J1 32in	FW-32BZ30J1
+
+# ═══ A. Barco ClickShare — 12-20% ═══
+Barco ClickShare CX-30 Gen 2	R9861613EUB2
+Barco ClickShare CX-20 Gen 2	R9861612EUB1
+Barco ClickShare Bar Pro	R9861633EUB2
+Barco ClickShare Bar Core	R9861632EUB1
+Barco ClickShare R9861710EUB2	R9861710EUB2
+Barco ClickShare Hub Pro	R9461810EU
+
+# ═══ A. Large-format panels and room compute — 15-23% ═══
+LG 86UH5N-M 86in	86UH5N-M
+LG 98UH5J-H 98in	98UH5J-H
+iiyama LH7575UHS-B2AG 75in	LH7575UHS-B2AG
+ViewSonic CDE8614-2C 86in	CDE8614-2C
+ViewSonic CDE7514-2C 75in	CDE7514-2C
+ViewSonic CDE6514-2C 65in	CDE6514-2C
+ViewSonic CDE5514-2C 55in	CDE5514-2C
+ViewSonic CDE5014-2C 50in	CDE5014-2C
+ViewSonic CDE4314-2C 43in	CDE4314-2C
+ViewSonic CDE4330 43in	CDE4330
+ViewSonic IFP65G1 ViewBoard	IFP65G1
+Lenovo ThinkSmart Hub	11H1000KUK
+
+# ═══ B. Yealink — the live run, best margins first ═══
+# The surprise: the strongest Yealink margins are the FLOORSTANDS (25-33%) and
+# SmartVision 40 (23.4%), not the MeetingBar line everyone reaches for, which
+# runs 7-10%.
+Yealink Floorstand for 75in MeetingBoard	MB-FS-P750T
+Yealink Floorstand for 65in MeetingBoard	MB-FS-P650T
+Yealink SmartVision 40	SMARTVISION40
+Yealink SmartVision 40 (second SKU)	SmartVision 40
+Yealink A25 4K conference camera	A25-010
+Yealink MeetingBoard Pro 65	MB65PRO-A02
+Yealink MeetingBoard Pro 75	MB75Pro-A02
+Yealink MVC S40	MVC S40-C5U-000
+Yealink MTouch Plus	MTouch Plus
+Yealink A25 + CTP25	A25-031
+Yealink MD86 interactive display	MD86
+Yealink MCore4-MS	MCore4-MS
+Yealink A40 MeetingBar	A40-031
+Yealink A50 MeetingBar	A50-031
+Yealink A50 MeetingBar	A50-010
+Yealink A10 MeetingBar	A10-010
+Yealink AVHub	AVHub
+Yealink UVC86	UVC86
+Yealink UVC40 E2	UVC40 E2
+Yealink MD65 Teams room	MD65
+Yealink MD75 interactive display	MD75
+Yealink MTower	MTOWER
+Yealink DeskVision A24	A24
+Yealink SmartVision 80	SmartVision 80
+Yealink RoomCast E2	RoomCast E2
+Yealink conference phone 1204613	1204613
+
+# ═══ C. Yealink with sell-out over £1,000 — TO BE APPENDED ════════════════
+#
+# NOT FILLED IN, deliberately, rather than guessed.
+#
+# "Any Yealink over £1,000" is a question about the whole catalogue, and the
+# shortlist command cannot answer it: products:shopping-candidates only ever
+# shows SKUs that already cleared the margin, stock and GTIN gates. The live
+# Yealink run proved that matters — 144 Yealink products entered it and only 46
+# came out, with 11 dropped for stale supplier stock and 11 for a missing EAN.
+# Several of the dearest lines (MVC S50 / S80 / S90 / S98, MeetingBoard Pro 86)
+# are in that excluded group, so taking "over £1,000" from the shortlist would
+# systematically miss the expensive end — the exact opposite of what was asked.
+#
+# Append them with this, which reads the catalogue directly and emits rows in
+# this file's format:
+#
+#   php artisan tinker --execute='
+#   App\Domain\Products\Models\Product::query()
+#     ->where("status","publish")->where("type","simple")
+#     ->where("sell_price",">",1000)
+#     ->where(fn($q)=>$q->where("name","like","%yealink%")->orWhere("sku","like","%yealink%"))
+#     ->orderByDesc("sell_price")
+#     ->get(["sku","name","sell_price"])
+#     ->each(fn($p)=>print(trim($p->name)."\t".trim($p->sku).PHP_EOL));
+#   ' >> resources/reports/ad-shortlist-combined.tsv
+#
+# NOTE sell_price is VAT-INCLUSIVE, so "over £1,000" above means over £1,000
+# inc VAT (about £833 net). Change the 1000 to 1200 if you meant £1,000 net.
+#
+# De-duplicate afterwards — several of section B are already over £1,000:
+#
+#   awk -F'\t' '!/^#/ && NF==2 && !seen[$2]++ || /^#/ || NF<2' \
+#     resources/reports/ad-shortlist-combined.tsv > /tmp/c.tsv \
+#     && mv /tmp/c.tsv resources/reports/ad-shortlist-combined.tsv

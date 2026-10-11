@@ -378,6 +378,25 @@ it('uses the loose match ONLY to flag catalogue gaps, never to score a row', fun
         ->and($source)->toContain('$loose = $looseByKey[$key] ?? null;');
 });
 
+it('ships the combined ad shortlist, with no duplicate part numbers', function (): void {
+    // 261011 — the curated margin-led list merged with the live Yealink run.
+    // Eight SKUs appeared in both, so a duplicate here is the likeliest mistake
+    // and the one the price-position report would silently render twice.
+    $path = base_path('resources/reports/ad-shortlist-combined.tsv');
+    expect(File::exists($path))->toBeTrue();
+
+    $rows = array_values(array_filter(
+        preg_split('/\R/', (string) File::get($path)) ?: [],
+        static fn (string $l): bool => trim($l) !== '' && ! str_starts_with(trim($l), '#'),
+    ));
+
+    $numbers = array_map(static fn (string $l): string => trim(explode('	', $l)[1] ?? ''), $rows);
+
+    expect($rows)->not->toBeEmpty()
+        ->and(array_filter($numbers, static fn (string $n): bool => $n === ''))->toBeEmpty()
+        ->and(count(array_unique($numbers)))->toBe(count($numbers));
+});
+
 it('ships the recommended ad shortlist, with no duplicate part numbers', function (): void {
     // 261011 — the curated list: everything that cleared the £60 ad-viability
     // floor on measured margin across the live runs, minus every SKU sitting at

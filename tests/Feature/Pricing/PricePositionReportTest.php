@@ -520,3 +520,56 @@ it('leaves the list alone when no brand is given', function (): void {
     @unlink($pdf);
     @unlink($list);
 });
+
+/*
+|--------------------------------------------------------------------------
+| 261012 — stock is on the table, not just in the CSV
+|--------------------------------------------------------------------------
+|
+| stock_status was captured and exported but never displayed, so "what is
+| actually in stock?" meant opening the CSV every time — it was asked twice
+| after a run that had the answer in it.
+|
+| Stock is a SEPARATE AXIS from price position. "Best price now" on a product
+| nobody can buy is not a win, and the two must not be readable as one another,
+| so they are counted apart in the summary.
+*/
+
+it('shows stock in the table and counts it apart from the verdicts', function (): void {
+    seedPositionRow('IN-1', 10000, 15000, [16000]);
+    $out = seedPositionRow('OUT-1', 10000, 15000, [16000]);
+    $out->update(['stock_status' => 'outofstock']);
+    $unpub = seedPositionRow('UNPUB-1', 10000, 15000, [16000]);
+    $unpub->update(['status' => 'draft']);
+
+    $list = storage_path('app/testing/pp-'.uniqid().'.tsv');
+    File::ensureDirectoryExists(dirname($list));
+    File::put($list, "In\tIN-1\nOut\tOUT-1\nUnpub\tUNPUB-1\nGhost\tNOPE-1\n");
+    $pdf = storage_path('app/testing/pp-'.uniqid().'.pdf');
+
+    $this->artisan('products:price-position-report', ['--list' => $list, '--pdf' => $pdf])
+        ->expectsOutputToContain('Stock')
+        ->expectsOutputToContain('In stock')
+        ->assertExitCode(0);
+
+    @unlink($pdf);
+    @unlink($list);
+});
+
+it('does not call an unpublished product in-stock', function (): void {
+    // It cannot be advertised whatever the stock column says, so the label has
+    // to say so rather than quietly reading IN.
+    $source = file_get_contents(base_path('app/Console/Commands/PricePositionReportCommand.php'));
+
+    expect($source)->toContain("return 'unpublished';")
+        // and a part number matching no product is a catalogue gap, not a stock fact
+        ->and($source)->toContain("if ((\$row['sku'] ?? null) === null) {");
+});
+
+it('renders the stock column in the PDF too', function (): void {
+    $source = file_get_contents(base_path('resources/views/pdf/price-position.blade.php'));
+
+    expect($source)->toContain('>Stock</th>')
+        ->and($source)->toContain("'instock' => ['IN', 'good']")
+        ->and($source)->toContain("'outofstock' => ['out', 'bad']");
+});

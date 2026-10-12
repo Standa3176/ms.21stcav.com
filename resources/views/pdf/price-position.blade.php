@@ -88,17 +88,18 @@
 <table style="margin-top:8px">
     <thead>
         <tr>
-            <th style="width:19%">Product</th>
+            <th style="width:17%">Product</th>
             <th style="width:11%">Part number</th>
             <th style="width:12%">Verdict</th>
             <th style="width:7%" class="num">Our price</th>
             <th style="width:7%" class="num">Lowest comp</th>
             <th style="width:5%" class="num">Comps</th>
+            <th style="width:6%">Stock</th>
             <th style="width:7%" class="num">vs lowest</th>
             <th style="width:7%" class="num">Floor</th>
             <th style="width:7%" class="num">Cost</th>
             <th style="width:7%" class="num">True margin</th>
-            <th style="width:11%">Notes</th>
+            <th style="width:9%">Notes</th>
         </tr>
     </thead>
     <tbody>
@@ -127,6 +128,21 @@
             <td class="num">{{ $money($r['sell_gross_pence']) }}</td>
             <td class="num">{{ $money($r['lowest_comp_pence']) }}</td>
             <td class="num">{{ $r['competitors'] ?: '—' }}</td>
+            @php
+                // 261012 — stock on its own axis. Best-priced and unbuyable is a
+                // real combination, and the table must not let one read as the other.
+                $stock = $r['sku'] === null
+                    ? ['—', 'muted']
+                    : (! $r['published']
+                        ? ['unpublished', 'warn']
+                        : match ((string) ($r['stock_status'] ?? '')) {
+                            'instock' => ['IN', 'good'],
+                            'outofstock' => ['out', 'bad'],
+                            'onbackorder' => ['backorder', 'warn'],
+                            default => ['?', 'muted'],
+                        });
+            @endphp
+            <td><span class="pill {{ $stock[1] }}">{{ $stock[0] }}</span></td>
             <td class="num">{{ $delta === null ? '—' : ($delta > 0 ? '+' : '') . $money($delta) }}</td>
             <td class="num">{{ $money($r['floor_gross_pence']) }}</td>
             <td class="num">{{ $money($r['buy_pence']) }}</td>

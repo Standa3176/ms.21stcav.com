@@ -425,6 +425,20 @@ final class PricePositionReportCommand extends BaseCommand
      */
     private function renderSummary(array $rows): void
     {
+        $inStock = 0;
+        $sellable = 0;
+        foreach ($rows as $r) {
+            if (($r['sku'] ?? null) === null) {
+                continue;
+            }
+            if ((string) ($r['stock_status'] ?? '') === 'instock') {
+                $inStock++;
+                if ($r['published'] ?? false) {
+                    $sellable++;
+                }
+            }
+        }
+
         $counts = [];
         foreach ($rows as $r) {
             $counts[(string) $r['status']] = ($counts[(string) $r['status']] ?? 0) + 1;
@@ -439,6 +453,12 @@ final class PricePositionReportCommand extends BaseCommand
                 : PricePositionClassifier::describe($status)['label'];
             $this->line(sprintf('    %-32s %4d', $label, $n));
         }
+
+        // Stock is a separate axis from price position: a SKU can be best-priced
+        // and unbuyable. Counted apart so neither number is read as the other.
+        $this->line('');
+        $this->line(sprintf('    %-32s %4d', 'In stock', $inStock));
+        $this->line(sprintf('    %-32s %4d', '  of those, published (sellable)', $sellable));
     }
 
     /**
@@ -457,12 +477,17 @@ final class PricePositionReportCommand extends BaseCommand
                 $r['floor_gross_pence'] !== null ? $this->pounds((int) $r['floor_gross_pence']) : '—',
                 $r['true_margin_pence'] !== null ? $this->pounds((int) $r['true_margin_pence']) : '—',
                 (int) $r['competitors'],
+                // 261012 — stock was captured and exported to CSV but never
+                // displayed, so the question "what is actually in stock?" needed
+                // the CSV opened every time. A price position is useless on a
+                // product nobody can buy, so it belongs in the table.
+                self::stockLabel($r),
             ];
         }
 
         $this->newLine();
         $this->table(
-            ['Product', 'Part number', 'Verdict', 'Our price', 'Lowest comp', 'Floor', 'True margin', 'Comps'],
+            ['Product', 'Part number', 'Verdict', 'Our price', 'Lowest comp', 'Floor', 'True margin', 'Comps', 'Stock'],
             $table,
         );
     }
@@ -540,6 +565,35 @@ final class PricePositionReportCommand extends BaseCommand
             || preg_match('/^[A-Za-z]:\//', $normalised) === 1;
 
         return $isAbsolute ? $path : base_path($path);
+    }
+
+    /**
+     * Short stock label for the table and the PDF.
+     *
+     * Three states that must not be collapsed: IN / OUT is what Woo currently
+     * shows, "—" means the part number matched no product of ours (a catalogue
+     * gap, not a stock fact), and an unpublished product is called out because
+     * it cannot be advertised whatever its stock says.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    private static function stockLabel(array $row): string
+    {
+        if (($row['sku'] ?? null) === null) {
+            return '—';
+        }
+
+        if (! ($row['published'] ?? false)) {
+            return 'unpublished';
+        }
+
+        return match ((string) ($row['stock_status'] ?? '')) {
+            'instock' => 'IN',
+            'outofstock' => 'out',
+            'onbackorder' => 'backorder',
+            '' => '?',
+            default => (string) $row['stock_status'],
+        };
     }
 
     private function pounds(int $pence): string

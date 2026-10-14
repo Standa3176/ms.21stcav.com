@@ -271,3 +271,112 @@ it('clamps --per-page into the 1..100 Woo range', function (): void {
 
     expect($stub->getCalls[0]['query']['per_page'])->toBe(100);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Quick task 261014-lmf — mirror Woo's own image URL into image_url
+|--------------------------------------------------------------------------
+|
+| This command already fetched the full images array and kept only a count.
+| Meanwhile `image_url` is written NOWHERE but the auto-create pipeline, so
+| every product that arrived by Woo import has an empty one.
+|
+| Cost: 19 of the 59 SKUs on the Google Ads shortlist exported an empty
+| `image_link` and were disapproved by Merchant Center — including nine Sony
+| displays carrying up to fourteen pictures each on the live storefront. The
+| images were never missing. Only the mirror was.
+*/
+
+/** Fixture rows carrying real image src values. */
+function reconcileImageRows(): array
+{
+    return [
+        (object) [
+            'id' => 101,
+            'images' => [
+                (object) ['src' => 'https://meetingstore.co.uk/wp-content/uploads/primary.jpg'],
+                (object) ['src' => 'https://meetingstore.co.uk/wp-content/uploads/second.jpg'],
+            ],
+            'global_unique_id' => '50123',
+            'categories' => [(object) []],
+            'stock_status' => 'instock',
+        ],
+        (object) [
+            'id' => 102,
+            'images' => [],
+            'global_unique_id' => '',
+            'categories' => [],
+            'stock_status' => 'outofstock',
+        ],
+    ];
+}
+
+it('fills an empty image_url with the FIRST Woo image', function (): void {
+    seedReconcileProducts();
+    Product::where('woo_product_id', 101)->update(['image_url' => null]);
+    bindReconcileWooStub(reconcileImageRows());
+    bindReconcileWpStub();
+
+    Artisan::call('products:reconcile-woo-maintenance');
+
+    expect(Product::where('woo_product_id', 101)->value('image_url'))
+        ->toBe('https://meetingstore.co.uk/wp-content/uploads/primary.jpg');
+});
+
+it('never overwrites an image_url the auto-create pipeline sourced', function (): void {
+    // An auto-created product's image_url points at OUR hosted file and is the
+    // deliberate choice. Woo's copy must not replace it.
+    seedReconcileProducts();
+    Product::where('woo_product_id', 101)->update(['image_url' => 'https://ours/local-sourced.webp']);
+    bindReconcileWooStub(reconcileImageRows());
+    bindReconcileWpStub();
+
+    Artisan::call('products:reconcile-woo-maintenance');
+
+    expect(Product::where('woo_product_id', 101)->value('image_url'))
+        ->toBe('https://ours/local-sourced.webp');
+});
+
+it('leaves image_url alone when Woo has no images', function (): void {
+    seedReconcileProducts();
+    Product::where('woo_product_id', 102)->update(['image_url' => null]);
+    bindReconcileWooStub(reconcileImageRows());
+    bindReconcileWpStub();
+
+    Artisan::call('products:reconcile-woo-maintenance');
+
+    expect(Product::where('woo_product_id', 102)->value('image_url'))->toBeNull();
+});
+
+it('does NOT touch gallery_image_urls', function (): void {
+    // gallery_image_urls means "locally sourced, awaiting publication TO Woo".
+    // Writing Woo's own URLs into it would invert the meaning and put the
+    // publish-to-Woo path into a loop with itself.
+    seedReconcileProducts();
+    Product::where('woo_product_id', 101)->update(['image_url' => null, 'gallery_image_urls' => []]);
+    bindReconcileWooStub(reconcileImageRows());
+    bindReconcileWpStub();
+
+    Artisan::call('products:reconcile-woo-maintenance');
+
+    expect((array) Product::where('woo_product_id', 101)->value('gallery_image_urls'))->toBe([]);
+});
+
+it('writes nothing on --dry-run', function (): void {
+    seedReconcileProducts();
+    Product::where('woo_product_id', 101)->update(['image_url' => null]);
+    bindReconcileWooStub(reconcileImageRows());
+    bindReconcileWpStub();
+
+    Artisan::call('products:reconcile-woo-maintenance', ['--dry-run' => true]);
+
+    expect(Product::where('woo_product_id', 101)->value('image_url'))->toBeNull();
+});
+
+it('reports the mirrored count separately from the generic updated count', function (): void {
+    // A feed-blocking backfill buried inside `updated` is invisible.
+    $source = file_get_contents(base_path('app/Console/Commands/ReconcileWooMaintenanceCommand.php'));
+
+    expect($source)->toContain("['image_url mirrored', \$imagesMirrored]")
+        ->and($source)->toContain('$imagesMirrored++;');
+});

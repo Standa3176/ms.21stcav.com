@@ -85,6 +85,10 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
         $matched = 0;
         $updated = 0;
         $unmatched = 0;
+        // 261014-lmf — products whose empty image_url was filled from Woo's own
+        // payload. Reported separately so a feed-blocking backfill is visible
+        // rather than buried inside the generic `updated` count.
+        $imagesMirrored = 0;
         // 260708-dyy — count of products whose woo_brand_count was written by the
         // WP-REST brand pass (below, after the WC pass).
         $brandUpdated = 0;
@@ -133,13 +137,45 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
                 }
                 $matched++;
 
+                $images = (array) ($p['images'] ?? []);
+
                 $updates = [
-                    'woo_image_count' => count((array) ($p['images'] ?? [])),
+                    'woo_image_count' => count($images),
                     'woo_gtin' => ($g = trim((string) ($p['global_unique_id'] ?? ''))) !== '' ? $g : null,
                     'woo_category_count' => count((array) ($p['categories'] ?? [])),
                     'woo_stock_status' => ($s = trim((string) ($p['stock_status'] ?? ''))) !== '' ? $s : null,
                     'woo_reconciled_at' => now(),
                 ];
+
+                // 261014-lmf — the image URLs are already in this payload and
+                // were being discarded in favour of a bare count.
+                //
+                // `image_url` is written NOWHERE ELSE except the auto-create
+                // pipeline (SourceProductImagesCommand, ProcessAutoCreateImageJob),
+                // so every product that arrived by Woo import has an empty one —
+                // 19 of 59 on the current Google Ads shortlist, including nine
+                // Sony displays carrying up to 14 pictures each on the storefront.
+                // An empty image_url exports an empty `image_link`, and Merchant
+                // Center disapproves the item. The pictures were never missing;
+                // only the mirror was.
+                //
+                // Fill ONLY when we hold nothing. An auto-created product's
+                // image_url points at our own hosted file and is the deliberate
+                // choice — Woo's copy must not overwrite it.
+                //
+                // gallery_image_urls is deliberately NOT touched: that field means
+                // "locally sourced images awaiting publication to Woo", and
+                // writing Woo's own URLs into it would invert its meaning.
+                $firstImage = '';
+                if ($images !== []) {
+                    $first = (array) reset($images);
+                    $firstImage = trim((string) ($first['src'] ?? ''));
+                }
+
+                if ($firstImage !== '' && trim((string) $product->image_url) === '') {
+                    $updates['image_url'] = $firstImage;
+                    $imagesMirrored++;
+                }
 
                 if (! $dry) {
                     $product->forceFill($updates)->saveQuietly();
@@ -230,6 +266,7 @@ class ReconcileWooMaintenanceCommand extends BaseCommand
                 ['matched', $matched],
                 ['updated', $updated],
                 ['unmatched', $unmatched],
+                ['image_url mirrored', $imagesMirrored],
                 ['brand_updated', $brandUpdated],
                 ['dry_run', $dry ? 'yes' : 'no'],
             ],

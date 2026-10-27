@@ -173,6 +173,7 @@ use App\Domain\Sync\Policies\SupplierPolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
 use App\Domain\Sync\Services\MysqlSupplierFeedReader;
 use App\Domain\Sync\Services\SupplierClient;
+use App\Domain\Sync\Services\ProductSupplierBlockResolver;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
 use App\Domain\Sync\Services\SupplierFeedReader;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
@@ -372,6 +373,11 @@ class AppServiceProvider extends ServiceProvider
         // so SupplierDbSyncCommand::buildBestOfferMap shares one cache and triggers
         // AT MOST one query per command run (mirrors SupplierFreshnessResolver).
         $this->app->singleton(SupplierExclusionResolver::class);
+
+        // Quick task 261027-duz — per-request memoised (sku, supplier_id) offer
+        // blocks. Shared by supplier:db-sync, products:hydrate-stock-from-offers
+        // and supplier:explain-cost (at most one query per command run).
+        $this->app->singleton(ProductSupplierBlockResolver::class);
 
         // Quick task 260719-mgp — sourceability-gap probe reads the REMOTE feed
         // through the SupplierFeedReader seam. Default = live mysqli reader;

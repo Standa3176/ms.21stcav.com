@@ -36,6 +36,7 @@ See `.planning/milestones/v1.50.1-ROADMAP.md` for full v1 phase details.
 - [x] **Phase 11: E2 Quote Request â†’ Bitrix Deal Flow** â€” `Quote` + `QuoteLine` ULID models with snapshotted prices, Filament admin CRUD, PDF rendering via spatie/laravel-pdf, listener-based push to Bitrix Deal type=QUOTE.
  (completed 2026-05-01)
 - [x] **Phase 12: C3 SEO / Content Agent** â€” Plug-and-play with Phase 6 AutoCreate review inbox. Proposes content patches for low-completeness drafts. Approved patches auto-pin via `ProductOverride.pin_*` columns. (completed 2026-05-16)
+- [ ] **Phase 12.1: Bitrix Order-Push Cutover (INSERTED)** - Replace the ITGalaxy plugin as the order -> deal path: paid-only deals, product rows, Cost/Predicted Margin, plugin-parity mappings, shadow run, cutover.
 - [ ] **Phase 13: E3 WhatsApp Business Channel** â€” Inbound webhook (Meta HMAC) + 24h-window outbound free-form + template registry. Marketing-template broadcasts deferred to v2.1. New `whatsapp-inbound` queue.
 - [ ] **Phase 14: E4 AI Product-Finder Chatbot** â€” Public REST endpoint (`/api/chat/message`) + `ProductFinderAgent` over MySQL FULLTEXT (~5k SKUs assumption). Anonymous PII posture: phone/email captured only on explicit quote request, hashed at rest.
 - [ ] **Phase 15: C2 Ad Optimisation Agent** â€” LATE phase. Reads Bitrix Deal UTM/GCLID data accumulated post-cutover. New `Marketing` Deptrac layer separate from `Agents`. Pre-flight: GCLID capture verified or v1 hotfix shipped.
@@ -172,6 +173,20 @@ Plans:
 **Research flag**: YES (resolved 2026-05-16) — Phase 8/10 framework mirror with 5 structural diffs; brand-voice regex starter set hand-curated; Filament 3.3 RepeatableEntry + Section pattern confirmed; hand-rolled side-by-side diff (no new packages); see 12-RESEARCH.md §Summary
 **UI hint**: yes
 
+### Phase 12.1: Bitrix Order-Push Cutover (INSERTED)
+
+**Goal**: Replace the ITGalaxy `woocommerce-bitrix24-integration` plugin as the Woo order → Bitrix deal path. The plugin silently drops paid orders when Bitrix returns QUERY_LIMIT_EXCEEDED (orders 185152/185264, 2026-10-26) and creates deals for unpaid/failed orders. Close the ops app's code gaps (deal only once paid; product rows on the deal; Cost + Predicted Margin from buy_price, ex VAT, blank-and-flag when incomplete), seed pipeline/status/field mappings to plugin parity, then shadow-run and cut over (adopt legacy deal ids → Woo webhook → CRM_WRITE_ENABLED → deactivate ONLY the Bitrix plugin, never `stock-updater`).
+**Requirements**: None (cutover hardening of v1 Phase 4 CRM sync; no new requirement IDs)
+**Depends on:** Phase 4 (CRM sync), Phase 11 (dealProductRowsSet)
+**Plans:** 7 plans (waves 1-4; 05 and 07 are operator checkpoints)
+  - [ ] 12.1-01-PLAN.md — Deal-creating status gate (D-01/D-01a, config-driven), per-order lock replaces race guard, create-floor, shadow-id hygiene, webhook-source allowlist
+  - [ ] 12.1-02-PLAN.md — Cost/Predicted Margin by-label discovery (D-07/D-09), parity columns + builder static/meta fields, seed-order-parity command + data file from 12.1-PLUGIN-PARITY.md
+  - [ ] 12.1-03-PLAN.md — Product rows + shipping row (D-03/D-04), Cost/Predicted Margin blank-and-flag (D-05/D-06), D-09 runtime detection
+  - [ ] 12.1-04-PLAN.md — Adoption hardening: EntityDeduper shadow hygiene, adopt-legacy shadow overwrite + --legacy-map-csv
+  - [ ] 12.1-05-PLAN.md — (operator) live Cost/PM discovery + legacy-meta check, D-09 decision, fill codes
+  - [ ] 12.1-06-PLAN.md — order-push-parity + cutover-preflight commands, cutover/rollback runbook
+  - [ ] 12.1-07-PLAN.md — (operator) shadow >= 3 days, deactivate plugin FIRST then enable writes (D-13), gap backfill, post-flip verification
+
 ### Phase 13: E3 WhatsApp Business Channel
 **Goal**: Inbound WhatsApp messages from customers are HMAC-verified, deduped, and routed by intent; outbound free-form replies are gated by a non-bypassable 24h customer-care window guard; outbound templates require pre-registered approved Meta template IDs.
 **Depends on**: Phase 1 (v1 webhook HMAC middleware + `WebhookReceipt` dedup + `webhook-inbound` queue patterns). The WhatsApp HMAC scheme (`X-Hub-Signature-256`) reuses the v1 middleware shape with a new app-secret env var.
@@ -235,6 +250,7 @@ Plans:
 | 10. C1 Pricing Agent | v2.0 | 5/5 | Complete    | 2026-04-30 |
 | 11. E2 Quote â†’ Bitrix Deal | v2.0 | 5/5 | Complete   | 2026-05-01 |
 | 12. C3 SEO / Content Agent | v2.0 | 5/5 | Complete    | 2026-05-16 |
+| 12.1. Bitrix Order-Push Cutover | v2.0 | 0/7 | Planned | - |
 | 13. E3 WhatsApp Channel | v2.0 | 0/TBD | Not started | - |
 | 14. E4 AI Product-Finder | v2.0 | 0/TBD | Not started | - |
 | 15. C2 Ad Optimisation Agent | v2.0 | 2/TBD | In progress — GA4 read slices shipped (15a-01 foundation, 15a-02 pull+snapshot+viewer, READ-ONLY); advisory agent + Marketing Deptrac layer deferred to 15b | - |

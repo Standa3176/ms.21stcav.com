@@ -35,7 +35,7 @@ function makeOrderReceiptForPush(array $orderOverrides = [], string $topic = 'or
     $order = array_merge([
         'id' => 42,
         'number' => '42',
-        'status' => 'pending',
+        'status' => 'processing',
         'total' => '199.99',
         'currency' => 'GBP',
         'customer_id' => 7,
@@ -132,7 +132,7 @@ it('creates Company → Contact → Deal sequence on order.created', function ()
     expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->exists())->toBeTrue();
     $dealMap = BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->first();
     expect($dealMap->bitrix_id)->toBe('D1');
-    expect($dealMap->last_status_snapshot)->toBe('pending');
+    expect($dealMap->last_status_snapshot)->toBe('processing');
 
     Event::assertDispatched(BitrixCompanyPushed::class);
     Event::assertDispatched(BitrixContactPushed::class);
@@ -168,13 +168,9 @@ it('skips Company step when billing.company is empty', function (): void {
     Event::assertDispatched(BitrixDealPushed::class);
 });
 
-it('on order.updated with missing map and retries < 5, release(30) re-queues itself', function (): void {
-    Queue::fake();
-    $client = mockBitrixClientForPush();
-
-    $receipt = makeOrderReceiptForPush([], 'order.updated');
-
-    (new PushOrderToBitrixJob($receipt->id, 'order.updated', 2))->handle(
+function runOrderPush(PushOrderToBitrixJob $job, $client): void
+{
+    $job->handle(
         app(\App\Domain\CRM\Services\EntityDeduper::class),
         app(\App\Domain\CRM\Services\DealPayloadBuilder::class),
         app(\App\Domain\CRM\Services\ContactPayloadBuilder::class),
@@ -182,36 +178,153 @@ it('on order.updated with missing map and retries < 5, release(30) re-queues its
         $client,
         app(\App\Domain\CRM\Services\OrderNoteSynchroniser::class),
     );
+}
 
-    Queue::assertPushed(PushOrderToBitrixJob::class, function (PushOrderToBitrixJob $job) use ($receipt) {
-        return $job->webhookReceiptId === $receipt->id
-            && $job->topic === 'order.updated'
-            && $job->updateMissRetries === 3;
-    });
-    // No suggestion yet — still retrying.
+function expectNoBitrixCalls($client): void
+{
+    foreach (['companyAdd', 'contactAdd', 'contactUpdate', 'dealAdd', 'dealList', 'duplicateFindByComm'] as $method) {
+        $client->shouldNotReceive($method);
+    }
+}
+
+function expectCreateCalls($client, string $dealId = 'D1'): void
+{
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealAdd')->once()->andReturn($dealId);
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+}
+
+it('makes zero Bitrix calls for never-paid statuses on order.created', function (string $status): void {
+    Queue::fake();
+    $client = mockBitrixClientForPush();
+    expectNoBitrixCalls($client);
+
+    $receipt = makeOrderReceiptForPush(['status' => $status]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->count())->toBe(0);
+    expect(\App\Foundation\Integration\Models\IntegrationEvent::where('operation', 'crm.deal.skipped_unpaid')->count())->toBe(1);
+    Queue::assertNothingPushed();
+})->with(['pending', 'failed', 'cancelled', 'checkout-draft']);
+
+it('creates the deal for a quote-request status (ywraq-new) with default config', function (): void {
+    $client = mockBitrixClientForPush();
+    expectCreateCalls($client);
+
+    $receipt = makeOrderReceiptForPush(['status' => 'ywraq-new']);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->value('bitrix_id'))->toBe('D1');
+});
+
+it('creates the deal on the first paid order.updated (BACS paid later) without re-dispatching', function (): void {
+    Queue::fake();
+    $client = mockBitrixClientForPush();
+    expectCreateCalls($client);
+
+    $receipt = makeOrderReceiptForPush(['status' => 'on-hold'], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->value('bitrix_id'))->toBe('D1');
+    Queue::assertNotPushed(PushOrderToBitrixJob::class);
+});
+
+it('makes no Bitrix calls, re-queues nothing and writes no suggestion for unpaid order.updated with no map', function (): void {
+    Queue::fake();
+    $client = mockBitrixClientForPush();
+    expectNoBitrixCalls($client);
+
+    $receipt = makeOrderReceiptForPush(['status' => 'pending'], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    Queue::assertNothingPushed();
     expect(Suggestion::where('kind', 'crm_push_failed')->count())->toBe(0);
 });
 
-it('on order.updated with missing map after 5 retries, writes update_before_create suggestion', function (): void {
+it('releases the job and creates nothing when another worker holds the per-order lock', function (): void {
     Queue::fake();
     $client = mockBitrixClientForPush();
+    $client->shouldNotReceive('dealAdd');
 
-    $receipt = makeOrderReceiptForPush([], 'order.updated');
+    $held = Cache::lock('crm-order-push:42', 120);
+    expect($held->get())->toBeTrue();
 
-    (new PushOrderToBitrixJob($receipt->id, 'order.updated', 5))->handle(
-        app(\App\Domain\CRM\Services\EntityDeduper::class),
-        app(\App\Domain\CRM\Services\DealPayloadBuilder::class),
-        app(\App\Domain\CRM\Services\ContactPayloadBuilder::class),
-        app(\App\Domain\CRM\Services\CompanyPayloadBuilder::class),
-        $client,
-        app(\App\Domain\CRM\Services\OrderNoteSynchroniser::class),
-    );
+    $receipt = makeOrderReceiptForPush(['status' => 'processing']);
+    $job = new PushOrderToBitrixJob($receipt->id, 'order.created', 0);
+    $job->lockWaitSeconds = 1;
+    $queueJob = Mockery::mock(\Illuminate\Contracts\Queue\Job::class);
+    $queueJob->shouldReceive('release')->once()->with(15);
+    $job->setJob($queueJob);
 
-    Queue::assertNotPushed(PushOrderToBitrixJob::class);
-    $s = Suggestion::where('kind', 'crm_push_failed')->first();
-    expect($s)->not->toBeNull();
-    expect($s->payload['sub_kind'])->toBe('update_before_create');
-    expect($s->payload['woo_id'])->toBe(42);
+    runOrderPush($job, $client);
+
+    $held->release();
+    expect(BitrixEntityMap::where('entity_type', 'deal')->count())->toBe(0);
+});
+
+it('applies the create floor to order.updated only', function (): void {
+    config(['services.bitrix.order_create_floor_id' => 100]);
+    Queue::fake();
+
+    $client = mockBitrixClientForPush();
+    expectNoBitrixCalls($client);
+    $receipt = makeOrderReceiptForPush(['status' => 'processing'], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->count())->toBe(0);
+    expect(\App\Foundation\Integration\Models\IntegrationEvent::where('operation', 'crm.deal.legacy_unmapped')->count())->toBe(1);
+
+    // Same order via order.created (backfill path) is created.
+    $client2 = mockBitrixClientForPush();
+    expectCreateCalls($client2);
+    $receipt2 = makeOrderReceiptForPush(['status' => 'processing'], 'order.created');
+    runOrderPush(new PushOrderToBitrixJob($receipt2->id, 'order.created', 0), $client2);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->value('bitrix_id'))->toBe('D1');
+});
+
+it('never persists a SHADOW- deal id but still fires BitrixDealPushed in shadow mode', function (): void {
+    Event::fake([BitrixCompanyPushed::class, BitrixContactPushed::class, BitrixDealPushed::class]);
+    $client = mockBitrixClientForPush();
+    expectCreateCalls($client, 'SHADOW-abc');
+
+    $receipt = makeOrderReceiptForPush(['status' => 'processing']);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->count())->toBe(0);
+    Event::assertDispatched(BitrixDealPushed::class, fn ($e) => $e->mode === 'shadow');
+});
+
+it('treats an existing SHADOW- deal map row as absent and overwrites it with the real id', function (): void {
+    Queue::fake();
+    BitrixEntityMap::factory()->dealFor(42, 'SHADOW-old')->create(['last_status_snapshot' => 'processing']);
+    $client = mockBitrixClientForPush();
+    expectCreateCalls($client, 'D9');
+
+    $receipt = makeOrderReceiptForPush(['status' => 'processing'], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->count())->toBe(1);
+    expect(BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->value('bitrix_id'))->toBe('D9');
+});
+
+it('moves an already-mapped deal on paid to cancelled (update path ignores the paid gate)', function (): void {
+    Queue::fake();
+    $client = mockBitrixClientForPush();
+    $client->shouldNotReceive('dealAdd');
+    $client->shouldReceive('companyAdd')->zeroOrMoreTimes()->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->zeroOrMoreTimes()->andReturn('C1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealGet')->zeroOrMoreTimes()->andReturn(['COMMENTS' => '']);
+    $client->shouldReceive('dealUpdate')->zeroOrMoreTimes();
+
+    BitrixEntityMap::factory()->dealFor(42, 'D1')->create(['last_status_snapshot' => 'processing']);
+    $receipt = makeOrderReceiptForPush(['status' => 'cancelled'], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    Queue::assertPushed(UpdateDealStageJob::class, fn (UpdateDealStageJob $j) => $j->newWooStatus === 'cancelled' && $j->oldWooStatus === 'processing');
 });
 
 it('on order.updated with map and changed status, dispatches UpdateDealStageJob', function (): void {
@@ -254,9 +367,9 @@ it('on order.updated with same status, does NOT dispatch UpdateDealStageJob', fu
     $client->shouldReceive('dealUpdate')->zeroOrMoreTimes();
 
     BitrixEntityMap::factory()->dealFor(42, 'D1')->create([
-        'last_status_snapshot' => 'pending',
+        'last_status_snapshot' => 'processing',
     ]);
-    $receipt = makeOrderReceiptForPush(['status' => 'pending'], 'order.updated');
+    $receipt = makeOrderReceiptForPush(['status' => 'processing'], 'order.updated');
 
     (new PushOrderToBitrixJob($receipt->id, 'order.updated', 0))->handle(
         app(\App\Domain\CRM\Services\EntityDeduper::class),

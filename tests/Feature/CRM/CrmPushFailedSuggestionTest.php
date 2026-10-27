@@ -31,7 +31,7 @@ function seedOrderReceipt(): WebhookReceipt
         'raw_body' => json_encode([
             'id' => 42,
             'number' => '42',
-            'status' => 'pending',
+            'status' => 'processing',
             'total' => '50.00',
             'currency' => 'GBP',
             'customer_id' => 7,

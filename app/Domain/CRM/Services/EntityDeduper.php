@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\CRM\Services;
 
 use App\Domain\CRM\Models\BitrixEntityMap;
+use App\Domain\CRM\Support\ShadowId;
 use App\Foundation\Audit\Services\Auditor;
 use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Support\Facades\Context;
@@ -209,7 +210,8 @@ final class EntityDeduper
         $map = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_DEAL)
             ->where('woo_id', $wooOrderId)
             ->first();
-        if ($map !== null) {
+        // 12.1: a SHADOW-* sentinel row is not a real deal — treat as a miss.
+        if ($map !== null && ! ShadowId::is((string) $map->bitrix_id)) {
             $this->logDecision('deal', 'map_hit', [
                 'bitrix_id' => $map->bitrix_id,
                 'woo_id' => $wooOrderId,

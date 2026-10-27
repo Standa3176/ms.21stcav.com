@@ -17,9 +17,13 @@ use App\Domain\CRM\Services\ContactPayloadBuilder;
 use App\Domain\CRM\Services\DealPayloadBuilder;
 use App\Domain\CRM\Services\EntityDeduper;
 use App\Domain\CRM\Services\OrderNoteSynchroniser;
+use App\Domain\CRM\Support\OrderPaidGate;
+use App\Domain\CRM\Support\ShadowId;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Webhooks\Models\WebhookReceipt;
+use App\Foundation\Integration\Services\IntegrationLogger;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -37,8 +41,12 @@ use Throwable;
  * Dispatched by HandleOrderReceived. Implements:
  *   - Company → Contact → Deal sequencing (Bitrix requires this order —
  *     crm.deal.add fails if Contact doesn't exist yet)
- *   - D-10 race guard: order.updated before order.created → release(30)
- *     up to 5 attempts, then `update_before_create` suggestion
+ *   - 12.1 D-01: deal created by the first paid-status webhook (order.created
+ *     or order.updated); per-order cache lock prevents double create. Unpaid
+ *     orders with no map produce zero Bitrix calls (D-02).
+ *   - 12.1 D-15: optional create-floor — order.updated for plugin-era ids with
+ *     no map never creates a deal (logged as crm.deal.legacy_unmapped).
+ *   - SHADOW-* ids from shadow mode are never persisted into bitrix_entity_map.
  *   - D-09 narrow-patch: status change → UpdateDealStageJob; always append
  *     new notes via OrderNoteSynchroniser; never re-push other fields
  *   - D-11 retry: 3 attempts / [30s, 5m, 30m] backoff for BitrixTransientException
@@ -61,9 +69,13 @@ class PushOrderToBitrixJob implements ShouldQueue
 
     public int $timeout = 120;
 
+    /** Seconds to wait for the per-order create lock before releasing the job. */
+    public int $lockWaitSeconds = 20;
+
     public function __construct(
         public readonly int $webhookReceiptId,
         public readonly string $topic,
+        /** Ignored since 12.1 — retained so already-serialised jobs still unserialise. */
         public readonly int $updateMissRetries = 0,
     ) {
         $this->onQueue('crm-bitrix');
@@ -93,80 +105,63 @@ class PushOrderToBitrixJob implements ShouldQueue
         $billing = (array) ($order['billing'] ?? []);
 
         try {
-            $map = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_DEAL)
-                ->where('woo_id', $wooOrderId)
-                ->first();
+            $status = OrderPaidGate::normalise((string) ($order['status'] ?? ''));
+            $paid = OrderPaidGate::isPaid($status, (array) config('services.bitrix.order_paid_statuses', []));
 
-            // ── D-10 race guard: order.updated arrived before order.created ──
-            if ($this->topic === 'order.updated' && $map === null) {
-                if ($this->updateMissRetries < 5) {
-                    self::dispatch($this->webhookReceiptId, $this->topic, $this->updateMissRetries + 1)
-                        ->delay(now()->addSeconds(30));
+            $map = $this->realDealMap($wooOrderId);
+
+            if ($map === null) {
+                // 12.1 D-01/D-02: never-paid orders produce zero Bitrix calls.
+                if (! $paid) {
+                    $this->logEvent('crm.deal.skipped_unpaid', $wooOrderId, $status, $correlationId);
 
                     return;
                 }
-                $this->emitFailedSuggestion(
-                    'update_before_create',
-                    'deal',
-                    $wooOrderId,
-                    0,
-                    'BitrixEntityMap missing after 5 retries',
-                    $correlationId,
-                    $order,
-                );
 
-                return;
-            }
+                // 12.1 D-15: plugin-era orders are never auto-created from order.updated.
+                $floor = config('services.bitrix.order_create_floor_id');
+                if ($this->topic === 'order.updated' && is_int($floor) && $floor > 0 && $wooOrderId <= $floor) {
+                    Log::warning('PushOrderToBitrixJob: order.updated for legacy unmapped order skipped (create floor)', [
+                        'woo_order_id' => $wooOrderId,
+                        'floor' => $floor,
+                        'correlation_id' => $correlationId,
+                    ]);
+                    $this->logEvent('crm.deal.legacy_unmapped', $wooOrderId, $status, $correlationId);
 
-            // ── Company (optional — only when billing.company non-empty) ──
-            $companyId = '';
-            $companyTitle = trim((string) ($billing['company'] ?? ''));
-            if ($companyTitle !== '') {
-                $companyPayload = $companyBuilder->build($billing, $correlationId);
-                $companyId = (string) $deduper->findOrCreateCompany(
-                    $companyTitle,
-                    (string) ($billing['postcode'] ?? ''),
-                    $companyPayload,
-                    $correlationId,
-                );
-                event(new BitrixCompanyPushed($companyTitle, $companyId, 'upsert'));
-            }
-
-            // ── Contact (mandatory) ──
-            $contactPayload = $contactBuilder->build($order, $correlationId);
-            $contactId = (string) $deduper->findOrCreateContact($wooCustomerId, $contactPayload, $correlationId);
-            event(new BitrixContactPushed($wooCustomerId, $contactId, 'upsert'));
-
-            // ── Deal ──
-            if ($map === null) {
-                // order.created path: adopt existing (UF_CRM_WOO_ORDER_ID filter) or create.
-                $adoptedId = $deduper->findDealByWooOrderId($wooOrderId, $correlationId);
-                if ($adoptedId !== null) {
-                    $dealId = $adoptedId;
-                    $mode = 'adopted';
-                } else {
-                    $dealPayload = $dealBuilder->build($order, $contactId, $companyId, $correlationId);
-                    $dealId = (string) $client->dealAdd($dealPayload, $correlationId);
-                    $mode = 'created';
+                    return;
                 }
 
-                BitrixEntityMap::updateOrCreate(
-                    ['entity_type' => BitrixEntityMap::ENTITY_DEAL, 'woo_id' => $wooOrderId],
-                    [
-                        'bitrix_id' => $dealId,
-                        'last_status_snapshot' => (string) ($order['status'] ?? 'pending'),
-                        'last_payload_hash' => hash('sha256', (string) json_encode($order)),
-                        'last_correlation_id' => $correlationId,
-                        'last_pushed_at' => now(),
-                        'created_via' => BitrixEntityMap::VIA_PUSH,
-                    ],
-                );
-                event(new BitrixDealPushed($wooOrderId, $dealId, $mode));
+                try {
+                    $map = Cache::lock('crm-order-push:'.$wooOrderId, 120)->block(
+                        $this->lockWaitSeconds,
+                        function () use ($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client): ?BitrixEntityMap {
+                            // Re-read inside the lock: a concurrent worker may have created it.
+                            $existing = $this->realDealMap($wooOrderId);
+                            if ($existing !== null) {
+                                return $existing;
+                            }
 
-                return;
+                            $this->createDeal($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client);
+
+                            return null;
+                        },
+                    );
+                } catch (LockTimeoutException) {
+                    $this->release(15);
+
+                    return;
+                }
+
+                if ($map === null) {
+                    return;
+                }
+                // A concurrent worker created the deal: fall through to the update path.
             }
 
-            // ── order.updated path — map exists ──
+            // ── update path — map exists (regardless of paid status, so paid→cancelled moves the deal) ──
+            // Company/contact upsert preserved from pre-12.1 behaviour (mapped orders only).
+            $this->upsertCompanyAndContact($wooCustomerId, $billing, $order, $correlationId, $deduper, $contactBuilder, $companyBuilder);
+
             $dealId = $map->bitrix_id;
             $newStatus = (string) ($order['status'] ?? '');
             $oldStatus = (string) ($map->last_status_snapshot ?? '');
@@ -206,6 +201,120 @@ class PushOrderToBitrixJob implements ShouldQueue
             $this->fail($e);
         }
         // BitrixTransientException propagates to Laravel's retry machinery (tries=3, $backoff).
+    }
+
+    /**
+     * Company → Contact → Deal create sequence (called inside the per-order lock).
+     *
+     * @param  array<string, mixed>  $billing
+     * @param  array<string, mixed>  $order
+     */
+    private function createDeal(
+        int $wooOrderId,
+        int $wooCustomerId,
+        array $billing,
+        array $order,
+        string $correlationId,
+        EntityDeduper $deduper,
+        DealPayloadBuilder $dealBuilder,
+        ContactPayloadBuilder $contactBuilder,
+        CompanyPayloadBuilder $companyBuilder,
+        BitrixClient $client,
+    ): void {
+        [$companyId, $contactId] = $this->upsertCompanyAndContact($wooCustomerId, $billing, $order, $correlationId, $deduper, $contactBuilder, $companyBuilder);
+
+        // ── Deal: adopt existing (UF_CRM_WOO_ORDER_ID filter) or create ──
+        $adoptedId = $deduper->findDealByWooOrderId($wooOrderId, $correlationId);
+        if ($adoptedId !== null) {
+            $dealId = $adoptedId;
+            $mode = 'adopted';
+        } else {
+            $dealPayload = $dealBuilder->build($order, $contactId, $companyId, $correlationId);
+            $dealId = (string) $client->dealAdd($dealPayload, $correlationId);
+            $mode = 'created';
+        }
+
+        // Shadow-mode sentinel must never be persisted (would poison the map after the flip).
+        if (ShadowId::is($dealId)) {
+            event(new BitrixDealPushed($wooOrderId, $dealId, 'shadow'));
+
+            return;
+        }
+
+        BitrixEntityMap::updateOrCreate(
+            ['entity_type' => BitrixEntityMap::ENTITY_DEAL, 'woo_id' => $wooOrderId],
+            [
+                'bitrix_id' => $dealId,
+                'last_status_snapshot' => (string) ($order['status'] ?? 'pending'),
+                'last_payload_hash' => hash('sha256', (string) json_encode($order)),
+                'last_correlation_id' => $correlationId,
+                'last_pushed_at' => now(),
+                'created_via' => BitrixEntityMap::VIA_PUSH,
+            ],
+        );
+        event(new BitrixDealPushed($wooOrderId, $dealId, $mode));
+    }
+
+    /**
+     * Company (optional) then Contact (mandatory) upsert. Runs for creates and,
+     * as before 12.1, for mapped-order updates.
+     *
+     * @param  array<string, mixed>  $billing
+     * @param  array<string, mixed>  $order
+     * @return array{0: string, 1: string} [companyId, contactId]
+     */
+    private function upsertCompanyAndContact(
+        int $wooCustomerId,
+        array $billing,
+        array $order,
+        string $correlationId,
+        EntityDeduper $deduper,
+        ContactPayloadBuilder $contactBuilder,
+        CompanyPayloadBuilder $companyBuilder,
+    ): array {
+        $companyId = '';
+        $companyTitle = trim((string) ($billing['company'] ?? ''));
+        if ($companyTitle !== '') {
+            $companyPayload = $companyBuilder->build($billing, $correlationId);
+            $companyId = (string) $deduper->findOrCreateCompany(
+                $companyTitle,
+                (string) ($billing['postcode'] ?? ''),
+                $companyPayload,
+                $correlationId,
+            );
+            event(new BitrixCompanyPushed($companyTitle, $companyId, 'upsert'));
+        }
+
+        $contactPayload = $contactBuilder->build($order, $correlationId);
+        $contactId = (string) $deduper->findOrCreateContact($wooCustomerId, $contactPayload, $correlationId);
+        event(new BitrixContactPushed($wooCustomerId, $contactId, 'upsert'));
+
+        return [$companyId, $contactId];
+    }
+
+    /** Deal map row, treating SHADOW-* ids as absent. */
+    private function realDealMap(int $wooOrderId): ?BitrixEntityMap
+    {
+        $map = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_DEAL)
+            ->where('woo_id', $wooOrderId)
+            ->first();
+
+        return ($map !== null && ShadowId::is((string) $map->bitrix_id)) ? null : $map;
+    }
+
+    private function logEvent(string $operation, int $wooOrderId, string $status, string $correlationId): void
+    {
+        app(IntegrationLogger::class)->log([
+            'channel' => 'bitrix',
+            'direction' => 'outbound',
+            'method' => 'POST',
+            'operation' => $operation,
+            'endpoint' => 'crm.deal.add',
+            'request_body' => ['woo_order_id' => $wooOrderId, 'status' => $status, 'topic' => $this->topic],
+            'http_status' => 0,
+            'status' => 'success',
+            'correlation_id' => $correlationId !== '' ? $correlationId : null,
+        ]);
     }
 
     public function failed(Throwable $e): void

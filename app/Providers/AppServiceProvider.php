@@ -157,6 +157,7 @@ use App\Domain\Suggestions\Console\Commands\PruneOrphanSuggestionsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
+use App\Domain\Sync\Commands\BlockSupplierOfferCommand;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
 use App\Domain\Sync\Commands\ProbeSourceabilityGapCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
@@ -766,6 +767,9 @@ class AppServiceProvider extends ServiceProvider
                 // 2026-05-25 — cost-traceability diagnostic: show every supplier
                 // offer for a SKU + which one sets buy_price (cheapest in-stock).
                 ExplainSupplierCostCommand::class,
+                // Quick task 261027-duz — operator CLI for per-(sku, supplier)
+                // offer blocks (supplier SKU collisions → wrong cost).
+                BlockSupplierOfferCommand::class,
                 // 2026-05-25 — catalogue-expansion scan: parts on ≥2 suppliers
                 // not on MS, cached for the dashboard "Products to add" tile.
                 ScanSupplierAddCandidatesCommand::class,

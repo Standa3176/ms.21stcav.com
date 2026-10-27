@@ -86,3 +86,14 @@ foreach (['sales', 'read_only'] as $readerRole) {
         expect(ProductSupplierBlock::count())->toBe(1);
     });
 }
+
+it('rejects a duplicate (sku, supplier) block with a validation error, not a 500', function (): void {
+    ProductSupplierBlock::create(['sku' => '1301222', 'supplier_id' => '12', 'reason' => 'x']);
+    $this->actingAs(supplierBlockUser('admin'));
+
+    Livewire::test(ManageProductSupplierBlocks::class)
+        ->callAction('create', data: ['sku' => '1301222 ', 'supplier_id' => '12', 'reason' => 'again'])
+        ->assertHasActionErrors(['sku']);
+
+    expect(ProductSupplierBlock::count())->toBe(1);
+});

@@ -10,7 +10,6 @@ use App\Domain\CRM\Models\CrmPipelineSetting;
 use App\Domain\CRM\Models\CrmStatusMapping;
 use App\Domain\CRM\Support\BitrixFieldGuards;
 use App\Foundation\Audit\Services\Auditor;
-use Illuminate\Support\Facades\DB;
 
 /**
  * Phase 12.1 Plan 02 — reviewable, idempotent plugin-parity seeder (D-08).
@@ -69,7 +68,7 @@ final class BitrixSeedOrderParityCommand extends BaseCommand
             return self::SUCCESS;
         }
 
-        DB::transaction(fn () => $this->apply($map));
+        CrmPipelineSetting::query()->getConnection()->transaction(fn () => $this->apply($map));
 
         $counts = [
             'pipeline_changes' => count($diff['pipeline']),

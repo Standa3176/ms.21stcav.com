@@ -9,6 +9,7 @@ use App\Domain\CRM\Models\BitrixBackfillRun;
 use App\Domain\CRM\Models\BitrixEntityMap;
 use App\Domain\CRM\Services\BackfillProgressTracker;
 use App\Domain\CRM\Services\BitrixClient;
+use App\Domain\CRM\Support\ShadowId;
 use App\Domain\Sync\Services\WooClient;
 use App\Domain\Webhooks\Models\WebhookReceipt;
 use Illuminate\Bus\Queueable;
@@ -52,12 +53,17 @@ class BackfillOrdersChunkJob implements ShouldQueue
 
     /**
      * @param  array<int, int>  $orderIds  Woo order IDs to process in this chunk.
+     * @param  array<int|string, string>  $legacyDealIds  order_id => legacy deal id, from an operator
+     *                                                    postmeta export (adopt-legacy only). Wins over
+     *                                                    the Woo REST meta_data scan, which usually
+     *                                                    cannot see wp_postmeta (12.1-04).
      */
     public function __construct(
         public readonly array $orderIds,
         public readonly int $backfillRunId,
         public readonly string $mode,
         public readonly ?string $correlationId = null,
+        public readonly array $legacyDealIds = [],
     ) {
         $this->onQueue('sync-bulk');
     }
@@ -141,19 +147,24 @@ class BackfillOrdersChunkJob implements ShouldQueue
     {
         $orderId = (int) $order['id'];
 
-        // Skip if already mapped (idempotent across re-runs).
+        // Skip if already mapped to a REAL deal (idempotent across re-runs).
+        // A SHADOW-* row (D-11 shadow run) is not a mapping: it is overwritten.
         $existing = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_DEAL)
             ->where('woo_id', $orderId)
             ->first();
-        if ($existing !== null) {
+        if ($existing !== null && ! ShadowId::is((string) $existing->bitrix_id)) {
             $tracker->incrementSkipped();
 
             return;
         }
 
-        // Find the legacy deal ID in meta_data[].
+        // Legacy deal id: operator CSV first, else Woo REST meta_data[].
         $legacyDealId = null;
-        foreach ((array) ($order['meta_data'] ?? []) as $meta) {
+        $fromCsv = $this->legacyDealIds[$orderId] ?? $this->legacyDealIds[(string) $orderId] ?? null;
+        if ($fromCsv !== null && $fromCsv !== '') {
+            $legacyDealId = (string) $fromCsv;
+        }
+        foreach ($legacyDealId !== null ? [] : (array) ($order['meta_data'] ?? []) as $meta) {
             $key = (string) ($meta['key'] ?? '');
             if ($key === '_wc_bitrix24_deal_id') {
                 $value = $meta['value'] ?? null;
@@ -172,18 +183,34 @@ class BackfillOrdersChunkJob implements ShouldQueue
             return;
         }
 
-        // Write UF_CRM_WOO_ORDER_ID onto the legacy Bitrix Deal.
-        $bitrix->dealUpdate($legacyDealId, ['UF_CRM_WOO_ORDER_ID' => $orderId], $this->correlationId);
+        // Map row FIRST: it is what PushOrderToBitrixJob consults, so a failed
+        // UF stamp (e.g. portal field missing) can no longer leave the order
+        // unmapped and therefore duplicated after the flip.
+        // While CRM_WRITE_ENABLED=false the stamp below is shadowed (SyncDiff);
+        // only the map row is real, and that is sufficient for cutover.
+        BitrixEntityMap::updateOrCreate(
+            [
+                'entity_type' => BitrixEntityMap::ENTITY_DEAL,
+                'woo_id' => $orderId,
+            ],
+            [
+                'bitrix_id' => $legacyDealId,
+                'last_status_snapshot' => (string) ($order['status'] ?? 'pending'),
+                'last_correlation_id' => $this->correlationId,
+                'last_pushed_at' => now(),
+                'created_via' => BitrixEntityMap::VIA_ADOPTED_LEGACY,
+            ],
+        );
 
-        BitrixEntityMap::create([
-            'entity_type' => BitrixEntityMap::ENTITY_DEAL,
-            'woo_id' => $orderId,
-            'bitrix_id' => $legacyDealId,
-            'last_status_snapshot' => (string) ($order['status'] ?? 'pending'),
-            'last_correlation_id' => $this->correlationId,
-            'last_pushed_at' => now(),
-            'created_via' => BitrixEntityMap::VIA_ADOPTED_LEGACY,
-        ]);
+        try {
+            $bitrix->dealUpdate($legacyDealId, ['UF_CRM_WOO_ORDER_ID' => $orderId], $this->correlationId);
+        } catch (BitrixPermanentException $e) {
+            Log::warning('BackfillOrdersChunkJob: legacy UF stamp failed', [
+                'order_id' => $orderId,
+                'legacy_deal_id' => $legacyDealId,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $tracker->incrementAdoptedLegacy();
         $tracker->incrementProcessed();

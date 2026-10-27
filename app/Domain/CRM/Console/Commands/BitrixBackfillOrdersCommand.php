@@ -50,10 +50,15 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
         {--adopt-legacy-deal-ids : Map legacy _wc_bitrix24_deal_id post_meta into BitrixEntityMap}
         {--chunk=50 : Orders per chunk}
         {--sleep-ms=600 : Milliseconds between page fetches (Bitrix 2 req/sec ceiling)}
+        {--legacy-map-csv= : CSV (header order_id,deal_id) exported from wp_postmeta _wc_bitrix24_deal_id; requires --adopt-legacy-deal-ids}
         {--only-order-id=* : Limit to specific Woo order IDs (comma-separated or repeated flag)}
         {--dry-run : Explicit dry-run (== default; error if combined with --live)}';
 
-    protected $description = 'Replay historical Woo orders into Bitrix (dry-run by default; --live opts in; --adopt-legacy-deal-ids for pre-cutover Pitfall 5)';
+    // --legacy-map-csv: the plugin keeps the deal id in wp_postmeta, which Woo REST may not expose.
+    // Operator (never an agent) exports it read-only on prod; exact SQL is in the 12.1-06 runbook, e.g.
+    //   SELECT post_id AS order_id, meta_value AS deal_id FROM wpb4_postmeta
+    //   WHERE meta_key='_wc_bitrix24_deal_id' AND meta_value<>'';   (add a "order_id,deal_id" header row)
+    protected $description = 'Replay historical Woo orders into Bitrix (dry-run by default; --live opts in; --adopt-legacy-deal-ids [--legacy-map-csv=file] for pre-cutover Pitfall 5)';
 
     protected function perform(): int
     {
@@ -64,8 +69,38 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
             return SymfonyCommand::INVALID;
         }
 
+        $csvPath = $this->option('legacy-map-csv');
+        $legacyMap = [];
+        if ($csvPath !== null && $csvPath !== '') {
+            if (! (bool) $this->option('adopt-legacy-deal-ids')) {
+                $this->error('Error: --legacy-map-csv requires --adopt-legacy-deal-ids.');
+
+                return SymfonyCommand::INVALID;
+            }
+            $errors = [];
+            $legacyMap = $this->parseLegacyMapCsv((string) $csvPath, $errors);
+            if ($errors !== []) {
+                $this->error('Error: invalid --legacy-map-csv, nothing dispatched:');
+                foreach ($errors as $line) {
+                    $this->line('  '.$line);
+                }
+
+                return SymfonyCommand::FAILURE;
+            }
+        }
+
         $sinceRaw = $this->option('since');
         $onlyIds = $this->normaliseOnlyIds((array) $this->option('only-order-id'));
+        if ($legacyMap !== []) {
+            // CSV order ids are the scope; an explicit --only-order-id narrows it.
+            $csvIds = array_keys($legacyMap);
+            $onlyIds = $onlyIds === [] ? $csvIds : array_values(array_intersect($onlyIds, $csvIds));
+            if ($onlyIds === []) {
+                $this->error('Error: --only-order-id matches no order in the CSV.');
+
+                return SymfonyCommand::FAILURE;
+            }
+        }
 
         // --since is REQUIRED unless --only-order-id fully specifies the scope
         // (operator surgical retry path). Everywhere else, missing --since exits 1.
@@ -124,11 +159,11 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
             'correlation_id' => $correlationId,
         ]);
 
-        $this->renderBanner($mode, $since, $chunk, $sleepMs, $onlyIds, $run->id);
+        $this->renderBanner($mode, $since, $chunk, $sleepMs, $onlyIds, $run->id, (string) $csvPath, count($legacyMap));
 
         try {
             if ($onlyIds !== []) {
-                $this->dispatchOnlyIds($onlyIds, $run->id, $mode, $correlationId, $chunk);
+                $this->dispatchOnlyIds($onlyIds, $run->id, $mode, $correlationId, $chunk, $legacyMap);
             } else {
                 /** @var WooClient $woo */
                 $woo = app(WooClient::class);
@@ -188,9 +223,71 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
     }
 
     /**
-     * @param  array<int, int>  $onlyIds
+     * Parse + validate the operator CSV. All-or-nothing: any bad line is
+     * reported and the caller dispatches nothing (T-12.1-14).
+     *
+     * @param  array<int, string>  $errors  filled by reference
+     * @return array<int, string> order_id => deal_id
      */
-    private function dispatchOnlyIds(array $onlyIds, int $runId, string $mode, string $correlationId, int $chunk): void
+    private function parseLegacyMapCsv(string $path, array &$errors): array
+    {
+        if (! is_file($path) || ! is_readable($path)) {
+            $errors[] = 'file not found or unreadable: '.$path;
+
+            return [];
+        }
+
+        $map = [];
+        $file = new \SplFileObject($path, 'r');
+        $file->setFlags(\SplFileObject::READ_CSV | \SplFileObject::SKIP_EMPTY | \SplFileObject::READ_AHEAD | \SplFileObject::DROP_NEW_LINE);
+
+        $lineNo = 0;
+        $headerSeen = false;
+        foreach ($file as $row) {
+            $lineNo++;
+            if (! is_array($row) || $row === [null] || $row === []) {
+                continue;
+            }
+            $row = array_map(static fn ($v) => trim((string) $v, " \t\n\r\0\x0B\xEF\xBB\xBF\"'"), $row);
+            if (! $headerSeen) {
+                $headerSeen = true;
+                if (($row[0] ?? '') !== 'order_id' || ($row[1] ?? '') !== 'deal_id') {
+                    $errors[] = 'line '.$lineNo.': header must be exactly "order_id,deal_id"';
+
+                    return [];
+                }
+
+                continue;
+            }
+            $order = $row[0] ?? '';
+            $deal = $row[1] ?? '';
+            if (count($row) !== 2 || ! ctype_digit($order) || ! ctype_digit($deal) || (int) $order <= 0 || (int) $deal <= 0) {
+                $errors[] = 'line '.$lineNo.': non-numeric or missing ids ('.implode(',', $row).')';
+
+                continue;
+            }
+            if (isset($map[(int) $order])) {
+                $errors[] = 'line '.$lineNo.': duplicate order_id '.$order;
+
+                continue;
+            }
+            $map[(int) $order] = (string) (int) $deal;
+        }
+
+        if (! $headerSeen) {
+            $errors[] = 'file is empty (header order_id,deal_id required)';
+        } elseif ($map === [] && $errors === []) {
+            $errors[] = 'no data rows';
+        }
+
+        return $errors === [] ? $map : [];
+    }
+
+    /**
+     * @param  array<int, int>  $onlyIds
+     * @param  array<int, string>  $legacyMap  order_id => deal_id (adopt-legacy CSV source)
+     */
+    private function dispatchOnlyIds(array $onlyIds, int $runId, string $mode, string $correlationId, int $chunk, array $legacyMap = []): void
     {
         // Bump total_orders counter up front so the tracker's processed/skipped
         // arithmetic makes sense at the summary step.
@@ -202,6 +299,7 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
                 backfillRunId: $runId,
                 mode: $mode,
                 correlationId: $correlationId,
+                legacyDealIds: array_intersect_key($legacyMap, array_flip($slice)),
             );
             $this->info('  Dispatched surgical chunk: '.count($slice).' order(s).');
         }
@@ -279,8 +377,13 @@ final class BitrixBackfillOrdersCommand extends BaseCommand
         int $sleepMs,
         array $onlyIds,
         int $runId,
+        string $csvPath = '',
+        int $csvRows = 0,
     ): void {
         $this->info("Bitrix backfill — run id={$runId}, mode={$mode}");
+        if ($csvPath !== '') {
+            $this->line("  legacy-csv: {$csvPath} ({$csvRows} row(s)) — review the row count before trusting the run");
+        }
         $this->line('  since     : '.($since?->toDateString() ?? '(not used — --only-order-id supplied)'));
         $this->line('  chunk     : '.$chunk);
         $this->line('  sleep-ms  : '.$sleepMs);

@@ -81,6 +81,7 @@ use App\Domain\CRM\Appliers\CrmPushRetryApplier;
 use App\Domain\CRM\Appliers\QuotePushRetryApplier;
 use App\Domain\CRM\Console\Commands\BitrixBackfillOrdersCommand;
 use App\Domain\CRM\Console\Commands\BitrixBootstrapCommand;
+use App\Domain\CRM\Console\Commands\BitrixDiscoverOrderFieldsCommand;
 use App\Domain\CRM\Console\Commands\BitrixQuotesBootstrapCommand;
 use App\Domain\CRM\Console\Commands\BitrixSchemaRefreshCommand;
 use App\Domain\CRM\Console\Commands\BitrixSmokeTestCommand;
@@ -806,6 +807,10 @@ class AppServiceProvider extends ServiceProvider
                 // QUOTE_BITRIX_PUSH_ENABLED=true. Standalone command (NOT an
                 // extension of BitrixBootstrapCommand per B-03 byte-identity).
                 BitrixQuotesBootstrapCommand::class,
+                // Phase 12.1 Plan 02 — read-only Cost / Predicted Margin field
+                // discovery by label (D-07, D-09) + dry-run-first plugin-parity
+                // seeder (D-08) — seed command registered in Task 3.
+                BitrixDiscoverOrderFieldsCommand::class,
                 // Phase 11 Plan 05 (QUOT-08) — quotes:expire scheduled command.
                 // Dry-run-default per cross-cutting invariant 3; --live opt-in.
                 // Scheduled at 00:30 daily Europe/London via routes/console.php;

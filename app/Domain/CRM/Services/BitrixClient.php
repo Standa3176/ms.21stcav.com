@@ -224,6 +224,70 @@ class BitrixClient
     }
 
     /**
+     * Phase 12.1 Plan 02 — list the stages of a deal pipeline (read-only).
+     *
+     * Category 0 (the default pipeline the legacy plugin uses) is served by
+     * crm.status.list with ENTITY_ID=DEAL_STAGE; other categories by
+     * crm.dealcategory.stage.list. Never shadowed — read path.
+     *
+     * @return array<int, array{STATUS_ID: string, NAME: string, SORT: int, SEMANTICS: string}>
+     */
+    public function dealStageList(int $categoryId, ?string $correlationId = null): array
+    {
+        return $this->executeRead(
+            endpoint: $categoryId === 0 ? 'crm.status.list' : 'crm.dealcategory.stage.list',
+            correlationId: $correlationId,
+            request: ['category_id' => $categoryId],
+            callable: function () use ($categoryId): array {
+                $core = $this->sdk()->core;
+                $response = $categoryId === 0
+                    ? $core->call('crm.status.list', ['filter' => ['ENTITY_ID' => 'DEAL_STAGE'], 'order' => ['SORT' => 'ASC']])
+                    : $core->call('crm.dealcategory.stage.list', ['id' => $categoryId]);
+
+                $payload = $response->getResponseData()->getResult();
+                $rows = isset($payload['result']) && is_array($payload['result']) ? $payload['result'] : $payload;
+
+                $out = [];
+                foreach ($rows as $row) {
+                    if (! is_array($row)) {
+                        continue;
+                    }
+                    $out[] = [
+                        'STATUS_ID' => (string) ($row['STATUS_ID'] ?? ''),
+                        'NAME' => (string) ($row['NAME'] ?? ''),
+                        'SORT' => (int) ($row['SORT'] ?? 0),
+                        'SEMANTICS' => (string) ($row['SEMANTICS'] ?? ''),
+                    ];
+                }
+
+                return $out;
+            }
+        );
+    }
+
+    /**
+     * Phase 12.1 Plan 02 — read a deal's product rows (crm.deal.productrows.get).
+     * Used by the 12.1-06 parity comparison. Raw rows (no Money wrapping).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function dealProductRowsGet(int $dealId, ?string $correlationId = null): array
+    {
+        return $this->executeRead(
+            endpoint: 'crm.deal.productrows.get',
+            correlationId: $correlationId,
+            request: ['id' => $dealId],
+            callable: function () use ($dealId): array {
+                $response = $this->sdk()->core->call('crm.deal.productrows.get', ['id' => $dealId]);
+                $payload = $response->getResponseData()->getResult();
+                $rows = $payload['result']['rows'] ?? $payload['result'] ?? $payload;
+
+                return array_values(array_filter((array) $rows, 'is_array'));
+            }
+        );
+    }
+
+    /**
      * Phase 11 Plan 04 — list Bitrix deal categories.
      *
      * Plan 11-04 BitrixQuotesBootstrapCommand consumes this for the

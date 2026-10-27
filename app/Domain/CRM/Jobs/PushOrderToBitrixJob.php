@@ -10,15 +10,23 @@ use App\Domain\CRM\Events\BitrixContactPushed;
 use App\Domain\CRM\Events\BitrixDealPushed;
 use App\Domain\CRM\Exceptions\BitrixPermanentException;
 use App\Domain\CRM\Models\BitrixEntityMap;
+use App\Domain\CRM\Models\CrmPipelineSetting;
 use App\Domain\CRM\Notifications\CrmPushFailedNotification;
 use App\Domain\CRM\Services\BitrixClient;
+use App\Domain\CRM\Services\BitrixSchemaCache;
 use App\Domain\CRM\Services\CompanyPayloadBuilder;
 use App\Domain\CRM\Services\ContactPayloadBuilder;
 use App\Domain\CRM\Services\DealPayloadBuilder;
 use App\Domain\CRM\Services\EntityDeduper;
+use App\Domain\CRM\Services\FieldWhitelister;
+use App\Domain\CRM\Services\OrderDealFinancials;
+use App\Domain\CRM\Services\OrderFinancialsResult;
 use App\Domain\CRM\Services\OrderNoteSynchroniser;
+use App\Domain\CRM\Services\OrderProductRowBuilder;
+use App\Domain\CRM\Support\BitrixFieldGuards;
 use App\Domain\CRM\Support\OrderPaidGate;
 use App\Domain\CRM\Support\ShadowId;
+use App\Domain\Pricing\Services\OrderLineCostLookup;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Webhooks\Models\WebhookReceipt;
 use App\Foundation\Integration\Services\IntegrationLogger;
@@ -57,6 +65,16 @@ use Throwable;
  *     mail to `receives_crm_alerts=true` recipients (5-min Cache::add dedup)
  *   - 3 domain events (BitrixCompanyPushed/ContactPushed/DealPushed) fire
  *     on each successful entity push so Phase 7 can render a timeline
+ *   - 12.1 D-03/D-16: a newly created deal gets product rows (+ shipping row) via
+ *     dealProductRowsSet, TAX_RATE derived per line. Adopted deals are left alone.
+ *   - 12.1 D-04: on order.updated rows are re-set only when the line-items hash
+ *     changed; a deal with no baseline hash (legacy) just gets a baseline.
+ *   - 12.1 D-05/D-06/D-07: Cost + Predicted Margin from stored buy_price, written
+ *     only to the CrmPipelineSetting codes; BOTH omitted (blanked on update) when
+ *     any line is uncosted, flagged as crm.deal.cost_incomplete. Never 0, never
+ *     Actual Margin.
+ *   - 12.1 D-09: a required-field rejection while Cost/PM were blank fails fast as
+ *     crm_push_failed sub_kind 'required_field_blank' (no retry, no 0 fallback).
  */
 class PushOrderToBitrixJob implements ShouldQueue
 {
@@ -71,6 +89,9 @@ class PushOrderToBitrixJob implements ShouldQueue
 
     /** Seconds to wait for the per-order create lock before releasing the job. */
     public int $lockWaitSeconds = 20;
+
+    /** Set when a create was attempted with Cost/PM blanked (D-06); read by the D-09 catch. */
+    private ?OrderFinancialsResult $blankedFinancials = null;
 
     public function __construct(
         public readonly int $webhookReceiptId,
@@ -88,7 +109,15 @@ class PushOrderToBitrixJob implements ShouldQueue
         CompanyPayloadBuilder $companyBuilder,
         BitrixClient $client,
         OrderNoteSynchroniser $notes,
+        ?OrderProductRowBuilder $rowBuilder = null,
+        ?OrderDealFinancials $financials = null,
+        ?OrderLineCostLookup $costLookup = null,
     ): void {
+        $rowBuilder ??= app(OrderProductRowBuilder::class);
+        $financials ??= app(OrderDealFinancials::class);
+        $costLookup ??= app(OrderLineCostLookup::class);
+        $this->blankedFinancials = null;
+
         $receipt = WebhookReceipt::findOrFail($this->webhookReceiptId);
         $correlationId = (string) ($receipt->correlation_id ?? Context::get('correlation_id') ?? '');
         if ($correlationId !== '') {
@@ -134,14 +163,14 @@ class PushOrderToBitrixJob implements ShouldQueue
                 try {
                     $map = Cache::lock('crm-order-push:'.$wooOrderId, 120)->block(
                         $this->lockWaitSeconds,
-                        function () use ($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client): ?BitrixEntityMap {
+                        function () use ($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client, $rowBuilder, $financials, $costLookup): ?BitrixEntityMap {
                             // Re-read inside the lock: a concurrent worker may have created it.
                             $existing = $this->realDealMap($wooOrderId);
                             if ($existing !== null) {
                                 return $existing;
                             }
 
-                            $this->createDeal($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client);
+                            $this->createDeal($wooOrderId, $wooCustomerId, $billing, $order, $correlationId, $deduper, $dealBuilder, $contactBuilder, $companyBuilder, $client, $rowBuilder, $financials, $costLookup);
 
                             return null;
                         },
@@ -178,6 +207,9 @@ class PushOrderToBitrixJob implements ShouldQueue
 
             $notes->appendNewNotes($dealId, $order, $map, $correlationId);
 
+            // 12.1 D-04: product rows + Cost/PM only when line items changed.
+            $this->syncProductRowsOnUpdate($map, $order, $correlationId, $client, $rowBuilder, $financials, $costLookup);
+
             // Always refresh the map snapshot even when stage unchanged.
             $map->update([
                 'last_status_snapshot' => $newStatus !== '' ? $newStatus : $map->last_status_snapshot,
@@ -189,12 +221,17 @@ class PushOrderToBitrixJob implements ShouldQueue
             event(new BitrixDealPushed($wooOrderId, $dealId, 'updated'));
         } catch (BitrixPermanentException $e) {
             // D-11: 4xx/auth failures fail fast — no retries.
+            // D-09: a required-field rejection while D-06 blanked Cost/PM is its own, alerting kind.
+            $blank = $this->blankedFinancials;
+            $requiredBlank = $blank !== null && preg_match('/required|обязател/iu', $e->getMessage()) === 1;
             $this->emitFailedSuggestion(
-                'permanent_validation',
+                $requiredBlank ? 'required_field_blank' : 'permanent_validation',
                 'deal',
                 $wooOrderId,
                 0,
-                $e->getMessage(),
+                $requiredBlank
+                    ? 'Bitrix rejected deal: required field blank (D-06 left Cost/Predicted Margin empty). Missing buy_price for: '.implode(', ', $blank->missingSkus !== [] ? $blank->missingSkus : ['(no product lines)']).'. Resolve per 12.1 runbook D-09 section — do NOT write 0. Bitrix said: '.$e->getMessage()
+                    : $e->getMessage(),
                 $correlationId,
                 $order,
             );
@@ -220,6 +257,9 @@ class PushOrderToBitrixJob implements ShouldQueue
         ContactPayloadBuilder $contactBuilder,
         CompanyPayloadBuilder $companyBuilder,
         BitrixClient $client,
+        OrderProductRowBuilder $rowBuilder,
+        OrderDealFinancials $financials,
+        OrderLineCostLookup $costLookup,
     ): void {
         [$companyId, $contactId] = $this->upsertCompanyAndContact($wooCustomerId, $billing, $order, $correlationId, $deduper, $contactBuilder, $companyBuilder);
 
@@ -230,20 +270,35 @@ class PushOrderToBitrixJob implements ShouldQueue
             $mode = 'adopted';
         } else {
             $dealPayload = $dealBuilder->build($order, $contactId, $companyId, $correlationId);
+            // D-05/D-06/D-07: Cost + Predicted Margin (both or neither), only to the configured codes.
+            $fin = $this->computeFinancials($order, $costLookup, $financials);
+            $dealPayload = array_merge($dealPayload, $this->financialFields($fin, $order, $financials, false, $correlationId));
+            if (! $fin->complete) {
+                $this->blankedFinancials = $fin;
+            }
             $dealId = (string) $client->dealAdd($dealPayload, $correlationId);
             $mode = 'created';
         }
 
         // Shadow-mode sentinel must never be persisted (would poison the map after the flip).
         if (ShadowId::is($dealId)) {
+            // Shadow evidence for the 12.1-06 parity check: the rows SyncDiff shares this correlation id.
+            $shadowRows = $rowBuilder->build($order);
+            if ($shadowRows !== []) {
+                $client->dealProductRowsSet(0, $shadowRows, $correlationId);
+            }
             event(new BitrixDealPushed($wooOrderId, $dealId, 'shadow'));
 
             return;
         }
 
-        BitrixEntityMap::updateOrCreate(
+        $hash = $rowBuilder->lineItemsHash($order);
+        $map = BitrixEntityMap::updateOrCreate(
             ['entity_type' => BitrixEntityMap::ENTITY_DEAL, 'woo_id' => $wooOrderId],
             [
+                // Adopted deals get a baseline hash only (plugin rows stay); created deals get the
+                // hash once the rows call is confirmed below, so a failed rows call is retried.
+                'line_items_hash' => $mode === 'adopted' ? $hash : null,
                 'bitrix_id' => $dealId,
                 'last_status_snapshot' => (string) ($order['status'] ?? 'pending'),
                 'last_payload_hash' => hash('sha256', (string) json_encode($order)),
@@ -252,7 +307,111 @@ class PushOrderToBitrixJob implements ShouldQueue
                 'created_via' => BitrixEntityMap::VIA_PUSH,
             ],
         );
+
+        if ($mode === 'created') {
+            $rows = $rowBuilder->build($order);
+            if ($rows !== []) {
+                $client->dealProductRowsSet((int) $dealId, $rows, $correlationId);
+            }
+            $map->update(['line_items_hash' => $hash]);
+        }
         event(new BitrixDealPushed($wooOrderId, $dealId, $mode));
+    }
+
+    /**
+     * @param  array<string, mixed>  $order
+     */
+    private function computeFinancials(array $order, OrderLineCostLookup $costLookup, OrderDealFinancials $financials): OrderFinancialsResult
+    {
+        $lines = array_values(array_filter((array) ($order['line_items'] ?? []), fn ($l) => is_array($l) && (int) ($l['quantity'] ?? 0) > 0));
+        if ($lines === []) {
+            return new OrderFinancialsResult(false, null, 0, null, []);
+        }
+        $prices = $costLookup->buyPricesForSkus(array_map(fn (array $l) => (string) ($l['sku'] ?? ''), $lines));
+
+        return $financials->compute($lines, $prices);
+    }
+
+    /**
+     * Cost / Predicted Margin fields for the configured codes (D-05..D-07), filtered
+     * through the deal schema whitelist. Logs the D-06 / forbidden-target events.
+     *
+     * @param  array<string, mixed>  $order
+     * @return array<string, string>
+     */
+    private function financialFields(OrderFinancialsResult $fin, array $order, OrderDealFinancials $financials, bool $forUpdate, string $correlationId): array
+    {
+        $wooOrderId = (int) ($order['id'] ?? 0);
+        $status = (string) ($order['status'] ?? '');
+        $pipeline = CrmPipelineSetting::query()->first();
+        $costCode = $pipeline?->deal_cost_field;
+        $marginCode = $pipeline?->deal_predicted_margin_field;
+
+        foreach ([$costCode, $marginCode] as $code) {
+            if ($code !== null && BitrixFieldGuards::isForbiddenTarget((string) $code)) {
+                $this->logEvent('crm.deal.forbidden_field_skipped', $wooOrderId, $status, $correlationId, ['field' => (string) $code]);
+            }
+        }
+        if (! $fin->complete && $fin->missingSkus !== []) {
+            $this->logEvent('crm.deal.cost_incomplete', $wooOrderId, $status, $correlationId, ['missing_skus' => $fin->missingSkus]);
+        }
+
+        $schema = app(BitrixSchemaCache::class);
+        $fields = $financials->fieldsFor(
+            $fin,
+            $costCode,
+            $marginCode,
+            $schema->fieldsFor(BitrixSchemaCache::ENTITY_DEAL),
+            (string) ($order['currency'] ?? 'GBP'),
+            $forUpdate,
+        );
+        if ($fields === []) {
+            return [];
+        }
+
+        return FieldWhitelister::filter($fields, $schema, app(IntegrationLogger::class), BitrixSchemaCache::ENTITY_DEAL, 'crm.deal.builder', $correlationId !== '' ? $correlationId : null);
+    }
+
+    /**
+     * D-04: re-set product rows (and recompute Cost/PM) only when the line-items hash
+     * changed. A legacy/adopted deal without a baseline just gets one. A push-created
+     * deal without a hash means the rows call never confirmed, so it counts as changed.
+     *
+     * @param  array<string, mixed>  $order
+     */
+    private function syncProductRowsOnUpdate(
+        BitrixEntityMap $map,
+        array $order,
+        string $correlationId,
+        BitrixClient $client,
+        OrderProductRowBuilder $rowBuilder,
+        OrderDealFinancials $financials,
+        OrderLineCostLookup $costLookup,
+    ): void {
+        $hash = $rowBuilder->lineItemsHash($order);
+        $stored = $map->line_items_hash;
+
+        if ($stored === $hash) {
+            return;
+        }
+        if ($stored === null && $map->created_via !== BitrixEntityMap::VIA_PUSH) {
+            $map->update(['line_items_hash' => $hash]);
+
+            return;
+        }
+
+        $rows = $rowBuilder->build($order);
+        if ($rows !== []) {
+            $client->dealProductRowsSet((int) $map->bitrix_id, $rows, $correlationId);
+        }
+
+        $fin = $this->computeFinancials($order, $costLookup, $financials);
+        $fields = $this->financialFields($fin, $order, $financials, true, $correlationId);
+        if ($fields !== []) {
+            $client->dealUpdate((string) $map->bitrix_id, $fields, $correlationId);
+        }
+
+        $map->update(['line_items_hash' => $hash]);
     }
 
     /**
@@ -302,7 +461,7 @@ class PushOrderToBitrixJob implements ShouldQueue
         return ($map !== null && ShadowId::is((string) $map->bitrix_id)) ? null : $map;
     }
 
-    private function logEvent(string $operation, int $wooOrderId, string $status, string $correlationId): void
+    private function logEvent(string $operation, int $wooOrderId, string $status, string $correlationId, array $extra = []): void
     {
         app(IntegrationLogger::class)->log([
             'channel' => 'bitrix',
@@ -310,7 +469,7 @@ class PushOrderToBitrixJob implements ShouldQueue
             'method' => 'POST',
             'operation' => $operation,
             'endpoint' => 'crm.deal.add',
-            'request_body' => ['woo_order_id' => $wooOrderId, 'status' => $status, 'topic' => $this->topic],
+            'request_body' => array_merge(['woo_order_id' => $wooOrderId, 'status' => $status, 'topic' => $this->topic], $extra),
             'http_status' => 0,
             'status' => 'success',
             'correlation_id' => $correlationId !== '' ? $correlationId : null,

@@ -78,6 +78,7 @@ function mockBitrixClientForPush(): \Mockery\MockInterface
         'UF_CRM_WOO_BILLING_PHONE' => [], 'UF_CRM_WOO_LINE_ITEMS_SUMMARY' => [], 'UF_CRM_WOO_PAYMENT_METHOD' => [],
         'UF_CRM_WOO_UTM_SOURCE' => [], 'UF_CRM_WOO_UTM_MEDIUM' => [], 'UF_CRM_WOO_UTM_CAMPAIGN' => [],
         'UF_CRM_WOO_UTM_TERM' => [], 'UF_CRM_WOO_UTM_CONTENT' => [], 'UF_CRM_WOO_GA_CID' => [],
+        'UF_CRM_COST' => ['type' => 'money'], 'UF_CRM_PM' => ['type' => 'double'], 'UF_CRM_1610623973323' => ['type' => 'money'],
     ]);
     $client->shouldReceive('contactFieldsGet')->zeroOrMoreTimes()->andReturn([
         'NAME' => [], 'LAST_NAME' => [], 'EMAIL' => [], 'PHONE' => [],
@@ -437,4 +438,256 @@ it('failed() hook writes push_exhausted suggestion and dispatches AlertDistribut
 
     expect(Suggestion::where('kind', 'crm_push_failed')->count())->toBe(2);
     Notification::assertSentTimes(CrmPushFailedNotification::class, 1); // still only 1
+});
+
+/*
+|--------------------------------------------------------------------------
+| Phase 12.1 Plan 03 — product rows, Cost / Predicted Margin (D-03..D-09, D-16)
+|--------------------------------------------------------------------------
+*/
+
+/** @return array<int, array<string, mixed>> */
+function costedOrderLines(): array
+{
+    return [
+        ['id' => 1, 'name' => 'Poly X50', 'product_id' => 10, 'variation_id' => 0, 'sku' => 'SKU-A', 'quantity' => 2, 'subtotal' => '100.00', 'total' => '100.00', 'total_tax' => '20.00'],
+        ['id' => 2, 'name' => 'HDMI cable', 'product_id' => 11, 'variation_id' => 0, 'sku' => 'SKU-B', 'quantity' => 1, 'subtotal' => '50.00', 'total' => '50.00', 'total_tax' => '10.00'],
+    ];
+}
+
+function seedCostCodes(?string $cost = 'UF_CRM_COST', ?string $margin = 'UF_CRM_PM'): void
+{
+    CrmPipelineSetting::query()->first()->update(['deal_cost_field' => $cost, 'deal_predicted_margin_field' => $margin]);
+}
+
+function seedBuyPrices(array $bySku): void
+{
+    foreach ($bySku as $sku => $price) {
+        \App\Domain\Products\Models\Product::factory()->create(['sku' => $sku, 'buy_price' => $price]);
+    }
+}
+
+it('12.1-03: create writes product rows, Cost and Predicted Margin to the configured codes', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $captured = null;
+    $client->shouldReceive('dealAdd')->once()->withArgs(function (array $payload) use (&$captured) {
+        $captured = $payload;
+
+        return true;
+    })->andReturn('1234');
+    $client->shouldReceive('dealProductRowsSet')->once()->withArgs(fn ($id, $rows) => $id === 1234 && count($rows) === 2 && $rows[0]['PRODUCT_NAME'] === 'Poly X50');
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect($captured['UF_CRM_COST'])->toBe('80.50|GBP')
+        ->and($captured['UF_CRM_PM'])->toBe('69.50')
+        ->and($captured)->not->toHaveKey('UF_CRM_1610623973323');
+    $map = BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->first();
+    expect($map->line_items_hash)->toBe(app(\App\Domain\CRM\Services\OrderProductRowBuilder::class)->lineItemsHash(json_decode($receipt->raw_body, true)));
+});
+
+it('12.1-03: an uncosted SKU omits both fields, flags cost_incomplete, still creates the deal', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000']);
+    $client = mockBitrixClientForPush();
+    expectCreateCalls($client, '77');
+    $client->shouldReceive('dealProductRowsSet')->once();
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    $event = \App\Foundation\Integration\Models\IntegrationEvent::where('operation', 'crm.deal.cost_incomplete')->first();
+    expect($event)->not->toBeNull()
+        ->and($event->request_body['missing_skus'])->toBe(['SKU-B'])
+        ->and($event->request_body['woo_order_id'])->toBe(42);
+    expect(BitrixEntityMap::where('woo_id', 42)->where('entity_type', 'deal')->exists())->toBeTrue();
+});
+
+it('12.1-03: never sends the Actual Margin field even if configured', function (): void {
+    seedCostCodes('UF_CRM_1610623973323', 'UF_CRM_PM');
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $captured = null;
+    $client->shouldReceive('dealAdd')->once()->withArgs(function (array $payload) use (&$captured) {
+        $captured = $payload;
+
+        return true;
+    })->andReturn('5');
+    $client->shouldReceive('dealProductRowsSet')->once();
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect($captured)->not->toHaveKey('UF_CRM_1610623973323')->and($captured)->not->toHaveKey('UF_CRM_PM');
+    expect(\App\Foundation\Integration\Models\IntegrationEvent::where('operation', 'crm.deal.forbidden_field_skipped')->exists())->toBeTrue();
+});
+
+it('12.1-03: an adopted deal gets a baseline hash only (no rows, no cost)', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealList')->andReturn([['ID' => '999']]);
+    $client->shouldNotReceive('dealAdd');
+    $client->shouldNotReceive('dealProductRowsSet');
+    $client->shouldNotReceive('dealUpdate');
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    $map = BitrixEntityMap::where('entity_type', 'deal')->where('woo_id', 42)->first();
+    expect($map)->not->toBeNull()->and($map->bitrix_id)->toBe('999')->and($map->line_items_hash)->not->toBeNull();
+});
+
+it('12.1-03: update with an unchanged hash does not touch product rows', function (): void {
+    Queue::fake();
+    $order = ['line_items' => costedOrderLines()];
+    $hash = app(\App\Domain\CRM\Services\OrderProductRowBuilder::class)->lineItemsHash($order);
+    BitrixEntityMap::factory()->dealFor(42, 'D1')->create(['line_items_hash' => $hash]);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealGet')->zeroOrMoreTimes()->andReturn(['COMMENTS' => '']);
+    $client->shouldNotReceive('dealProductRowsSet');
+    $client->shouldNotReceive('dealUpdate');
+
+    $receipt = makeOrderReceiptForPush($order, 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(true)->toBeTrue();
+});
+
+it('12.1-03: update with a changed hash re-sets rows and recomputes Cost/PM', function (): void {
+    Queue::fake();
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    BitrixEntityMap::factory()->dealFor(42, 'D1')->create(['line_items_hash' => str_repeat('a', 64)]);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealGet')->zeroOrMoreTimes()->andReturn(['COMMENTS' => '']);
+    $client->shouldReceive('dealProductRowsSet')->once()->withArgs(fn ($id, $rows) => is_int($id) && count($rows) === 2);
+    $client->shouldReceive('dealUpdate')->once()->withArgs(fn ($id, $fields) => $id === 'D1' && $fields === ['UF_CRM_COST' => '80.50|GBP', 'UF_CRM_PM' => '69.50']);
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(BitrixEntityMap::where('woo_id', 42)->value('line_items_hash'))->not->toBe(str_repeat('a', 64));
+});
+
+it('12.1-03: update with an incomplete cost blanks both fields', function (): void {
+    Queue::fake();
+    seedCostCodes();
+    BitrixEntityMap::factory()->dealFor(42, 'D1')->create(['line_items_hash' => str_repeat('a', 64)]);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealGet')->zeroOrMoreTimes()->andReturn(['COMMENTS' => '']);
+    $client->shouldReceive('dealProductRowsSet')->once();
+    $client->shouldReceive('dealUpdate')->once()->withArgs(fn ($id, $fields) => $fields === ['UF_CRM_COST' => '', 'UF_CRM_PM' => '']);
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+});
+
+it('12.1-03: a legacy adopted deal with no hash gets a baseline and its rows are left alone', function (): void {
+    Queue::fake();
+    BitrixEntityMap::factory()->dealFor(42, 'D1')->create(['line_items_hash' => null, 'created_via' => BitrixEntityMap::VIA_ADOPTED_LEGACY]);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealGet')->zeroOrMoreTimes()->andReturn(['COMMENTS' => '']);
+    $client->shouldNotReceive('dealProductRowsSet');
+    $client->shouldNotReceive('dealUpdate');
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()], 'order.updated');
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.updated', 0), $client);
+
+    expect(BitrixEntityMap::where('woo_id', 42)->value('line_items_hash'))->not->toBeNull();
+});
+
+it('12.1-03 D-09: a required-field rejection with blanked Cost/PM fails fast as required_field_blank', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $sent = [];
+    $client->shouldReceive('dealAdd')->once()->withArgs(function (array $payload) use (&$sent) {
+        $sent[] = $payload;
+
+        return true;
+    })->andThrow(new BitrixPermanentException('Required fields: Cost'));
+    $client->shouldNotReceive('dealProductRowsSet');
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    $job = Mockery::mock(PushOrderToBitrixJob::class.'[fail]', [$receipt->id, 'order.created', 0])->shouldAllowMockingProtectedMethods();
+    $job->shouldReceive('fail')->once();
+    runOrderPush($job, $client);
+
+    $s = Suggestion::where('kind', 'crm_push_failed')->first();
+    expect($s->payload['sub_kind'])->toBe('required_field_blank')
+        ->and($s->payload['error_message'])->toContain('SKU-B')
+        ->and($sent)->toHaveCount(1)
+        ->and(json_encode($sent))->not->toContain('0.00|GBP');
+});
+
+it('12.1-03 D-09: the same rejection with complete financials stays permanent_validation', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('dealAdd')->once()->andThrow(new BitrixPermanentException('Required fields: Cost'));
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    $job = Mockery::mock(PushOrderToBitrixJob::class.'[fail]', [$receipt->id, 'order.created', 0])->shouldAllowMockingProtectedMethods();
+    $job->shouldReceive('fail')->once();
+    runOrderPush($job, $client);
+
+    expect(Suggestion::where('kind', 'crm_push_failed')->first()->payload['sub_kind'])->toBe('permanent_validation');
+});
+
+it('12.1-03: shadow mode sends rows with deal id 0, includes cost keys in the add payload, and persists no map', function (): void {
+    seedCostCodes();
+    seedBuyPrices(['SKU-A' => '30.0000', 'SKU-B' => '20.5000']);
+    $client = mockBitrixClientForPush();
+    $client->shouldReceive('companyAdd')->andReturn('CMP1');
+    $client->shouldReceive('contactAdd')->andReturn('C1');
+    $client->shouldReceive('dealList')->andReturn([]);
+    $client->shouldReceive('duplicateFindByComm')->zeroOrMoreTimes()->andReturn(['CONTACT' => []]);
+    $captured = null;
+    $client->shouldReceive('dealAdd')->once()->withArgs(function (array $payload) use (&$captured) {
+        $captured = $payload;
+
+        return true;
+    })->andReturn('SHADOW-abc');
+    $client->shouldReceive('dealProductRowsSet')->once()->withArgs(fn ($id, $rows) => $id === 0 && count($rows) === 2);
+
+    $receipt = makeOrderReceiptForPush(['line_items' => costedOrderLines()]);
+    runOrderPush(new PushOrderToBitrixJob($receipt->id, 'order.created', 0), $client);
+
+    expect($captured)->toHaveKeys(['UF_CRM_COST', 'UF_CRM_PM'])
+        ->and(BitrixEntityMap::where('entity_type', 'deal')->count())->toBe(0);
 });

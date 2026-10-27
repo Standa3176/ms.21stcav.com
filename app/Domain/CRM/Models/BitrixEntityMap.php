@@ -27,6 +27,7 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $bitrix_id        VARCHAR(64) — never cast to int (Pitfall 3)
  * @property string|null $email_hash  sha256(mb_strtolower(email))
  * @property string|null $last_payload_hash
+ * @property string|null $line_items_hash  12.1 D-04 — hash of line items last pushed as deal product rows
  * @property string|null $last_status_snapshot
  * @property \Illuminate\Support\Carbon $last_pushed_at
  * @property string|null $last_correlation_id
@@ -62,6 +63,7 @@ final class BitrixEntityMap extends Model
         'bitrix_id',
         'email_hash',
         'last_payload_hash',
+        'line_items_hash',
         'last_status_snapshot',
         'notes_hash_set',
         'last_pushed_at',

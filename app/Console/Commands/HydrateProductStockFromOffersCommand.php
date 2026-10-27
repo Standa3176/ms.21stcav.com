@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Services\ProductSupplierBlockResolver;
+use App\Domain\Sync\Services\SupplierCostOutlierGuard;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -163,8 +165,17 @@ class HydrateProductStockFromOffersCommand extends BaseCommand
         $updatedOutOfStock = 0;
         $unchanged = 0;
         $errors = 0;
+        $heldOutliers = 0;
         /** @var array<int, array{0:string,1:int,2:int,3:string,4:string,5:string}> */
         $samples = [];
+
+        // 261027-duz — offer blocks + cost outlier guard. Resolved here (not the
+        // constructor) so the test's container swap of the freshness resolver
+        // keeps working.
+        $blocks = app(ProductSupplierBlockResolver::class);
+        $blocks->forget();
+        $guardEnabled = (bool) config('supplier.cost_outlier_guard.enabled', true);
+        $guardRatio = (float) config('supplier.cost_outlier_guard.ratio', 3);
 
         // ── 6. Per-product loop ──────────────────────────────────────────────
         foreach ($q->cursor() as $product) {
@@ -177,19 +188,51 @@ class HydrateProductStockFromOffersCommand extends BaseCommand
                 continue;
             }
 
+            // 261027-duz — this command is the SECOND buy_price writer (07:20,
+            // 20 minutes after supplier:db-sync). Operator-blocked (sku, supplier)
+            // offers are dropped here too, or a blocked price would re-enter cost.
+            $blocked = array_map('strval', array_keys($blocks->blocksFor($key)));
+
             // Cheapest fresh in-stock offer — mirrors buildBestOfferMap.
-            $offer = DB::table(self::SOURCE_TABLE)
+            $offerQuery = fn () => DB::table(self::SOURCE_TABLE)
                 ->where('sku', $key)
                 ->whereIn('supplier_id', $freshIdsForQuery)
+                ->when($blocked !== [], fn ($q) => $q->whereNotIn('supplier_id', $blocked))
                 ->where('stock', '>', 0)
                 ->orderBy('price', 'asc')
-                ->orderByDesc('recorded_at')
-                ->first();
+                ->orderByDesc('recorded_at');
+
+            $offer = $offerQuery()->first();
+
+            // 261027-duz — cost outlier guard (same rule as buildBestOfferMap).
+            // If the cheapest offer is < 1/ratio of the lower median of the other
+            // suppliers, leave buy_price untouched and take stock from the
+            // cheapest in-stock NON-outlier supplier. No ImportIssue here —
+            // supplier:db-sync at 07:00 already raised it.
+            $holdBuyPrice = false;
+            if ($offer !== null && $guardEnabled) {
+                $outlierSid = (string) $offer->supplier_id;
+                $hit = SupplierCostOutlierGuard::detect(
+                    $this->latestPricesBySupplier($key, $freshIdsForQuery, $blocked, $outlierSid, (float) $offer->price),
+                    $outlierSid,
+                    $guardRatio,
+                );
+                if ($hit !== null) {
+                    $holdBuyPrice = true;
+                    $heldOutliers++;
+                    Log::info('hydrate_stock.cost_outlier_held', [
+                        'product_id' => $product->id,
+                        'sku' => $product->sku,
+                        'evidence' => $hit,
+                    ]);
+                    $offer = $offerQuery()->where('supplier_id', '!=', $outlierSid)->first();
+                }
+            }
 
             if ($offer !== null) {
                 $newStockQty = (int) $offer->stock;
                 $newStockStatus = 'instock';
-                $newBuyPrice = $offer->price;
+                $newBuyPrice = $holdBuyPrice ? null : $offer->price; // null = leave buy_price untouched
                 $outcome = 'in_stock';
             } else {
                 $newStockQty = 0;
@@ -287,9 +330,49 @@ class HydrateProductStockFromOffersCommand extends BaseCommand
                 ['updated_out_of_stock', $updatedOutOfStock],
                 ['unchanged', $unchanged],
                 ['errors', $errors],
+                ['cost_outlier_held', $heldOutliers],
             ],
         );
 
         return SymfonyCommand::SUCCESS;
+    }
+
+    /**
+     * 261027-duz — lowest positive price per supplier for a key, from fresh, IN-STOCK,
+     * non-blocked snapshot rows at that key's latest recorded_at. The chosen
+     * offer's own price is folded in so the guard always evaluates the price
+     * that would actually be written.
+     *
+     * @param  array<int, string>  $freshIds
+     * @param  array<int, string>  $blocked
+     * @return array<string, float>
+     */
+    private function latestPricesBySupplier(string $key, array $freshIds, array $blocked, string $chosenSid, float $chosenPrice): array
+    {
+        $base = fn () => DB::table(self::SOURCE_TABLE)
+            ->where('sku', $key)
+            ->whereIn('supplier_id', $freshIds)
+            ->when($blocked !== [], fn ($q) => $q->whereNotIn('supplier_id', $blocked))
+            ->where('stock', '>', 0) // same pool as the offer pick (in-stock only)
+            ->where('price', '>', 0);
+
+        $latest = $base()->max('recorded_at');
+
+        $prices = [];
+        if ($latest !== null) {
+            foreach ($base()->where('recorded_at', $latest)->get(['supplier_id', 'price']) as $r) {
+                $sid = (string) $r->supplier_id;
+                $p = (float) $r->price;
+                if (! isset($prices[$sid]) || $p < $prices[$sid]) {
+                    $prices[$sid] = $p;
+                }
+            }
+        }
+
+        if ($chosenPrice > 0 && (! isset($prices[$chosenSid]) || $chosenPrice < $prices[$chosenSid])) {
+            $prices[$chosenSid] = $chosenPrice;
+        }
+
+        return $prices;
     }
 }

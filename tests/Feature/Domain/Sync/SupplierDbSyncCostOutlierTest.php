@@ -220,3 +220,27 @@ it('resolveBuyForProduct returns the row buy for a non-outlier row and writes no
     expect(makeOutlierSyncCommand()->resolveBuyForProduct($p, '1301222', $row, (string) Str::uuid(), dryRun: false))->toBe('90.00')
         ->and(ImportIssue::count())->toBe(0);
 });
+
+it('compares like with like: an out-of-stock expensive supplier does not flag a cheap in-stock one (MUYHSMFFADW)', function (): void {
+    config(['supplier.cost_outlier_guard.enabled' => true]);
+
+    $map = makeOutlierSyncCommand()->buildBestOfferMap([
+        ['mpn' => 'PART-X', 'suppliersku' => 'ING-1', 'supplierid' => '1', 'supplier_name' => 'Ingram', 'price' => '0.42', 'stock' => '15'],
+        ['mpn' => 'PART-X', 'suppliersku' => 'WC-9', 'supplierid' => '2', 'supplier_name' => 'Westcoast', 'price' => '4.78', 'stock' => '0'],
+    ]);
+
+    expect($map['part-x']['cost_outlier'])->toBeNull()
+        ->and($map['part-x']['buy'])->toBe('0.42')
+        ->and($map['part-x']['stock'])->toBe(15);
+});
+
+it('on the nothing-in-stock fallback the pool is every supplier (still fires)', function (): void {
+    config(['supplier.cost_outlier_guard.enabled' => true]);
+
+    $rows = array_map(static fn (array $r): array => ['stock' => '0'] + $r, outlierYealinkRows());
+    $map = makeOutlierSyncCommand()->buildBestOfferMap($rows);
+
+    expect($map['1301222']['in_stock'])->toBeFalse()
+        ->and($map['1301222']['cost_outlier'])->not->toBeNull()
+        ->and($map['1301222']['stock'])->toBe(0);
+});

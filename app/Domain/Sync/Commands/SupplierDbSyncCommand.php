@@ -8,11 +8,13 @@ use App\Console\Commands\BaseCommand;
 use App\Domain\Integrations\Enums\IntegrationCredentialKind;
 use App\Domain\Integrations\Services\IntegrationCredentialResolver;
 use App\Domain\Products\Models\Product;
-use App\Domain\Products\Models\ProductSupplierSku;
 use App\Domain\Products\Models\ProductPriceSnapshot;
+use App\Domain\Products\Models\ProductSupplierSku;
 use App\Domain\Products\Models\SupplierOfferSnapshot;
 use App\Domain\Sync\Concerns\JoinsStockSeparate;
 use App\Domain\Sync\Models\ImportIssue;
+use App\Domain\Sync\Services\ProductSupplierBlockResolver;
+use App\Domain\Sync\Services\SupplierCostOutlierGuard;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use Illuminate\Database\QueryException;
@@ -62,6 +64,22 @@ use Symfony\Component\Console\Command\Command as SymfonyCommand;
  * excluded supplier carried yields no offer (key absent), flowing through the
  * existing no-fresh-source handling — same behaviour as all-stale.
  *
+ * 261027-duz extension: supplier SKU collisions. Incident 2026-10-27 — Yealink
+ * T74U (local SKU 1301222, product 5969) sold at £10.80 inc VAT against an
+ * £88.20 cost because Midwich's code 1301222 is an unrelated £7.20 item. Two
+ * mechanisms, both at the COST SOURCE (pricing:undercut-competitors reprices
+ * from buy_price and ignores exclude_from_auto_update/pin_price):
+ *   1. Per-(key, supplier) offer blocks (product_supplier_blocks via
+ *      ProductSupplierBlockResolver) — the blocked supplier's row is skipped for
+ *      THAT key only (price AND stock); it still counts under its other keys.
+ *   2. SupplierCostOutlierGuard — when the cheapest offer is < 1/ratio of the
+ *      lower median of the other suppliers' prices, the map entry carries
+ *      `cost_outlier` evidence, the outlier supplier's stock is not counted, and
+ *      resolveBuyForProduct HOLDS the existing buy_price + raises a
+ *      supplier_cost_outlier ImportIssue. config('supplier.cost_outlier_guard').
+ * products:hydrate-stock-from-offers (the second buy_price writer, 07:20)
+ * applies both too.
+ *
  * Always filters product_excluded=0. mysqli is used directly (NOT a registered
  * Laravel connection) so this command does not pollute config/database.php for
  * what is a per-run external query.
@@ -93,14 +111,22 @@ final class SupplierDbSyncCommand extends BaseCommand
      */
     private readonly SupplierExclusionResolver $exclusion;
 
+    /**
+     * 261027-duz — per-(key, supplier) offer blocks. Nullable, container-resolved
+     * when null (same back-compat rule as $exclusion).
+     */
+    private readonly ProductSupplierBlockResolver $blocks;
+
     public function __construct(
         private readonly IntegrationCredentialResolver $resolver,
         private readonly SupplierFreshnessResolver $freshness,
         private readonly bool $excludeStaleSuppliersFromBuyPrice = true,
         ?SupplierExclusionResolver $exclusion = null,
+        ?ProductSupplierBlockResolver $blocks = null,
     ) {
         parent::__construct();
         $this->exclusion = $exclusion ?? app(SupplierExclusionResolver::class);
+        $this->blocks = $blocks ?? app(ProductSupplierBlockResolver::class);
     }
 
     protected function perform(): int
@@ -117,6 +143,9 @@ final class SupplierDbSyncCommand extends BaseCommand
         // every STALE_COST_NO_SUPPLIER ImportIssue written below. import_issues
         // .correlation_id is NOT NULL and this command has none today.
         $correlationId = (string) Str::uuid();
+
+        // 261027-duz — always read the current offer blocks for this run.
+        $this->blocks->forget();
 
         // ── Resolve credentials ──
         $creds = $this->resolver->for(IntegrationCredentialKind::SupplierDb);
@@ -271,11 +300,13 @@ final class SupplierDbSyncCommand extends BaseCommand
         $flaggedStaleCost = 0;
         $wouldFlagStaleCost = 0;
         $matchedViaAlias = 0;
+        $heldOutlier = 0;
+        $wouldHoldOutlier = 0;
 
         Product::whereNotNull('sku')->orderBy('id')->chunk(500, function ($batch) use (
             &$matched, &$unmatched, &$updated, &$unchanged, &$errored, &$wouldUpdate,
             &$processed, &$flaggedObsolete, &$wouldFlagObsolete, &$flaggedStaleCost, &$wouldFlagStaleCost,
-            &$matchedViaAlias,
+            &$matchedViaAlias, &$heldOutlier, &$wouldHoldOutlier,
             $map, $listedKeys, $dryRun, $limit, $flagObsolete, $correlationId, $aliasesByProductId
         ) {
             foreach ($batch as $local) {
@@ -336,8 +367,27 @@ final class SupplierDbSyncCommand extends BaseCommand
 
                 // Pre-computed by buildBestOfferMap: cheapest IN-STOCK price
                 // (fallback cheapest overall) + total stock across suppliers.
-                $newBuy = $row['buy'];     // string|null (parsePrice form)
+                // 261027-duz — an outlier key HOLDS the existing buy_price (and
+                // raises a supplier_cost_outlier ImportIssue) instead of adopting
+                // the suspiciously cheap offer.
+                $newBuy = $this->resolveBuyForProduct($local, $key, $row, $correlationId, $dryRun); // string|null
                 $newStock = $row['stock']; // int|null
+
+                if (($row['cost_outlier'] ?? null) !== null) {
+                    if ($dryRun) {
+                        $wouldHoldOutlier++;
+                    } else {
+                        $heldOutlier++;
+                    }
+                    Log::warning('supplier_db_sync.cost_outlier_held', [
+                        'product_id' => $local->id,
+                        'sku' => $local->sku,
+                        'key' => $key,
+                        'held_buy_price' => $newBuy,
+                        'dry_run' => $dryRun,
+                        'evidence' => $row['cost_outlier'],
+                    ]);
+                }
 
                 // Normalise existing values for comparison. buy_price is cast
                 // to decimal:4 so it returns "60.0000" on the model — compare
@@ -426,7 +476,7 @@ final class SupplierDbSyncCommand extends BaseCommand
         // ── Summary ──
         $this->info(str_repeat('-', 60));
         $this->info(sprintf(
-            'Done. matched=%d (via_alt_sku=%d) unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d %s%s',
+            'Done. matched=%d (via_alt_sku=%d) unmatched=%d updated=%d unchanged=%d errored=%d offer_snapshots=%d %s %s%s',
             $matched,
             $matchedViaAlias,
             $unmatched,
@@ -435,6 +485,7 @@ final class SupplierDbSyncCommand extends BaseCommand
             $errored,
             $offerSnapshotsWritten,
             $dryRun ? "would_flag_stale_cost={$wouldFlagStaleCost}" : "stale_cost={$flaggedStaleCost}",
+            $dryRun ? "would_hold_cost_outlier={$wouldHoldOutlier}" : "cost_outlier_held={$heldOutlier}",
             $dryRun ? " would_update={$wouldUpdate}" : '',
         ));
 
@@ -532,6 +583,80 @@ final class SupplierDbSyncCommand extends BaseCommand
         );
 
         return 'flagged';
+    }
+
+    /**
+     * Quick task 261027-duz — the buy_price this product should take from its
+     * best-offer map row.
+     *
+     * No outlier → the row's cheapest price, unchanged behaviour. Outlier (the
+     * cheapest offer is < 1/ratio of the lower median of the other suppliers)
+     * → the EXISTING buy_price is held (null stays null — a null cost already
+     * makes pricing skip the product), and unless dry-run an unresolved
+     * supplier_cost_outlier ImportIssue is written/refreshed with the evidence.
+     *
+     * Deliberately NOT gated by hasAutoUpdateCarveOut(): the 08:00
+     * pricing:undercut-competitors run ignores exclude_from_auto_update /
+     * pin_price, so carve-out products need the hold as much as anyone.
+     *
+     * Public so the decision is testable without the mysqli remote pull.
+     *
+     * @param  array<string, mixed>  $row  a buildBestOfferMap entry
+     */
+    public function resolveBuyForProduct(Product $local, string $key, array $row, string $correlationId, bool $dryRun): ?string
+    {
+        /** @var array<string, mixed>|null $outlier */
+        $outlier = $row['cost_outlier'] ?? null;
+        if ($outlier === null) {
+            return $row['buy'] ?? null;
+        }
+
+        $existing = $local->buy_price === null ? null : (string) $local->buy_price;
+
+        if ($dryRun) {
+            return $existing;
+        }
+
+        $chosenPrice = (float) $outlier['chosen_price'];
+        $ratio = (float) $outlier['ratio'];
+        $ratioLabel = rtrim(rtrim(number_format($ratio, 2, '.', ''), '0'), '.');
+        $chosenLabel = (string) ($outlier['chosen_supplier'] ?? $outlier['chosen_supplier_id']);
+
+        $notes = sprintf(
+            'SKU %s (key %s): cheapest offer %s (%s) £%s is < 1/%s of the median of other suppliers (£%s) — buy_price held at %s (261027-duz). Check for a supplier SKU collision; block with supplier:block-offer.',
+            (string) $local->sku,
+            $key,
+            $chosenLabel,
+            (string) $outlier['chosen_supplier_id'],
+            number_format($chosenPrice, 2, '.', ''),
+            $ratioLabel,
+            number_format((float) $outlier['median_of_others'], 2, '.', ''),
+            $existing === null ? 'null (unset)' : '£'.number_format((float) $existing, 2, '.', ''),
+        );
+
+        if ($existing !== null && abs((float) $existing - $chosenPrice) < 0.00005) {
+            $notes .= ' Existing buy_price already equals the outlier — likely already contaminated; block the supplier and re-run supplier:db-sync.';
+        }
+
+        $notes .= ' evidence='.json_encode($outlier, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        ImportIssue::updateOrCreate(
+            [
+                'sku' => $local->sku,
+                'woo_product_id' => $local->woo_product_id,
+                'woo_variation_id' => null,
+                'issue_type' => ImportIssue::SUPPLIER_COST_OUTLIER,
+                'resolved_at' => null,
+            ],
+            [
+                'detected_at' => now(),
+                'last_seen_at' => now(),
+                'notes' => $notes,
+                'correlation_id' => $correlationId,
+            ],
+        );
+
+        return $existing;
     }
 
     /**
@@ -692,7 +817,7 @@ final class SupplierDbSyncCommand extends BaseCommand
      * excluded at source when the company folded.
      *
      * @param  array<int, array<string, mixed>>  $supplierRows
-     * @return array<string, true>  normalised code => true
+     * @return array<string, true> normalised code => true
      */
     public function buildListedKeySet(array $supplierRows): array
     {
@@ -792,12 +917,21 @@ final class SupplierDbSyncCommand extends BaseCommand
      *             cost, flagged in_stock=false).
      *   - stock : SUM of stock across in-stock offers (total we can source).
      *   - supplier / in_stock / matched_via : transparency for logging.
+     *   - cost_outlier : 261027-duz — null, or SupplierCostOutlierGuard evidence
+     *             (+ chosen_supplier / other_suppliers names) when the cheapest
+     *             offer is < 1/ratio of the lower median of the other suppliers.
+     *             When set, 'buy' is still the raw cheapest (for logging) but the
+     *             product loop holds the existing cost, and 'stock' EXCLUDES the
+     *             outlier supplier's stock.
+     *
+     * 261027-duz: operator-blocked (key, supplier) offers are skipped per key
+     * BEFORE the reduction (and so before the guard).
      *
      * Replaces the old "first row wins (latest updated_at)" rule, which ignored
      * price + stock and so mis-costed multi-supplier SKUs.
      *
      * @param  array<int, array<string, mixed>>  $rows
-     * @return array<string, array{buy:?string, stock:int, supplier:?string, in_stock:bool, matched_via:string}>
+     * @return array<string, array{buy:?string, stock:int, supplier:?string, in_stock:bool, matched_via:string, cost_outlier:?array<string, mixed>}>
      */
     public function buildBestOfferMap(array $rows): array
     {
@@ -848,6 +982,10 @@ final class SupplierDbSyncCommand extends BaseCommand
             $supplier = (string) ($row['supplier_name'] ?? $row['supplierid'] ?? '');
             $inStock = $stock !== null && $stock > 0;
 
+            // 261027-duz — the feed supplier id (block key + guard grouping key).
+            $sid = (string) ($row['supplierid'] ?? '');
+            $groupId = $sid !== '' ? $sid : $supplier;
+
             $mpn = strtolower(trim((string) ($row['mpn'] ?? '')));
             $sku = strtolower(trim((string) ($row['suppliersku'] ?? '')));
 
@@ -855,43 +993,105 @@ final class SupplierDbSyncCommand extends BaseCommand
                 if ($key === '') {
                     continue;
                 }
+                // 261027-duz — operator-blocked (key, supplier) offer: invisible
+                // to price AND stock for THIS key only. The same row still
+                // counts under its other key (e.g. Midwich's own mpn).
+                if ($this->blocks->isBlocked($key, $sid)) {
+                    continue;
+                }
                 if (! isset($acc[$key])) {
                     $acc[$key] = [
                         'matched_via' => $via,
-                        'instock_price' => null, 'instock_str' => null, 'instock_supplier' => null,
-                        'any_price' => null, 'any_str' => null, 'any_supplier' => null,
+                        'instock_price' => null, 'instock_str' => null, 'instock_supplier' => null, 'instock_sid' => null,
+                        'any_price' => null, 'any_str' => null, 'any_supplier' => null, 'any_sid' => null,
                         'total_stock' => 0,
+                        'by_supplier' => [],
                     ];
+                }
+
+                if (! isset($acc[$key]['by_supplier'][$groupId])) {
+                    $acc[$key]['by_supplier'][$groupId] = ['price' => null, 'instock_price' => null, 'stock' => 0, 'name' => $supplier];
                 }
 
                 if ($inStock) {
                     $acc[$key]['total_stock'] += $stock;
+                    $acc[$key]['by_supplier'][$groupId]['stock'] += $stock;
                 }
 
                 if ($price !== null && $price > 0) {
+                    $bs = $acc[$key]['by_supplier'][$groupId]['price'];
+                    if ($bs === null || $price < $bs) {
+                        $acc[$key]['by_supplier'][$groupId]['price'] = $price;
+                    }
+                    $bsIn = $acc[$key]['by_supplier'][$groupId]['instock_price'];
+                    if ($inStock && ($bsIn === null || $price < $bsIn)) {
+                        $acc[$key]['by_supplier'][$groupId]['instock_price'] = $price;
+                    }
                     if ($acc[$key]['any_price'] === null || $price < $acc[$key]['any_price']) {
                         $acc[$key]['any_price'] = $price;
                         $acc[$key]['any_str'] = $priceStr;
                         $acc[$key]['any_supplier'] = $supplier;
+                        $acc[$key]['any_sid'] = $groupId;
                     }
                     if ($inStock && ($acc[$key]['instock_price'] === null || $price < $acc[$key]['instock_price'])) {
                         $acc[$key]['instock_price'] = $price;
                         $acc[$key]['instock_str'] = $priceStr;
                         $acc[$key]['instock_supplier'] = $supplier;
+                        $acc[$key]['instock_sid'] = $groupId;
                     }
                 }
             }
         }
 
+        // 261027-duz — outlier guard settings (config-driven, no env()).
+        $guardEnabled = (bool) config('supplier.cost_outlier_guard.enabled', true);
+        $guardRatio = (float) config('supplier.cost_outlier_guard.ratio', 3);
+
         $map = [];
         foreach ($acc as $key => $a) {
             $useInStock = $a['instock_price'] !== null;
+            $winnerSid = $useInStock ? $a['instock_sid'] : $a['any_sid'];
+            $stockTotal = (int) $a['total_stock'];
+            $costOutlier = null;
+
+            if ($guardEnabled && $winnerSid !== null) {
+                // Compare like with like: the guard's pool is the SAME pool the
+                // winner was picked from — in-stock suppliers when anything is in
+                // stock, all suppliers only on the nothing-in-stock fallback. An
+                // out-of-stock supplier's (often stale list) price is not evidence
+                // against a cheaper in-stock one (MUYHSMFFADW: Ingram 42p in stock
+                // vs Westcoast £4.78 OOS is a genuine price, not a collision).
+                $priceField = $useInStock ? 'instock_price' : 'price';
+                $prices = [];
+                foreach ($a['by_supplier'] as $gid => $info) {
+                    if ($info[$priceField] !== null) {
+                        $prices[(string) $gid] = (float) $info[$priceField];
+                    }
+                }
+
+                $hit = SupplierCostOutlierGuard::detect($prices, (string) $winnerSid, $guardRatio);
+                if ($hit !== null) {
+                    $otherNames = [];
+                    foreach (array_keys($hit['others']) as $gid) {
+                        $otherNames[$gid] = (string) ($a['by_supplier'][$gid]['name'] ?? $gid);
+                    }
+                    $costOutlier = $hit + [
+                        'chosen_supplier' => (string) ($a['by_supplier'][$winnerSid]['name'] ?? $winnerSid),
+                        'other_suppliers' => $otherNames,
+                    ];
+                    // An offer we refuse to trust for cost is not trusted for
+                    // stock either (consistent with block semantics).
+                    $stockTotal -= (int) ($a['by_supplier'][$winnerSid]['stock'] ?? 0);
+                }
+            }
+
             $map[$key] = [
                 'buy' => $useInStock ? $a['instock_str'] : $a['any_str'],
-                'stock' => (int) $a['total_stock'],
+                'stock' => max(0, $stockTotal),
                 'supplier' => $useInStock ? $a['instock_supplier'] : $a['any_supplier'],
                 'in_stock' => $useInStock,
                 'matched_via' => $a['matched_via'],
+                'cost_outlier' => $costOutlier,
             ];
         }
 

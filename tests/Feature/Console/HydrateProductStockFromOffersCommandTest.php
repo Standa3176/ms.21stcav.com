@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Domain\Products\Models\Product;
+use App\Domain\Sync\Models\ProductSupplierBlock;
+use App\Domain\Sync\Services\ProductSupplierBlockResolver;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
 use App\Domain\Sync\Services\WooClient;
 use Illuminate\Support\Carbon;
@@ -537,12 +539,12 @@ it('Case K (261027-duz): a blocked (sku, supplier) cheapest snapshot is skipped 
 
     makeSnapshot('1301222', '30', 50, 7.20);  // Midwich — wrong item
     makeSnapshot('1301222', '40', 3, 88.20);  // Nimans — the real T74U
-    \App\Domain\Sync\Models\ProductSupplierBlock::create([
+    ProductSupplierBlock::create([
         'sku' => '1301222',
         'supplier_id' => '30',
         'reason' => 'Midwich 1301222 is an unrelated item',
     ]);
-    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    app(ProductSupplierBlockResolver::class)->forget();
     refreshFreshnessCache();
 
     expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);
@@ -568,7 +570,7 @@ it('Case L (261027-duz): outlier cheapest snapshot → buy_price unchanged, stoc
 
     makeSnapshot('1301222', '30', 50, 7.20);
     makeSnapshot('1301222', '40', 3, 88.20);
-    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    app(ProductSupplierBlockResolver::class)->forget();
     refreshFreshnessCache();
 
     expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);
@@ -594,7 +596,7 @@ it('Case M (261027-duz): guard disabled → legacy cheapest wins in hydrate', fu
 
     makeSnapshot('1301222', '30', 50, 7.20);
     makeSnapshot('1301222', '40', 3, 88.20);
-    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    app(ProductSupplierBlockResolver::class)->forget();
     refreshFreshnessCache();
 
     expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);

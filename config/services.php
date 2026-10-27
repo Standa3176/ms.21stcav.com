@@ -46,6 +46,10 @@ return [
         // Phase 1 — webhook HMAC secret (Plan 04 middleware reads this)
         'webhook_secret' => env('WC_WEBHOOK_SECRET'),
 
+        // 12.1 D-14: hosts allowed as X-WC-Webhook-Source for order webhooks. Defaults to the
+        // live shop URL; clone shops (keep./sonny.meetingstore.co.uk) must never be listed.
+        'allowed_webhook_sources' => array_values(array_filter(array_map('trim', explode(',', (string) env('WOO_ALLOWED_WEBHOOK_SOURCES', (string) env('WOO_URL', '')))))),
+
         // Phase 1 — shadow-mode flag (D-08; MUST default to false)
         'write_enabled' => env('WOO_WRITE_ENABLED', false),
 
@@ -255,6 +259,18 @@ return [
         'smoke_test_allowed' => env('BITRIX_SMOKE_TEST_ALLOWED', false),
         'cache_ttl_hours' => (int) env('BITRIX_CACHE_TTL_HOURS', 24),
         'push_retry_attempts' => (int) env('BITRIX_PUSH_RETRY_ATTEMPTS', 3),
+
+        // 12.1 D-01 + D-01a: Woo statuses that create a deal. YITH quote statuses
+        // 'ywraq-new' and 'ywraq-pending' create a deal (stage NEW via CrmStatusMapping,
+        // plugin parity per 12.1-PLUGIN-PARITY.md); failed/pending/cancelled/checkout-draft never create.
+        'order_paid_statuses' => array_values(array_filter(array_map('trim', explode(',', (string) env('BITRIX_ORDER_CREATE_STATUSES', 'processing,on-hold,completed,ywraq-new,ywraq-pending'))))),
+
+        // 12.1 D-15: set at flip time to the highest Woo order id that existed before
+        // CRM_WRITE_ENABLED=true; order.updated for ids <= floor with no map never creates a deal.
+        // null disables the floor.
+        'order_create_floor_id' => env('BITRIX_ORDER_CREATE_FLOOR_ID') === null || env('BITRIX_ORDER_CREATE_FLOOR_ID') === ''
+            ? null
+            : (int) env('BITRIX_ORDER_CREATE_FLOOR_ID'),
     ],
 
     // Icecat product-content syndication (product images by GTIN/EAN).

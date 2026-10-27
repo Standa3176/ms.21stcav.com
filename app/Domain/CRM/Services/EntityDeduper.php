@@ -26,6 +26,12 @@ use Throwable;
  * UF_CRM_WOO_ORDER_ID. Multi-match logs a duplicate_detected audit row + adopts
  * the lowest Bitrix ID (oldest deal in Bitrix wins).
  *
+ * 12.1 D-11 shadow hygiene: with CRM_WRITE_ENABLED=false the client returns
+ * run-local `SHADOW-*` ids. They are returned to the caller but NEVER persisted
+ * to bitrix_entity_map; a row already carrying one is ignored by every lookup
+ * and overwritten with the real id, so a post-flip push can never call
+ * contactUpdate/companyUpdate('SHADOW-...').
+ *
  * Every decision step writes one integration_events row with endpoint shaped
  * `crm.deduper.{contact|company|deal}` for Plan 04-04 admin-log visibility.
  */
@@ -49,6 +55,9 @@ final class EntityDeduper
         $map = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_CONTACT)
             ->where('woo_id', $wooCustomerId)
             ->first();
+        if ($map !== null && ShadowId::is((string) $map->bitrix_id)) {
+            $map = null;   // stale shadow row: ignored, overwritten on adopt/create
+        }
         if ($map !== null) {
             $this->client->contactUpdate($map->bitrix_id, $payload, $correlationId);
             $map->update([
@@ -101,15 +110,27 @@ final class EntityDeduper
 
         // 4. Create + record
         $bitrixId = $this->client->contactAdd($payload, $correlationId);
-        BitrixEntityMap::create([
-            'entity_type' => BitrixEntityMap::ENTITY_CONTACT,
-            'woo_id' => $wooCustomerId,
-            'bitrix_id' => $bitrixId,
-            'email_hash' => $email !== '' ? hash('sha256', $email) : null,
-            'last_payload_hash' => hash('sha256', (string) json_encode($payload)),
-            'last_correlation_id' => $correlationId,
-            'created_via' => BitrixEntityMap::VIA_PUSH,
-        ]);
+        if (ShadowId::is($bitrixId)) {
+            $this->logDecision('contact', 'shadow_not_persisted', [
+                'bitrix_id' => $bitrixId,
+                'woo_id' => $wooCustomerId,
+            ], $correlationId);
+
+            return $bitrixId;
+        }
+        BitrixEntityMap::updateOrCreate(
+            [
+                'entity_type' => BitrixEntityMap::ENTITY_CONTACT,
+                'woo_id' => $wooCustomerId,
+            ],
+            [
+                'bitrix_id' => $bitrixId,
+                'email_hash' => $email !== '' ? hash('sha256', $email) : null,
+                'last_payload_hash' => hash('sha256', (string) json_encode($payload)),
+                'last_correlation_id' => $correlationId,
+                'created_via' => BitrixEntityMap::VIA_PUSH,
+            ],
+        );
 
         $this->logDecision('contact', 'created', [
             'bitrix_id' => $bitrixId,
@@ -159,6 +180,11 @@ final class EntityDeduper
         $map = BitrixEntityMap::where('entity_type', BitrixEntityMap::ENTITY_COMPANY)
             ->where('last_payload_hash', $dedupKey)
             ->first();
+        $staleShadowCompany = null;
+        if ($map !== null && ShadowId::is((string) $map->bitrix_id)) {
+            $staleShadowCompany = $map;   // overwritten with the real id below
+            $map = null;
+        }
         if ($map !== null) {
             $this->client->companyUpdate($map->bitrix_id, $payload, $correlationId);
             $map->update([
@@ -173,14 +199,27 @@ final class EntityDeduper
         }
 
         $bitrixId = $this->client->companyAdd($payload, $correlationId);
-        BitrixEntityMap::create([
+        if (ShadowId::is($bitrixId)) {
+            $this->logDecision('company', 'shadow_not_persisted', [
+                'bitrix_id' => $bitrixId,
+                'title' => $title,
+            ], $correlationId);
+
+            return $bitrixId;
+        }
+        $attrs = [
             'entity_type' => BitrixEntityMap::ENTITY_COMPANY,
             'woo_id' => 0,                        // sentinel — companies lack a Woo primary key
             'bitrix_id' => $bitrixId,
             'last_payload_hash' => $dedupKey,
             'last_correlation_id' => $correlationId,
             'created_via' => BitrixEntityMap::VIA_PUSH,
-        ]);
+        ];
+        if ($staleShadowCompany !== null) {
+            $staleShadowCompany->update($attrs);
+        } else {
+            BitrixEntityMap::create($attrs);
+        }
 
         $this->logDecision('company', 'created', [
             'bitrix_id' => $bitrixId,

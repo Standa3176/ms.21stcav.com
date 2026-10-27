@@ -221,3 +221,79 @@ it('normalises email case + whitespace for email_hash', function (): void {
     $map = BitrixEntityMap::where('entity_type', 'contact')->where('woo_id', 600)->firstOrFail();
     expect($map->email_hash)->toBe(hash('sha256', 'jane@acme.com'));
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 12.1-04 — SHADOW-* hygiene (D-11)
+// ══════════════════════════════════════════════════════════════════════════════
+
+it('does not persist a SHADOW contact id', function (): void {
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldReceive('contactAdd')->once()->andReturn('SHADOW-1');
+
+    $result = makeDeduper($client)->findOrCreateContact(700, ['NAME' => 'Shadow']);
+
+    expect($result)->toBe('SHADOW-1');
+    expect(BitrixEntityMap::where('entity_type', 'contact')->count())->toBe(0);
+});
+
+it('does not persist a SHADOW company id', function (): void {
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldReceive('companyAdd')->once()->andReturn('SHADOW-2');
+
+    $result = makeDeduper($client)->findOrCreateCompany('Acme', 'AB1 2CD', ['TITLE' => 'Acme']);
+
+    expect($result)->toBe('SHADOW-2');
+    expect(BitrixEntityMap::where('entity_type', 'company')->count())->toBe(0);
+});
+
+it('ignores an existing SHADOW contact row and overwrites it with the real id', function (): void {
+    BitrixEntityMap::factory()->contactFor(701, 'SHADOW-old', 'x@y.com')->create();
+
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldNotReceive('contactUpdate')->with('SHADOW-old', Mockery::any(), Mockery::any());
+    $client->shouldReceive('duplicateFindByComm')->andReturn(['CONTACT' => []]);
+    $client->shouldReceive('contactAdd')->once()->andReturn('B900');
+
+    $result = makeDeduper($client)->findOrCreateContact(701, ['NAME' => 'X', 'EMAIL' => [['VALUE' => 'x@y.com']]]);
+
+    expect($result)->toBe('B900');
+    $rows = BitrixEntityMap::where('entity_type', 'contact')->where('woo_id', 701)->get();
+    expect($rows)->toHaveCount(1);
+    expect($rows->first()->bitrix_id)->toBe('B900');
+});
+
+it('ignores an existing SHADOW company row and overwrites it with the real id', function (): void {
+    $key = hash('sha256', (string) json_encode(['title' => 'acme', 'postcode' => 'ab1 2cd']));
+    BitrixEntityMap::create([
+        'entity_type' => BitrixEntityMap::ENTITY_COMPANY,
+        'woo_id' => 0,
+        'bitrix_id' => 'SHADOW-oldco',
+        'last_payload_hash' => $key,
+        'created_via' => BitrixEntityMap::VIA_PUSH,
+    ]);
+
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldNotReceive('companyUpdate');
+    $client->shouldReceive('companyAdd')->once()->andReturn('C77');
+
+    $result = makeDeduper($client)->findOrCreateCompany('Acme', 'AB1 2CD', ['TITLE' => 'Acme']);
+
+    expect($result)->toBe('C77');
+    $rows = BitrixEntityMap::where('entity_type', 'company')->get();
+    expect($rows)->toHaveCount(1);
+    expect($rows->first()->bitrix_id)->toBe('C77');
+});
+
+it('findDealByWooOrderId ignores a SHADOW deal row and consults dealList', function (): void {
+    BitrixEntityMap::create([
+        'entity_type' => BitrixEntityMap::ENTITY_DEAL,
+        'woo_id' => 800,
+        'bitrix_id' => 'SHADOW-d',
+        'created_via' => BitrixEntityMap::VIA_PUSH,
+    ]);
+
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldReceive('dealList')->once()->andReturn([]);
+
+    expect(makeDeduper($client)->findDealByWooOrderId(800))->toBeNull();
+});

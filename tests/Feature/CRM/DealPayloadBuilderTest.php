@@ -209,3 +209,124 @@ it('emits CONTACT_ID + COMPANY_ID when both provided; omits COMPANY_ID when empt
     expect($withoutCompany)->not->toHaveKey('COMPANY_ID');
     expect($withoutCompany['CONTACT_ID'])->toBe('C1');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Phase 12.1 Plan 02 Task 2 — static fields, meta: mappings, forbidden targets
+|--------------------------------------------------------------------------
+*/
+
+/** Schema cache that also knows the plugin-parity UF_CRM_* codes. */
+function parityBuilder(): DealPayloadBuilder
+{
+    $client = Mockery::mock(BitrixClient::class);
+    $client->shouldReceive('dealFieldsGet')->zeroOrMoreTimes()->andReturn(array_fill_keys([
+        'TITLE', 'OPPORTUNITY', 'CURRENCY_ID', 'CATEGORY_ID', 'STAGE_ID', 'CONTACT_ID', 'COMPANY_ID',
+        'COMMENTS', 'ASSIGNED_BY_ID', 'UF_CRM_WOO_ORDER_ID', 'UF_CRM_1609669335792', 'UF_CRM_1624008544289',
+        'UF_CRM_1610623973323', 'UF_CRM_COST', 'UF_CRM_PM', 'UF_CRM_1621415435354',
+    ], []));
+    \Illuminate\Support\Facades\Cache::flush();
+
+    return makeDealBuilder(new BitrixSchemaCache($client, app(IntegrationLogger::class)));
+}
+
+it('merges deal_static_fields with placeholder support', function (): void {
+    CrmPipelineSetting::current()->update(['deal_static_fields' => [
+        'TYPE_ID' => 'GOODS', 'OPENED' => 'Y', 'SOURCE_ID' => 'RC_GENERATOR', 'SOURCE_DESCRIPTION' => 'Woo #{order_number}',
+    ]]);
+
+    $payload = makeDealBuilder()->build(['id' => 1, 'number' => '42', 'total' => '0'], 'C1', '', 'corr-1');
+
+    expect($payload)->toMatchArray([
+        'TYPE_ID' => 'GOODS', 'OPENED' => 'Y', 'SOURCE_ID' => 'RC_GENERATOR', 'SOURCE_DESCRIPTION' => 'Woo #42',
+    ]);
+});
+
+it('static fields never override deterministic base keys', function (): void {
+    CrmPipelineSetting::current()->update([
+        'bitrix_pipeline_id' => '0', 'assigned_user_id' => '6428', 'landing_stage_id' => 'NEW',
+        'deal_static_fields' => [
+            'TITLE' => 'HIJACK', 'OPPORTUNITY' => 1, 'CURRENCY_ID' => 'USD', 'UF_CRM_WOO_ORDER_ID' => 9,
+            'CONTACT_ID' => 'X', 'COMPANY_ID' => 'X', 'CATEGORY_ID' => '9', 'STAGE_ID' => 'X', 'ASSIGNED_BY_ID' => '1',
+        ],
+    ]);
+
+    $payload = makeDealBuilder()->build(['id' => 7, 'number' => '7', 'total' => '5.00', 'currency' => 'gbp'], 'C1', 'CO1', 'corr-1');
+
+    expect($payload['TITLE'])->toBe('Woo Order #7')
+        ->and($payload['OPPORTUNITY'])->toBe(5.0)
+        ->and($payload['CURRENCY_ID'])->toBe('GBP')
+        ->and($payload['UF_CRM_WOO_ORDER_ID'])->toBe(7)
+        ->and($payload['CONTACT_ID'])->toBe('C1')
+        ->and($payload['COMPANY_ID'])->toBe('CO1')
+        ->and($payload['CATEGORY_ID'])->toBe('0')
+        ->and($payload['STAGE_ID'])->toBe('NEW')
+        ->and($payload['ASSIGNED_BY_ID'])->toBe('6428');
+});
+
+it('renders the plugin title template and sends CATEGORY_ID 0 for the default pipeline', function (): void {
+    CrmPipelineSetting::current()->update([
+        'bitrix_pipeline_id' => '0',
+        'deal_title_template' => 'BS - #{order_number} - ({billing_company})',
+    ]);
+
+    $payload = makeDealBuilder()->build([
+        'id' => 185152, 'number' => '185152', 'total' => '1', 'billing' => ['company' => 'ACME'],
+    ], 'C1', '', 'corr-1');
+
+    expect($payload['TITLE'])->toBe('BS - #185152 - (ACME)')
+        ->and($payload)->toHaveKey('CATEGORY_ID')
+        ->and($payload['CATEGORY_ID'])->toBe('0');
+});
+
+it('resolves meta: mappings from order meta_data and omits absent meta', function (): void {
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'meta:utm_source', 'bitrix_field' => 'UTM_SOURCE', 'is_custom' => false, 'transformer' => 'none', 'sort_order' => 0]);
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'meta:wciwtb_streaming', 'bitrix_field' => 'UF_CRM_1609669335792', 'is_custom' => true, 'transformer' => 'none', 'sort_order' => 1]);
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'meta:utm_term', 'bitrix_field' => 'UTM_TERM', 'is_custom' => false, 'transformer' => 'none', 'sort_order' => 2]);
+
+    $payload = parityBuilder()->build([
+        'id' => 1, 'total' => '0',
+        'meta_data' => [
+            ['key' => 'utm_source', 'value' => 'google'],
+            ['key' => 'wciwtb_streaming', 'value' => 'yes'],
+        ],
+    ], 'C1', '', 'corr-1');
+
+    expect($payload['UTM_SOURCE'])->toBe('google')
+        ->and($payload['UF_CRM_1609669335792'])->toBe('yes')
+        ->and($payload)->not->toHaveKey('UTM_TERM');
+});
+
+it('still resolves dotted-path mappings such as shipping.postcode', function (): void {
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'shipping.postcode', 'bitrix_field' => 'UF_CRM_1624008544289', 'is_custom' => true, 'transformer' => 'none', 'sort_order' => 0]);
+
+    $payload = parityBuilder()->build(['id' => 1, 'total' => '0', 'shipping' => ['postcode' => 'SW1A 1AA']], 'C1', '', 'corr-1');
+
+    expect($payload['UF_CRM_1624008544289'])->toBe('SW1A 1AA');
+});
+
+it('drops Actual Margin from static fields and mappings and logs forbidden_field_skipped', function (): void {
+    CrmPipelineSetting::current()->update(['deal_static_fields' => ['UF_CRM_1610623973323' => '99', 'OPENED' => 'Y']]);
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'meta:am', 'bitrix_field' => 'UF_CRM_1610623973323', 'is_custom' => true, 'transformer' => 'none', 'sort_order' => 0]);
+
+    $payload = parityBuilder()->build(['id' => 1, 'total' => '0', 'meta_data' => [['key' => 'am', 'value' => '5']]], 'C1', '', 'corr-1');
+
+    expect($payload)->not->toHaveKey('UF_CRM_1610623973323')
+        ->and($payload['OPENED'])->toBe('Y')
+        ->and(IntegrationEvent::query()->where('operation', 'crm.deal.forbidden_field_skipped')->count())->toBe(2);
+});
+
+it('drops configured Cost / Predicted Margin codes from static fields and mappings', function (): void {
+    CrmPipelineSetting::current()->update([
+        'deal_cost_field' => 'UF_CRM_COST',
+        'deal_predicted_margin_field' => 'UF_CRM_PM',
+        'deal_static_fields' => ['UF_CRM_COST' => '1', 'OPENED' => 'Y'],
+    ]);
+    CrmFieldMapping::create(['entity_type' => 'deal', 'woo_field' => 'meta:pm', 'bitrix_field' => 'UF_CRM_PM', 'is_custom' => true, 'transformer' => 'none', 'sort_order' => 0]);
+
+    $payload = parityBuilder()->build(['id' => 1, 'total' => '0', 'meta_data' => [['key' => 'pm', 'value' => '5']]], 'C1', '', 'corr-1');
+
+    expect($payload)->not->toHaveKey('UF_CRM_COST')
+        ->and($payload)->not->toHaveKey('UF_CRM_PM')
+        ->and($payload['OPENED'])->toBe('Y');
+});

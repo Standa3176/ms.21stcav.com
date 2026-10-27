@@ -31,12 +31,19 @@ final class CrmPipelineSetting extends Model
         'landing_stage_id',
         'assigned_user_id',
         'deal_title_template',
+        'deal_static_fields',
+        'deal_cost_field',
+        'deal_predicted_margin_field',
+    ];
+
+    protected $casts = [
+        'deal_static_fields' => 'array',
     ];
 
     public function getActivitylogOptions(): LogOptions
     {
         return LogOptions::defaults()
-            ->logOnly(['bitrix_pipeline_id', 'landing_stage_id', 'assigned_user_id', 'deal_title_template'])
+            ->logOnly(['bitrix_pipeline_id', 'landing_stage_id', 'assigned_user_id', 'deal_title_template', 'deal_static_fields', 'deal_cost_field', 'deal_predicted_margin_field'])
             ->logOnlyDirty();
     }
 

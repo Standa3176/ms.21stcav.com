@@ -7,7 +7,10 @@ namespace App\Domain\CRM\Services;
 use App\Domain\CRM\Models\CrmFieldMapping;
 use App\Domain\CRM\Models\CrmPipelineSetting;
 use App\Domain\CRM\Models\CrmStatusMapping;
+use App\Domain\CRM\Support\BitrixFieldGuards;
 use App\Foundation\Integration\Services\IntegrationLogger;
+use Illuminate\Support\Facades\Context;
+use Illuminate\Support\Str;
 
 /**
  * Phase 4 Plan 03 — builds the `crm.deal.add` payload from a Woo order JSON.
@@ -26,22 +29,36 @@ use App\Foundation\Integration\Services\IntegrationLogger;
  *   - CONTACT_ID / COMPANY_ID injected by caller (EntityDeduper resolves them
  *     first — Company → Contact → Deal sequence).
  *   - Mapped fields from CrmFieldMapping[entity_type='deal'] applied last.
+ *   - Phase 12.1 Plan 02: CrmPipelineSetting.deal_static_fields (plugin constants
+ *     such as TYPE_ID / OPENED / SOURCE_ID, with {placeholder} support) are merged
+ *     after the deterministic base and never override it. CrmFieldMapping.woo_field
+ *     may be `meta:<key>` to read the order's meta_data (utm_*, wciwtb_streaming).
+ *     UF_CRM_1610623973323 (Actual Margin) and the configured Cost / Predicted
+ *     Margin codes are NEVER emitted from static/mapping sources. UtmExtractor's
+ *     UF_CRM_WOO_UTM_* keys are still emitted (dropped by FieldWhitelister when
+ *     absent on the portal); plugin parity uses the standard UTM_* fields via
+ *     meta: mappings.
  *   - Every emitted key passes through FieldWhitelister::filter() — stale
  *     UF_CRM_* mappings are skipped with an integration_events audit row.
  */
 final class DealPayloadBuilder
 {
+    /** Keys owned by the deterministic base — static fields never override these. */
+    private const DETERMINISTIC_KEYS = [
+        'TITLE', 'OPPORTUNITY', 'CURRENCY_ID', 'UF_CRM_WOO_ORDER_ID', 'CONTACT_ID',
+        'COMPANY_ID', 'CATEGORY_ID', 'STAGE_ID', 'ASSIGNED_BY_ID',
+    ];
+
     public function __construct(
         private readonly UtmExtractor $utm,
         private readonly BitrixSchemaCache $schema,
         private readonly IntegrationLogger $logger,
-    ) {
-    }
+    ) {}
 
     /**
-     * @param  array<string, mixed>  $order      Woo order JSON (decoded raw_body)
-     * @param  string                $contactId  Bitrix Contact ID (from EntityDeduper)
-     * @param  string                $companyId  Bitrix Company ID ('' if billing.company empty)
+     * @param  array<string, mixed>  $order  Woo order JSON (decoded raw_body)
+     * @param  string  $contactId  Bitrix Contact ID (from EntityDeduper)
+     * @param  string  $companyId  Bitrix Company ID ('' if billing.company empty)
      * @return array<string, mixed>
      */
     public function build(array $order, string $contactId, string $companyId, ?string $correlationId = null): array
@@ -76,11 +93,14 @@ final class DealPayloadBuilder
             $base['COMMENTS'] = $customerNote;
         }
 
+        // Phase 12.1 D-08: plugin constants from CrmPipelineSetting.deal_static_fields.
+        $this->applyStaticFields($base, $pipeline, $order, $correlationId);
+
         // D-03: merge 6 UTM fields (Deal-level).
         $base = array_merge($base, $this->utm->fromOrderPayload($order));
 
         // Admin-configured CrmFieldMapping overrides + custom UF_CRM_* fields.
-        $this->applyMappings($base, $order);
+        $this->applyMappings($base, $order, $pipeline, $correlationId);
 
         return FieldWhitelister::filter(
             $base,
@@ -113,6 +133,12 @@ final class DealPayloadBuilder
             $template = 'Woo Order #{order_number}';
         }
 
+        return $this->resolvePlaceholders($template, $order);
+    }
+
+    /** Placeholder substitution shared by TITLE and static string fields. */
+    private function resolvePlaceholders(string $template, array $order): string
+    {
         $vars = [
             '{order_number}' => (string) ($order['number'] ?? $order['id'] ?? ''),
             '{order_date}' => (string) ($order['date_created'] ?? ''),
@@ -125,8 +151,64 @@ final class DealPayloadBuilder
         return strtr($template, $vars);
     }
 
+    /**
+     * Phase 12.1 D-08 — merge plugin constants. Never overrides deterministic base keys.
+     *
+     * @param  array<string, mixed>  $base  modified in place
+     */
+    private function applyStaticFields(array &$base, CrmPipelineSetting $pipeline, array $order, ?string $correlationId): void
+    {
+        $static = $pipeline->deal_static_fields;
+        if (! is_array($static)) {
+            return;
+        }
+
+        foreach ($static as $key => $value) {
+            $key = (string) $key;
+            if (in_array($key, self::DETERMINISTIC_KEYS, true) || array_key_exists($key, $base)) {
+                continue;
+            }
+            if ($this->isBlockedTarget($key, $pipeline)) {
+                $this->logBlocked($key, 'static', $correlationId);
+
+                continue;
+            }
+            $base[$key] = is_string($value) ? $this->resolvePlaceholders($value, $order) : $value;
+        }
+    }
+
+    /** Actual Margin (never write) + the configured Cost / Predicted Margin codes. */
+    private function isBlockedTarget(string $code, CrmPipelineSetting $pipeline): bool
+    {
+        if (BitrixFieldGuards::isForbiddenTarget($code)) {
+            return true;
+        }
+        foreach ([$pipeline->deal_cost_field, $pipeline->deal_predicted_margin_field] as $guarded) {
+            if (is_string($guarded) && $guarded !== '' && strcasecmp($guarded, $code) === 0) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function logBlocked(string $code, string $source, ?string $correlationId): void
+    {
+        $this->logger->log([
+            'channel' => 'bitrix',
+            'direction' => 'internal',
+            'method' => 'BUILD',
+            'operation' => 'crm.deal.forbidden_field_skipped',
+            'endpoint' => 'crm.deal.builder',
+            'request_body' => ['field' => $code, 'source' => $source],
+            'http_status' => 200,
+            'correlation_id' => $correlationId ?? (Context::get('correlation_id') ?: (string) Str::uuid()),
+            'status' => 'success',
+        ]);
+    }
+
     /** @param  array<string, mixed>  $base  modified in place */
-    private function applyMappings(array &$base, array $order): void
+    private function applyMappings(array &$base, array $order, CrmPipelineSetting $pipeline, ?string $correlationId): void
     {
         $mappings = CrmFieldMapping::query()
             ->where('entity_type', CrmFieldMapping::ENTITY_DEAL)
@@ -135,6 +217,12 @@ final class DealPayloadBuilder
         foreach ($mappings as $mapping) {
             $wooField = $mapping->woo_field;
             $bitrixField = $mapping->bitrix_field;
+
+            if ($this->isBlockedTarget($bitrixField, $pipeline)) {
+                $this->logBlocked($bitrixField, 'mapping', $correlationId);
+
+                continue;
+            }
 
             // Keys already populated by the deterministic base (TITLE, OPPORTUNITY,
             // CURRENCY_ID, UF_CRM_WOO_ORDER_ID, CONTACT_ID, CATEGORY_ID, STAGE_ID,
@@ -150,9 +238,13 @@ final class DealPayloadBuilder
             }
 
             // `line_items` is a special top-level key; other mappings use dot paths like billing.phone.
-            $sourceValue = $wooField === 'line_items'
-                ? ($order['line_items'] ?? [])
-                : data_get($order, $wooField);
+            if ($wooField === 'line_items') {
+                $sourceValue = $order['line_items'] ?? [];
+            } elseif (str_starts_with($wooField, 'meta:')) {
+                $sourceValue = $this->metaValue($order, substr($wooField, 5));
+            } else {
+                $sourceValue = data_get($order, $wooField);
+            }
 
             $value = PayloadTransformer::apply($sourceValue, $mapping->transformer);
 
@@ -162,5 +254,19 @@ final class DealPayloadBuilder
 
             $base[$bitrixField] = $value;
         }
+    }
+
+    /** First order meta_data entry whose key equals $key (value cast to string); null when absent. */
+    private function metaValue(array $order, string $key): ?string
+    {
+        foreach ((array) ($order['meta_data'] ?? []) as $meta) {
+            if (is_array($meta) && (string) ($meta['key'] ?? '') === $key) {
+                $value = $meta['value'] ?? null;
+
+                return is_scalar($value) ? (string) $value : null;
+            }
+        }
+
+        return null;
     }
 }

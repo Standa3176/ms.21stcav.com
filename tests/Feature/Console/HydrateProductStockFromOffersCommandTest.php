@@ -517,3 +517,89 @@ it('Case J: downgrade — instock → outofstock persists when offers dry up; bu
     expect($product->last_synced_at)->not->toBeNull();
     expect($product->last_synced_at->isAfter(now()->subMinute()))->toBeTrue();
 });
+
+/*
+| Quick task 261027-duz — hydrate is the SECOND buy_price writer (07:20, after
+| the 07:00 supplier:db-sync). Offer blocks and the cost outlier guard must
+| apply here too or a blocked/outlier price re-enters cost 20 minutes later.
+*/
+
+it('Case K (261027-duz): a blocked (sku, supplier) cheapest snapshot is skipped — next supplier sets buy + stock', function (): void {
+    $product = Product::factory()->create([
+        'sku' => '1301222',
+        'woo_product_id' => 5969,
+        'status' => 'publish',
+        'stock_quantity' => 0,
+        'stock_status' => 'outofstock',
+        'buy_price' => null,
+        'last_synced_at' => null,
+    ]);
+
+    makeSnapshot('1301222', '30', 50, 7.20);  // Midwich — wrong item
+    makeSnapshot('1301222', '40', 3, 88.20);  // Nimans — the real T74U
+    \App\Domain\Sync\Models\ProductSupplierBlock::create([
+        'sku' => '1301222',
+        'supplier_id' => '30',
+        'reason' => 'Midwich 1301222 is an unrelated item',
+    ]);
+    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    refreshFreshnessCache();
+
+    expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);
+
+    $product->refresh();
+    expect((float) $product->buy_price)->toBe(88.2)
+        ->and($product->stock_quantity)->toBe(3)
+        ->and($product->stock_status)->toBe('instock');
+});
+
+it('Case L (261027-duz): outlier cheapest snapshot → buy_price unchanged, stock from the non-outlier supplier', function (): void {
+    config(['supplier.cost_outlier_guard.enabled' => true, 'supplier.cost_outlier_guard.ratio' => 3]);
+
+    $product = Product::factory()->create([
+        'sku' => '1301222',
+        'woo_product_id' => 5969,
+        'status' => 'publish',
+        'stock_quantity' => 0,
+        'stock_status' => 'outofstock',
+        'buy_price' => 88.20,
+        'last_synced_at' => null,
+    ]);
+
+    makeSnapshot('1301222', '30', 50, 7.20);
+    makeSnapshot('1301222', '40', 3, 88.20);
+    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    refreshFreshnessCache();
+
+    expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);
+
+    $product->refresh();
+    expect((float) $product->buy_price)->toBe(88.2)
+        ->and($product->stock_quantity)->toBe(3)
+        ->and($product->stock_status)->toBe('instock');
+});
+
+it('Case M (261027-duz): guard disabled → legacy cheapest wins in hydrate', function (): void {
+    config(['supplier.cost_outlier_guard.enabled' => false]);
+
+    $product = Product::factory()->create([
+        'sku' => '1301222',
+        'woo_product_id' => 5969,
+        'status' => 'publish',
+        'stock_quantity' => 0,
+        'stock_status' => 'outofstock',
+        'buy_price' => 88.20,
+        'last_synced_at' => null,
+    ]);
+
+    makeSnapshot('1301222', '30', 50, 7.20);
+    makeSnapshot('1301222', '40', 3, 88.20);
+    app(\App\Domain\Sync\Services\ProductSupplierBlockResolver::class)->forget();
+    refreshFreshnessCache();
+
+    expect(Artisan::call('products:hydrate-stock-from-offers'))->toBe(0);
+
+    $product->refresh();
+    expect((float) $product->buy_price)->toBe(7.2)
+        ->and($product->stock_quantity)->toBe(50);
+});

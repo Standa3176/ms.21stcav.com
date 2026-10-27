@@ -157,6 +157,7 @@ use App\Domain\Suggestions\Console\Commands\PruneOrphanSuggestionsCommand;
 use App\Domain\Suggestions\Models\Suggestion;
 use App\Domain\Suggestions\Policies\SuggestionPolicy;
 use App\Domain\Suggestions\Services\SuggestionApplierResolver;
+use App\Domain\Sync\Commands\BlockSupplierOfferCommand;
 use App\Domain\Sync\Commands\ExplainSupplierCostCommand;
 use App\Domain\Sync\Commands\ProbeSourceabilityGapCommand;
 use App\Domain\Sync\Commands\SupplierDbSyncCommand;
@@ -173,6 +174,7 @@ use App\Domain\Sync\Policies\SupplierPolicy;
 use App\Domain\Sync\Policies\SyncRunPolicy;
 use App\Domain\Sync\Services\MysqlSupplierFeedReader;
 use App\Domain\Sync\Services\SupplierClient;
+use App\Domain\Sync\Services\ProductSupplierBlockResolver;
 use App\Domain\Sync\Services\SupplierExclusionResolver;
 use App\Domain\Sync\Services\SupplierFeedReader;
 use App\Domain\Sync\Services\SupplierFreshnessResolver;
@@ -372,6 +374,11 @@ class AppServiceProvider extends ServiceProvider
         // so SupplierDbSyncCommand::buildBestOfferMap shares one cache and triggers
         // AT MOST one query per command run (mirrors SupplierFreshnessResolver).
         $this->app->singleton(SupplierExclusionResolver::class);
+
+        // Quick task 261027-duz — per-request memoised (sku, supplier_id) offer
+        // blocks. Shared by supplier:db-sync, products:hydrate-stock-from-offers
+        // and supplier:explain-cost (at most one query per command run).
+        $this->app->singleton(ProductSupplierBlockResolver::class);
 
         // Quick task 260719-mgp — sourceability-gap probe reads the REMOTE feed
         // through the SupplierFeedReader seam. Default = live mysqli reader;
@@ -760,6 +767,9 @@ class AppServiceProvider extends ServiceProvider
                 // 2026-05-25 — cost-traceability diagnostic: show every supplier
                 // offer for a SKU + which one sets buy_price (cheapest in-stock).
                 ExplainSupplierCostCommand::class,
+                // Quick task 261027-duz — operator CLI for per-(sku, supplier)
+                // offer blocks (supplier SKU collisions → wrong cost).
+                BlockSupplierOfferCommand::class,
                 // 2026-05-25 — catalogue-expansion scan: parts on ≥2 suppliers
                 // not on MS, cached for the dashboard "Products to add" tile.
                 ScanSupplierAddCandidatesCommand::class,

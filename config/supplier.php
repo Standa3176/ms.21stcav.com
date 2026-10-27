@@ -31,4 +31,22 @@ return [
     // Example: ratio=0.7 + threshold=7 → amber boundary = floor(7 * 0.7) = 4.
     // days_since ∈ {0..3} → fresh; {4..6} → amber; >=7 → stale.
     'amber_warning_ratio' => 0.7,
+
+    /*
+    | Quick task 261027-duz — supplier-cost outlier guard.
+    |
+    | supplier:db-sync and products:hydrate-stock-from-offers refuse to adopt a
+    | cheapest offer that is < 1/ratio of the LOWER median of the other
+    | suppliers' prices for the same key: the existing buy_price is held, the
+    | outlier supplier's stock is not counted, and supplier:db-sync raises a
+    | supplier_cost_outlier ImportIssue. Incident 2026-10-27: Midwich's code
+    | 1301222 (an unrelated £7.20 item) costed the £88.20 Yealink T74U.
+    |
+    | Plain literals (no env()) — slow-changing policy tunables, same as above.
+    | enabled=false restores the pre-261027 cheapest-wins behaviour exactly.
+    */
+    'cost_outlier_guard' => [
+        'enabled' => true,
+        'ratio' => 3,
+    ],
 ];

@@ -237,10 +237,11 @@ Schedule::command('products:hydrate-stock-from-offers --only-stale=24')
 // stock?", so a listed-but-out-of-stock product was demoted at 07:00 and never
 // restored, and an in-stock-on-a-stale-feed product was restored at 07:25 after
 // being demoted at 07:00. Same question, same answer, both directions.
+// VALUE_NONE flags are bare list items: '--flag' => true compiles to --flag='1', which Symfony rejects (261107-x3l).
 Schedule::command('products:restore-sourceable-pending', [
-    '--live' => true,
-    '--push-to-woo' => true,
-    '--include-listed-out-of-stock' => true,
+    '--live',
+    '--push-to-woo',
+    '--include-listed-out-of-stock',
 ])
     ->dailyAt('07:25')
     ->withoutOverlapping()
@@ -837,14 +838,15 @@ Schedule::command('google:pull-ga4')
 // Batch cap via config('product_auto_create.scheduled_publish_limit') (env
 // AUTO_PUBLISH_SCHEDULED_LIMIT, default 25) — tunable without a deploy.
 // withoutOverlapping() guards the slow (Claude + Woo) run from colliding.
+// VALUE_NONE flags are bare list items: '--flag' => true compiles to --flag='1', which Symfony rejects (261107-x3l).
 Schedule::command('products:draft-from-suggestions', [
     '--min-competitors' => 2,
     '--max-competitors' => 3,
-    '--auto-approve' => true,
-    '--create-missing-brands' => true,
-    '--source-images' => true,
+    '--auto-approve',
+    '--create-missing-brands',
+    '--source-images',
     '--limit' => (int) config('product_auto_create.scheduled_publish_limit', 25),
-    '--no-confirm' => true,
+    '--no-confirm',
 ])
     // Twice weekly = Mon (1) + Thu (4) at 05:00. Laravel's scheduler has no
     // twiceWeekly() helper (only twiceDaily/twiceMonthly), so express it as the
